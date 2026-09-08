@@ -1,7 +1,9 @@
 // app/api/register/route.ts
 import bcrypt from 'bcryptjs'
+import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { redis } from '@/lib/redis'
 
 // [REVIEW-FIX: backend-security #7] username policy: 3-20 chars, ASCII alphanumeric + underscore,
 // case-insensitive uniqueness (stored lowercase, displayName preserves original casing separately
@@ -68,13 +70,14 @@ export async function POST(req: Request) {
   })
 
   if (isMinor) {
-    // Send a one-time confirmation link to parentalConsentEmail (mailer mechanism decided in
-    // Phase 3, same infrastructure as notifyEmail — see that phase's [REVIEW-FIX] note); the
-    // link, on click, sets parentalConsentAt and flips status to ACTIVE. Until confirmed, login
-    // is refused (wired into lib/auth.ts's authorize(), alongside the TOTP gate) with a
-    // clear message. This route only creates the pending account and (conceptually) triggers the
-    // email; the confirmation endpoint itself is `app/api/parental-consent/[token]/route.ts`,
-    // token-based (Redis-backed, TTL'd, single-use, same pattern as Task 6's WebAuthn challenges).
+    // Single-use confirmation token, consumed by GET /api/parental-consent/[token], which sets
+    // parentalConsentAt and flips status to ACTIVE. Redis-backed, TTL'd, single-use — the same
+    // atomic GETDEL pattern as Task 6's WebAuthn verified-token bridge in lib/auth.ts.
+    const token = randomUUID()
+    await redis.set(`parental-consent:${token}`, user.id, 'EX', 60 * 60 * 24 * 7) // 7 days
+    // TODO(Phase 3): send this URL to parentalConsentEmail via lib/mailer.ts instead of logging.
+    // Logged so the flow is manually testable until the mailer exists — do not remove silently.
+    console.log(`Parental consent confirmation for ${username}: ${process.env.NEXTAUTH_URL}/api/parental-consent/${token}`)
   }
 
   return Response.json({ id: user.id, username: user.username, status: user.status }, { status: 201 })
