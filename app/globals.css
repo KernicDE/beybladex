@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+@theme {
+  --color-x-cyan: #00F0FF;
+  --color-neon-green: #00FF66;
+  --color-base-light: #F8FAFC;
+  --color-base-light-alt: #FFFFFF;
+  --color-base-dark: #090D16;
+  --color-base-dark-alt: #111827;
+  --color-type-attack: #EF4444;
+  --color-type-defense: #3B82F6;
+  --color-type-stamina: #EAB308;
+  --color-type-balance: #10B981;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
