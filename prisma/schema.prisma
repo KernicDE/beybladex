@@ -183,6 +183,10 @@ model Ruleset {
   ownFinishPenalty    Boolean      @default(true)
   relaunchLimit       Int          @default(1)
   aerialContactRerun  Boolean      @default(true)
+  // [Phase 2, REVIEW-FIX: ux-product §5] spec §2.B lists "äußere Störungen" (external
+  // disturbance → rematch) as a special rule but spec §3's schema never gave it a column —
+  // additive gap-closer, per Global Constraints.
+  externalDisturbanceRerun Boolean @default(true)
 
   tournaments         Tournament[]
 }
