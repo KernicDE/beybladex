@@ -48,6 +48,11 @@ enum BeyType {
   BALANCE
 }
 
+enum AccountStatus {
+  ACTIVE
+  PENDING_PARENTAL_CONSENT
+}
+
 model User {
   id                   String         @id @default(uuid())
   username             String         @unique
@@ -92,11 +97,12 @@ model User {
   clubMemberships      ClubMember[]
 
   // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
-  isMinor                 Boolean    @default(true) // computed at registration from birthDate; safe-by-default
+  isMinor                 Boolean        @default(true) // computed at registration from birthDate; safe-by-default
   parentalConsentEmail    String?
   parentalConsentAt       DateTime?
   privacyPolicyAcceptedAt DateTime?
   privacyPolicyVersion    String?
+  status                  AccountStatus  @default(ACTIVE) // minors start PENDING_PARENTAL_CONSENT (Task 5)
 
   createdAt            DateTime       @default(now())
 }
