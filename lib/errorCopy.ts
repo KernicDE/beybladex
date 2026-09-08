@@ -42,6 +42,13 @@ const COPY: Record<string, string> = {
   challenge_user_mismatch: 'Der Passkey passt nicht zum angemeldeten Konto.',
   // profile
   invalid_country: 'Das angegebene Land ist ungültig.',
+  // rulesets
+  invalid_title: 'Der Titel ist ungültig (1–100 Zeichen).',
+  invalid_description: 'Die Beschreibung ist zu lang (maximal 1000 Zeichen).',
+  invalid_deck_format: 'Das angegebene Deck-Format ist ungültig.',
+  invalid_points: 'Die Punktezahl muss eine ganze Zahl zwischen 1 und 100 sein.',
+  invalid_relaunch_limit: 'Das Relaunch-Limit muss eine ganze Zahl zwischen 0 und 10 sein.',
+  invalid_boolean: 'Ein Schalterwert ist ungültig.',
   // parental consent
   invalid_or_expired_token:
     'Dieser Einwilligungslink ist ungültig oder abgelaufen.',
