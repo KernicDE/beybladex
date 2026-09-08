@@ -8,7 +8,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
-    env: { REDIS_URL: 'redis://localhost:6379' },
+    env: {
+      REDIS_URL: 'redis://localhost:6379',
+      // dev-only key (same as .env.example) so lib/totpEncryption.ts can construct its AES key in tests
+      TOTP_ENCRYPTION_KEY: 'EYNd27+y+waQG7aQScKAHypWJevMkS1wUMcwXHJNhWg=',
+    },
     // Playwright e2e specs (tests/e2e) run via `npx playwright test`, not vitest.
     exclude: ['**/node_modules/**', 'tests/e2e/**', '.worktrees/**'],
   },

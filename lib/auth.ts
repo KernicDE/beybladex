@@ -4,6 +4,7 @@ import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { redis } from '@/lib/redis'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 }, // 30 days; see Task 6 for tokenVersion revocation
@@ -14,8 +15,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   providers: [
     Credentials({
-      credentials: { username: {}, password: {}, totpToken: {} },
+      credentials: { username: {}, password: {}, totpToken: {}, webauthnToken: {} },
       authorize: async (credentials) => {
+        // [REVIEW-FIX: backend-security #6] WebAuthn login ceremony: POST /api/webauthn/authenticate
+        // verifies the Redis-backed passkey challenge, then mints a single-use, short-lived
+        // "verified" token in Redis and calls signIn with it on this branch. GETDEL consumes the
+        // token atomically, so the ceremony can't be replayed and no password is involved.
+        const webauthnToken = credentials?.webauthnToken as string | undefined
+        if (webauthnToken) {
+          const verifiedUsername = await redis.getdel(`webauthn-verified:${webauthnToken}`)
+          if (!verifiedUsername) return null
+          const passkeyUser = await prisma.user.findUnique({ where: { username: verifiedUsername } })
+          if (!passkeyUser || passkeyUser.status === 'PENDING_PARENTAL_CONSENT') return null
+          return { id: passkeyUser.id, name: passkeyUser.username }
+        }
+
         const username = (credentials?.username as string | undefined)?.toLowerCase()
         const password = credentials?.password as string | undefined
         if (!username || !password) return null
