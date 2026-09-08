@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: 'Impressum — BeybladeX.de' }
 export default function ImpressumPage() {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-4 sm:p-6">
-      <h1 className="text-2xl font-semibold text-x-cyan">Impressum</h1>
+      <h1 className="text-2xl font-semibold text-x-cyan-text dark:text-x-cyan">Impressum</h1>
       <LegalPlaceholderNotice document="Impressum" />
 
       <section aria-labelledby="impressum-provider" className="space-y-2">

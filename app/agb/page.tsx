@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Nutzungsbedingungen — BeybladeX.de
 export default function AgbPage() {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-4 sm:p-6">
-      <h1 className="text-2xl font-semibold text-x-cyan">Allgemeine Nutzungsbedingungen (AGB)</h1>
+      <h1 className="text-2xl font-semibold text-x-cyan-text dark:text-x-cyan">Allgemeine Nutzungsbedingungen (AGB)</h1>
       <LegalPlaceholderNotice document="AGB" />
 
       <section aria-labelledby="agb-parties" className="space-y-2">

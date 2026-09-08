@@ -28,7 +28,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const session = await auth();
   return (
     <html
-      lang="en"
+      lang="de"
       className="h-full antialiased"
       suppressHydrationWarning
     >
@@ -41,7 +41,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <main className="flex-1 pb-12 md:pb-0">{children}</main>
         </ThemeProvider>
         <Footer />
-        <MobileNav />
+        <MobileNav session={session} />
         <RegisterServiceWorker />
         <InstallPrompt />
       </body>
