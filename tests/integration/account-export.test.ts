@@ -124,9 +124,6 @@ describe('GET /api/account/export (Art. 20)', () => {
       displayName: 'Export A',
       email: 'a@example.de',
       city: 'Leipzig',
-      notifyRadiusKm: 75,
-      notifyRecurring: true,
-      notifyEmail: true,
     })
     expect(body.profile.passwordHash).toBeUndefined()
 
