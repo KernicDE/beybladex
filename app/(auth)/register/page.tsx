@@ -53,7 +53,7 @@ export default function RegisterPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-base-light px-4 dark:bg-base-dark">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl bg-white p-6 shadow-lg dark:bg-base-dark-alt">
-        <h1 className="text-2xl font-semibold text-x-cyan">Registrieren</h1>
+        <h1 className="text-2xl font-semibold text-x-cyan-text dark:text-x-cyan">Registrieren</h1>
         <label className="block text-sm">
           Benutzername
           <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={20} />

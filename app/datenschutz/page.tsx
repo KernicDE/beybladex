@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: 'Datenschutzerklärung — BeybladeX.
 export default function DatenschutzPage() {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-4 sm:p-6">
-      <h1 className="text-2xl font-semibold text-x-cyan">Datenschutzerklärung</h1>
+      <h1 className="text-2xl font-semibold text-x-cyan-text dark:text-x-cyan">Datenschutzerklärung</h1>
       <LegalPlaceholderNotice document="Datenschutzerklärung" />
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Stand (Platzhalter): 08.09.2026 — Version 2026-09-08 (bei jeder inhaltlichen Änderung

@@ -2,6 +2,14 @@
 
 @theme {
   --color-x-cyan: #00F0FF;
+  /* Light-mode text-safe variant of X-Cyan. DEVIATION from the plan's #0891A5:
+     that value computes to only 3.58:1 on base-light — below WCAG AA 4.5:1 —
+     so this token uses #0E7490 (cyan-700) instead: 5.12:1 on #F8FAFC, 5.36:1 on
+     #FFFFFF (guarded by tests/unit/contrast.test.ts, real WCAG math).
+     USAGE RULE (binding on every phase): text-x-cyan is for dark-mode text and
+     light-mode DECORATIVE use only (borders, fills, glows, large graphics); any
+     light-mode *text* in the cyan accent uses text-x-cyan-text instead. */
+  --color-x-cyan-text: #0E7490;
   --color-neon-green: #00FF66;
   --color-base-light: #F8FAFC;
   --color-base-light-alt: #FFFFFF;
