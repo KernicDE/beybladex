@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { Header } from "@/components/layout/Header";
+import { MobileNav } from "@/components/layout/MobileNav";
+import { Footer } from "@/components/layout/Footer";
+import { auth } from "@/lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,7 +24,8 @@ const THEME_INIT_SCRIPT = `
 })();
 `;
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const session = await auth();
   return (
     <html
       lang="en"
@@ -31,7 +36,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <Header session={session} />
+          <main className="flex-1 pb-12 md:pb-0">{children}</main>
+        </ThemeProvider>
+        <Footer />
+        <MobileNav />
         <RegisterServiceWorker />
         <InstallPrompt />
       </body>
