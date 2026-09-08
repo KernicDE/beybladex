@@ -4,24 +4,15 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { redis } from '@/lib/redis'
+import { calculateAge, MINOR_CONSENT_AGE_THRESHOLD } from '@/lib/age'
 
 // [REVIEW-FIX: backend-security #7] username policy: 3-20 chars, ASCII alphanumeric + underscore,
 // case-insensitive uniqueness (stored lowercase, displayName preserves original casing separately
 // if a later phase adds one), reserved-name blocklist so routes like /profile/api can't be squatted.
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 const RESERVED_USERNAMES = new Set(['admin', 'api', 'root', 'support', 'moderator', 'beybladex'])
-const MINOR_CONSENT_AGE_THRESHOLD = 16 // Germany's GDPR Art. 8 threshold — the highest in DACH; using
-// the strictest applicable threshold for all three countries is the only choice that's correct
-// everywhere without per-country legal branching.
 
 const PRIVACY_POLICY_VERSION = '2026-09-08' // bump whenever /datenschutz's content changes materially
-
-function calculateAge(birthDate: Date, now = new Date()): number {
-  let age = now.getFullYear() - birthDate.getFullYear()
-  const monthDiff = now.getMonth() - birthDate.getMonth()
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) age--
-  return age
-}
 
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
