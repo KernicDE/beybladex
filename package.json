@@ -13,8 +13,10 @@
     "test:all": "vitest run"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "ioredis": "^6.0.0",
     "next": "16.3.4",
+    "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
