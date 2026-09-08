@@ -58,6 +58,7 @@ All **Critical** findings across all five reviews are resolved directly in the t
   - **Local dev/implementation loop for a task with integration tests**: implement the code and the test, run `npm test` (unit) + `npx tsc --noEmit` locally to catch what's catchable without infra, then push the work to a feature branch and let CI run `test:all` against its real Postgres/Redis service containers — use `gh run watch` / `gh pr checks` to observe the result remotely rather than reproducing the infra locally. Iterate against CI's logs, not a local docker loop. This is slower per iteration than a local red/green loop but is the operator's explicit choice; every phase's TDD sub-plan must account for it rather than assume `docker run postgres` is available.
   - Any task text below that still says "start local Postgres/Redis via `docker run`" (an artifact of an earlier draft, before this constraint) should be read as superseded by this rule — implement and test via the CI path instead.
 - **Prisma schema in spec §3 is authoritative.** Any deviation (added fields, indices, cascade rules) must be additive and documented in the task that introduces it — never silently diverge from the modeled relations (`Build` = 1 Blade + 1 Ratchet + 1 Bit; `Deck` = exactly 3 `DeckBuild`s; `Ruleset` drives `Tournament` scoring config).
+- **Test-usernames use `Date.now().toString(36)` (base-36), never bare `Date.now()`** `[REVIEW-FIX: implementation]` — the register route enforces `USERNAME_RE = /^[a-z0-9_]{3,20}$/`, and a 13-digit decimal timestamp plus any descriptive prefix overflows the 20-char cap (e.g. `totpuser_${Date.now()}` = 22 chars → registration 400s). Base-36 is ~8–9 chars for current timestamps, so `newuser_${Date.now().toString(36)}` (16 chars) and every other prefix in this plan fit comfortably. This is the standing convention for every test fixture that needs a unique username, in this plan's remaining tasks and in ad-hoc test code.
 
 ---
 
@@ -548,7 +549,7 @@ import { prisma } from '@/lib/db'
 
 describe('database connection', () => {
   it('can create and read back a user', async () => {
-    const user = await prisma.user.create({ data: { username: `test_${Date.now()}` } })
+    const user = await prisma.user.create({ data: { username: `test_${Date.now().toString(36)}` } })
     const found = await prisma.user.findUnique({ where: { id: user.id } })
     expect(found?.username).toBe(user.username)
     await prisma.user.delete({ where: { id: user.id } })
@@ -803,7 +804,7 @@ import { prisma } from '@/lib/db'
 
 describe('POST /api/register', () => {
   it('creates a user with only username+password, no email required, no Set-Cookie on the request path before login', async () => {
-    const username = `newuser_${Date.now()}`
+    const username = `newuser_${Date.now().toString(36)}`
     const req = new Request('http://localhost/api/register', {
       method: 'POST',
       body: JSON.stringify({ username, password: 'correct horse battery staple' }),
@@ -817,7 +818,7 @@ describe('POST /api/register', () => {
   })
 
   it('rejects a duplicate username', async () => {
-    const username = `dupuser_${Date.now()}`
+    const username = `dupuser_${Date.now().toString(36)}`
     await prisma.user.create({ data: { username, passwordHash: 'x' } })
     const req = new Request('http://localhost/api/register', {
       method: 'POST',
@@ -1153,7 +1154,7 @@ import { signIn } from '@/lib/auth'
 describe('TOTP login gate', () => {
   it('rejects password-only login when totpSecret is set, and succeeds with a valid token', async () => {
     const secret = authenticator.generateSecret()
-    const username = `totpuser_${Date.now()}`
+    const username = `totpuser_${Date.now().toString(36)}`
     await prisma.user.create({
       data: { username, passwordHash: await bcrypt.hash('correct horse battery staple', 12), totpSecret: encryptSecret(secret) },
     })
@@ -1183,7 +1184,7 @@ import { prisma } from '@/lib/db'
 
 describe('WebAuthn passkey registration', () => {
   it('produces registration options scoped to the given user with no existing credentials excluded', async () => {
-    const user = await prisma.user.create({ data: { username: `wauser_${Date.now()}` } })
+    const user = await prisma.user.create({ data: { username: `wauser_${Date.now().toString(36)}` } })
     const options = await getRegistrationOptions(user.id)
     expect(options.user.name).toBe(user.username)
     expect(options.excludeCredentials).toEqual([])

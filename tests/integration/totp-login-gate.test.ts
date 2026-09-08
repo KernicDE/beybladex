@@ -9,7 +9,7 @@ import { signIn } from '@/lib/auth'
 describe('TOTP login gate', () => {
   it('rejects password-only login when totpSecret is set, and succeeds with a valid token', async () => {
     const secret = authenticator.generateSecret()
-    const username = `totpuser_${Date.now()}`
+    const username = `totpuser_${Date.now().toString(36)}`
     await prisma.user.create({
       data: { username, passwordHash: await bcrypt.hash('correct horse battery staple', 12), totpSecret: encryptSecret(secret) },
     })

@@ -22,7 +22,7 @@ async function registerMinor(username: string) {
 
 describe('parental-consent confirmation flow', () => {
   it('registers a minor as PENDING_PARENTAL_CONSENT, refuses login, then activates on token use', async () => {
-    const username = `minor_${Date.now()}`
+    const username = `minor_${Date.now().toString(36)}`
     const res = await registerMinor(username)
     expect(res.status).toBe(201)
     const body = await res.json()
@@ -66,7 +66,7 @@ describe('parental-consent confirmation flow', () => {
   })
 
   it('rejects a second GET with the same (now consumed) token', async () => {
-    const username = `minor2_${Date.now()}`
+    const username = `minor2_${Date.now().toString(36)}`
     await registerMinor(username)
     const user = await prisma.user.findUnique({ where: { username } })
 

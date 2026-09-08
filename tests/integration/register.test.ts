@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 
 describe('POST /api/register', () => {
   it('creates a user with only username+password, no email required, no Set-Cookie on the request path before login', async () => {
-    const username = `newuser_${Date.now()}`
+    const username = `newuser_${Date.now().toString(36)}`
     const req = new Request('http://localhost/api/register', {
       method: 'POST',
       body: JSON.stringify({ username, password: 'correct horse battery staple', birthDate: '1990-01-01', privacyPolicyAccepted: true }),
@@ -19,7 +19,7 @@ describe('POST /api/register', () => {
   })
 
   it('rejects a duplicate username', async () => {
-    const username = `dupuser_${Date.now()}`
+    const username = `dupuser_${Date.now().toString(36)}`
     await prisma.user.create({ data: { username, passwordHash: 'x' } })
     const req = new Request('http://localhost/api/register', {
       method: 'POST',
