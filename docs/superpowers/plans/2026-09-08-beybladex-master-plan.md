@@ -51,6 +51,12 @@ All **Critical** findings across all five reviews are resolved directly in the t
 - **Legal pages (`/impressum`, `/datenschutz`, `/agb`) and a required registration consent checkbox exist before any other public-facing feature ships** `[REVIEW-FIX: privacy-dsgvo #2]` — see Phase 1 Task 5 and Task 10. `/impressum` is a standalone German statutory requirement (DDG §5), independent of GDPR.
 - **A user can delete their own account (with erasure/anonymization, not just a Restrict-blocked delete), export their own data, and edit their own profile fields** `[REVIEW-FIX: privacy-dsgvo #3]` — see the new Phase 1 Task 12. Every later phase that adds a `User`-owned model (Deck, CollectionItem, Rating, ClubMember, …) must add that model to Task 12's erasure/export matrix as part of shipping the feature — this is a standing requirement, not a one-time Phase 1 task, the same way the zero-CDN guard is standing.
 - **Privacy-sensitive schema defaults are conservative, not permissive** `[REVIEW-FIX: privacy-dsgvo #7]`: `User.locationVisibility` defaults to `FRIENDS_ONLY` (not `PUBLIC` as spec §3's literal text has it) and `User.notifyRecurring` defaults to `false` (not `true`) — both changed in the Phase 1 Task 3 migration, before any real user exists, per GDPR Art. 25 "privacy by default." This is the one deliberate deviation from spec §3's literal default values; every other field's default is unchanged.
+- **No local Docker containers for Postgres/Redis on the development machine** `[REVIEW-FIX: implementation]` — a deliberate operator constraint, not a plan oversight. Testing against real infrastructure happens exclusively in GitHub Actions CI (Task 11's `ci.yml`, which already provisions Postgres+Redis service containers) or, ultimately, on the real deployment server. This reshapes every task that needs a live DB/Redis connection:
+  - `npm test` runs **unit tests only** (`vitest run tests/unit`) — no external dependency, safe to run anywhere, including this machine, at any time.
+  - `npm run test:integration` runs **integration tests** (`vitest run tests/integration`) — requires live Postgres/Redis and is **CI-only**; never invoke it locally.
+  - `npm run test:all` runs both (`vitest run`) — the command `ci.yml` uses, where the service containers exist.
+  - **Local dev/implementation loop for a task with integration tests**: implement the code and the test, run `npm test` (unit) + `npx tsc --noEmit` locally to catch what's catchable without infra, then push the work to a feature branch and let CI run `test:all` against its real Postgres/Redis service containers — use `gh run watch` / `gh pr checks` to observe the result remotely rather than reproducing the infra locally. Iterate against CI's logs, not a local docker loop. This is slower per iteration than a local red/green loop but is the operator's explicit choice; every phase's TDD sub-plan must account for it rather than assume `docker run postgres` is available.
+  - Any task text below that still says "start local Postgres/Redis via `docker run`" (an artifact of an earlier draft, before this constraint) should be read as superseded by this rule — implement and test via the CI path instead.
 - **Prisma schema in spec §3 is authoritative.** Any deviation (added fields, indices, cascade rules) must be additive and documented in the task that introduces it — never silently diverge from the modeled relations (`Build` = 1 Blade + 1 Ratchet + 1 Bit; `Deck` = exactly 3 `DeckBuild`s; `Ruleset` drives `Tournament` scoring config).
 
 ---
@@ -228,7 +234,7 @@ describe('project scaffold', () => {
 - [ ] **Step 4: Run test to verify it fails**
 
 Run: `npx vitest run tests/unit/smoke.test.ts`
-Expected: FAIL (vitest/config not yet wired into `package.json` scripts) — add `"test": "vitest run"` to `package.json` scripts, then re-run; it should now PASS trivially since no app code is exercised yet, with zero warnings (the ESM/CJS warning is closed by Step 2's `"type": "module"`).
+Expected: FAIL (vitest/config not yet wired into `package.json` scripts) — add the three-way test script split to `package.json` scripts (`[REVIEW-FIX: implementation]`, per Global Constraints' no-local-Docker rule): `"test": "vitest run tests/unit"`, `"test:integration": "vitest run tests/integration"`, `"test:all": "vitest run"`. Then re-run `npm test`; it should now PASS trivially since no app code is exercised yet, with zero warnings (the ESM/CJS warning is closed by Step 2's `"type": "module"`). `test:integration`/`test:all` are not run in this task (no integration tests exist yet) but the scripts exist from the start so every later task follows the same convention without reinventing it.
 
 - [ ] **Step 5: Set Tailwind v4 color tokens and class-based dark mode — CSS-first, no `tailwind.config.ts`**
 
@@ -260,7 +266,7 @@ This makes `text-x-cyan`, `bg-type-attack`, `dark:text-neon-green`, etc. ordinar
 
 - [ ] **Step 6: Run full test suite and typecheck**
 
-Run: `npm test && npx tsc --noEmit`
+Run: `npm test && npx next typegen && npx tsc --noEmit` (the `next typegen` step generates Next.js 16's route-type definitions under the gitignored `.next/types` — without it, a fresh checkout's `tsc --noEmit` fails on a `LayoutProps` type error in `app/layout.tsx`; harmless/fast if `.next/types` already exists from an earlier `next dev`/`next build` in this session `[REVIEW-FIX: implementation]`)
 Expected: PASS, no type errors, no warnings.
 
 - [ ] **Step 7: Commit**
@@ -509,13 +515,19 @@ model User {
 
 `isMinor` defaults to `true` (fail-safe: a row somehow created without going through the registration age-check — e.g. a future admin/import path — is treated as a minor until proven otherwise, never the reverse). Task 5 computes and sets it correctly at registration. Every later phase that reads `birthDate`/age must treat `isMinor` as the source of truth, not re-derive age ad hoc.
 
-- [ ] **Step 3: Start local Postgres for dev/test**
+- [ ] **Step 3: Write `.env.example`; generate the initial migration WITHOUT a live database** `[REVIEW-FIX: implementation]`
+
+Per Global Constraints' no-local-Docker rule, there is no local Postgres to run `prisma migrate dev` against (it normally needs a live connection to compute the diff and apply it). For the very first migration only, this is avoidable: `prisma migrate diff` can compute the SQL diff purely from the schema file, from an empty starting state, with **no database connection at all**:
 
 ```bash
-docker run -d --name beybladex_pg_dev -e POSTGRES_USER=beybladex -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=beybladex_dev -p 5432:5432 postgres:16-alpine
+mkdir -p prisma/migrations/00000000000000_init
+npx prisma migrate diff --from-empty --to-schema-datamodel=prisma/schema.prisma --script > prisma/migrations/00000000000000_init/migration.sql
+echo 'provider = "postgresql"' > prisma/migrations/migration_lock.toml
 ```
 
-Write `.env.example` and local `.env`:
+(Every migration after this one goes through the normal `prisma migrate dev --name <x>` flow — but that requires a live DB too, so from Task 3 onward every schema change is authored locally, diffed/reviewed by reading the generated SQL, and *applied* only by CI's `prisma migrate deploy` step against its live Postgres service container, per Global Constraints. Document this migration-authoring convention here since it applies to every later phase that touches `schema.prisma`.)
+
+Write `.env.example` (committed) and a local `.env` (gitignored, used only so `prisma generate`/`tsc` have a `DATABASE_URL` string to parse — nothing actually connects to it locally):
 ```
 DATABASE_URL="postgresql://beybladex:devpass@localhost:5432/beybladex_dev"
 REDIS_URL="redis://localhost:6379"
@@ -527,7 +539,7 @@ TOTP_ENCRYPTION_KEY="dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ=="
 ```
 (`WEBAUTHN_RP_ID` and `TOTP_ENCRYPTION_KEY` are consumed starting in Task 6; declared here so `.env.example` stays the single source of truth for every environment variable the app needs, updated as later tasks introduce more.)
 
-- [ ] **Step 4: Write the failing integration test**
+- [ ] **Step 4: Write the integration test (validated by CI, not locally)**
 
 ```ts
 // tests/integration/db-connection.test.ts
@@ -544,12 +556,9 @@ describe('database connection', () => {
 })
 ```
 
-- [ ] **Step 5: Run test to verify it fails**
+Per Global Constraints, this lives under `tests/integration/` specifically so `npm test` (unit-only) never tries to run it locally — do not run `npx vitest run tests/integration/db-connection.test.ts` on this machine, there is nothing for it to connect to.
 
-Run: `npx vitest run tests/integration/db-connection.test.ts`
-Expected: FAIL — `@/lib/db` does not exist / no migrations applied yet.
-
-- [ ] **Step 6: Implement db.ts and run migration**
+- [ ] **Step 5: Implement db.ts**
 
 ```ts
 // lib/db.ts
@@ -562,14 +571,11 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient()
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 ```
 
-Run: `npx prisma migrate dev --name init`
+- [ ] **Step 6: Verify locally what's verifiable without a DB, then push and confirm via CI**
 
-- [ ] **Step 7: Run test to verify it passes**
+Run `npx prisma generate` (generates the typed client from `schema.prisma` — needs no live connection) then `npx tsc --noEmit` — confirms `lib/db.ts` and the test file both typecheck against the generated Prisma types. Push to a branch and confirm via `gh run watch` (or checking the Actions tab) that CI's `prisma migrate deploy` applies the Step 3 migration cleanly against a fresh Postgres service container and that `tests/integration/db-connection.test.ts` passes there.
 
-Run: `npx vitest run tests/integration/db-connection.test.ts`
-Expected: PASS
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -1837,15 +1843,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # .next/types (Next.js 16 route typegen) is gitignored and only exists after a build/dev
+      # run — generate it explicitly so `tsc --noEmit` doesn't fail on a fresh checkout with a
+      # LayoutProps type error. Found and verified during implementation `[REVIEW-FIX: implementation]`.
+      - run: npx next typegen
       - run: npx prisma migrate deploy
       - run: npx tsc --noEmit
-      - run: npm test
+      - run: npm run test:all
 ```
+
+`test:all` (not plain `test`) is deliberate here — per Global Constraints' no-local-Docker rule, CI's Postgres/Redis service containers above are the *only* place `tests/integration/*` actually run; `npm test` (unit-only) alone would silently skip them.
 
 - [ ] **Step 2: Verify locally**
 
-Run: `npx tsc --noEmit && npm test` (against the local dev Postgres/Redis from Tasks 3–4)
-Expected: PASS — this is the same command CI runs, so a green local run predicts a green CI run.
+Run: `npx next typegen && npx tsc --noEmit && npm test` (unit tests only — there is no local Postgres/Redis to run `test:integration`/`test:all` against, per Global Constraints; that's CI's job)
+Expected: PASS for what runs locally. Full validation (including integration tests) only happens once this workflow file is committed and CI runs it — use `gh run watch` after pushing to observe the result rather than trying to reproduce CI's service containers locally.
 
 - [ ] **Step 3: Commit and confirm the workflow runs on the next push**
 
@@ -2199,7 +2211,7 @@ This makes every container start — first deploy and every Watchtower restart a
 **Acceptance criteria:**
 - `ci.yml` blocks merge on any failing test, typecheck, or lint, using live Postgres/Redis service containers (Phase 1 Task 11) plus Playwright against a built app (this phase's addition).
 - `deploy.yml` only runs on `main` and only after CI is green (use `needs:` or branch protection requiring the CI check).
-- A manual `docker build .` locally succeeds and produces a container that, on `docker run`, first applies migrations (`prisma migrate deploy` succeeds against a fresh empty database — verify with a throwaway Postgres container) and then serves `/` on port 3000 with `DATABASE_URL`/`REDIS_URL`/`NEXTAUTH_URL`/`NEXTAUTH_SECRET`/`WEBAUTHN_RP_ID`/`TOTP_ENCRYPTION_KEY` supplied via env.
+- `docker build .` and the migration-then-serve boot sequence are verified in CI, not on the development machine, per Global Constraints' no-local-Docker rule `[REVIEW-FIX: implementation]`: add a `ci.yml` (or a dedicated job in `deploy.yml` gated the same way) step that builds the image and runs it against the existing Postgres/Redis service containers, confirming `prisma migrate deploy` succeeds against a fresh empty database and the container then serves `/` on port 3000 with `DATABASE_URL`/`REDIS_URL`/`NEXTAUTH_URL`/`NEXTAUTH_SECRET`/`WEBAUTHN_RP_ID`/`TOTP_ENCRYPTION_KEY` supplied via env.
 - The image published to `ghcr.io/<owner>/beybladex:latest` is what the amended `compose.yml` pulls; a real deploy to `nicolas@kernic.net` is performed once as verification: confirm in server logs that Watchtower detected and pulled the new image, that the container restarted cleanly past its healthcheck, and that `docker compose exec app npx prisma migrate status` shows no pending migrations. Confirm `WATCHTOWER_CLEANUP` (in whichever compose stack runs the Watchtower daemon — outside this repo's compose.yml, per spec §4's scope) is enabled so old images don't accumulate on the server's disk `[REVIEW-FIX: backend-security #16 region "Watchtower verification"]`.
 - `.env.example` documents every required production secret (`DB_PASSWORD`, `NEXTAUTH_SECRET`, `WEBAUTHN_RP_ID`, `TOTP_ENCRYPTION_KEY`), and the real `.env` on the server is confirmed to exist and be readable only by the deploy user (not committed, not world-readable).
 
