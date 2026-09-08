@@ -1,0 +1,293 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  GUEST
+  USER
+  TRUSTED
+  JUDGE
+  ORGANIZER
+  ADMIN
+}
+
+enum DeckFormat {
+  WBO_COUNTERDECK
+  THREE_ON_THREE
+  PICK_THREE_CHOOSE_ONE
+  ONE_ON_ONE
+}
+
+enum Country {
+  DE
+  AT
+  CH
+}
+
+enum PrivacyLevel {
+  PUBLIC
+  FRIENDS_ONLY
+  PRIVATE
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+enum BeyType {
+  ATTACK
+  DEFENSE
+  STAMINA
+  BALANCE
+}
+
+model User {
+  id                   String         @id @default(uuid())
+  username             String         @unique
+  passwordHash         String?
+  email                String?
+  role                 Role           @default(USER)
+
+  displayName          String?
+  birthDate            DateTime?
+  country              Country        @default(DE)
+  state                String?
+  postalCode           String?
+  city                 String?
+  latitude             Float?
+  longitude            Float?
+  discordTag           String?
+  bio                  String?
+
+  profileVisibility    PrivacyLevel   @default(PUBLIC)
+  locationVisibility   PrivacyLevel   @default(FRIENDS_ONLY) // was PUBLIC — Art. 25 privacy-by-default
+  collectionVisibility PrivacyLevel   @default(PUBLIC)
+  decksVisibility      PrivacyLevel   @default(PUBLIC)
+
+  notifyRadiusKm       Int?           @default(50)
+  notifyRecurring      Boolean        @default(false) // was true — opt-in, not opt-out
+  notifyEmail          Boolean        @default(false)
+
+  totpSecret           String?
+  passkeys             Passkey[]
+
+  collection           CollectionItem[]
+  decks                Deck[]
+  tournaments          TournamentParticipant[]
+  judgedMatches        Match[]        @relation("JudgeMatches")
+  createdRules         Ruleset[]
+  notifications        Notification[]
+
+  sentFriendRequests     Friendship[] @relation("SentFriends")
+  receivedFriendRequests Friendship[] @relation("ReceivedFriends")
+
+  ownedClubs           Club[]         @relation("ClubOwner")
+  clubMemberships      ClubMember[]
+
+  // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
+  isMinor                 Boolean    @default(true) // computed at registration from birthDate; safe-by-default
+  parentalConsentEmail    String?
+  parentalConsentAt       DateTime?
+  privacyPolicyAcceptedAt DateTime?
+  privacyPolicyVersion    String?
+
+  createdAt            DateTime       @default(now())
+}
+
+model Passkey {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String   @unique
+  publicKey    String
+  counter      Int
+}
+
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String
+  requester   User             @relation("SentFriends", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User             @relation("ReceivedFriends", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+
+  @@unique([requesterId, addresseeId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Club {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  slug        String       @unique
+  description String?
+  ownerId     String
+  owner       User         @relation("ClubOwner", fields: [ownerId], references: [id])
+  members     ClubMember[]
+  tournaments Tournament[]
+  createdAt   DateTime     @default(now())
+}
+
+model ClubMember {
+  id        String   @id @default(uuid())
+  clubId    String
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAdmin   Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+
+  @@unique([clubId, userId])
+}
+
+model Ruleset {
+  id                  String       @id @default(uuid())
+  title               String
+  slug                String       @unique
+  description         String?
+  isPublic            Boolean      @default(true)
+  createdById         String
+  createdBy           User         @relation(fields: [createdById], references: [id])
+
+  deckFormat          DeckFormat   @default(WBO_COUNTERDECK)
+  targetPoints        Int          @default(4)
+  finalsTargetPoints  Int          @default(7)
+  lockedDecks         Boolean      @default(true)
+  allowForceSwitch    Boolean      @default(true)
+  arenaTurnAllowed    Boolean      @default(true)
+  outOfBounds2Pts     Boolean      @default(true)
+  ownFinishPenalty    Boolean      @default(true)
+  relaunchLimit       Int          @default(1)
+  aerialContactRerun  Boolean      @default(true)
+
+  tournaments         Tournament[]
+}
+
+model Tournament {
+  id              String                  @id @default(uuid())
+  title           String
+  description     String
+  startDate       DateTime
+  endDate         DateTime?
+
+  locationName    String
+  street          String?
+  postalCode      String
+  city            String
+  state           String
+  country         Country                 @default(DE)
+  latitude        Float
+  longitude       Float
+
+  entryFeeCent    Int                     @default(0)
+  currency        String                  @default("EUR")
+  isRecurring     Boolean                 @default(false)
+  recurringDays   Int?
+
+  rulesetId       String
+  ruleset         Ruleset                 @relation(fields: [rulesetId], references: [id])
+
+  clubId          String?
+  club            Club?                   @relation(fields: [clubId], references: [id])
+
+  participants    TournamentParticipant[]
+  matches         Match[]
+}
+
+model TournamentParticipant {
+  id           String     @id @default(uuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  deckId       String?
+  deck         Deck?      @relation(fields: [deckId], references: [id])
+  checkedIn    Boolean    @default(false)
+}
+
+model Build {
+  id          String  @id @default(uuid())
+  bladeId     String
+  ratchetId   String
+  bitId       String
+  type        BeyType @default(ATTACK)
+
+  ratings     Rating[]
+  deckBuilds  DeckBuild[]
+  matchesP1   Match[]  @relation("Player1Build")
+  matchesP2   Match[]  @relation("Player2Build")
+}
+
+model Deck {
+  id          String                  @id @default(uuid())
+  title       String
+  userId      String
+  user        User                    @relation(fields: [userId], references: [id])
+  builds      DeckBuild[]
+  tournaments TournamentParticipant[]
+}
+
+model DeckBuild {
+  deckId   String
+  deck     Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  buildId  String
+  build    Build  @relation(fields: [buildId], references: [id])
+  position Int
+
+  @@id([deckId, buildId, position])
+}
+
+model Match {
+  id             String     @id @default(uuid())
+  tournamentId   String
+  tournament     Tournament @relation(fields: [tournamentId], references: [id])
+  judgeId        String?
+  judge          User?      @relation("JudgeMatches", fields: [judgeId], references: [id])
+
+  player1Id      String
+  player2Id      String
+  player1BuildId String?
+  player1Build   Build?     @relation("Player1Build", fields: [player1BuildId], references: [id])
+  player2BuildId String?
+  player2Build   Build?     @relation("Player2Build", fields: [player2BuildId], references: [id])
+
+  scorePlayer1   Int        @default(0)
+  scorePlayer2   Int        @default(0)
+  winnerId       String?
+}
+
+model CollectionItem {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partOrBeyId   String
+  purchasePrice Float?
+  currency      String    @default("EUR")
+  merchant      String?
+  boughtAt      DateTime?
+}
+
+model Rating {
+  id      String  @id @default(uuid())
+  buildId String
+  build   Build   @relation(fields: [buildId], references: [id])
+  stars   Int
+  comment String?
+}
