@@ -5,6 +5,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, '.') } },
   test: {
+    // next-auth@5.0.0-beta.32 imports the extensionless 'next/server' (next 16 ships no
+    // package.json exports map, so Node's strict ESM loader cannot resolve it). Externalized
+    // deps are loaded with that native loader, so next-auth must be inlined for Vite's resolver.
+    server: { deps: { inline: ['next-auth'] } },
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
