@@ -1,0 +1,56 @@
+// lib/accountErasure.ts (excerpt — the erasure/anonymization matrix, Art. 17 compliant)
+import { prisma } from '@/lib/db'
+
+export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // Cascade-delete: purely personal, no other user's legitimate interest in keeping it.
+    await tx.passkey.deleteMany({ where: { userId } })
+    await tx.notification.deleteMany({ where: { userId } })
+    await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } })
+    await tx.clubMember.deleteMany({ where: { userId } })
+    await tx.collectionItem.deleteMany({ where: { userId } })
+    // NOTE: no Rating cleanup here — Rating.userId does not exist yet at Phase 1 (spec §3's Rating
+    // is anonymous). Phase 5 Part A adds Rating.userId and, per the Cross-Phase Regression Guard's
+    // standing rule, MUST add `await tx.rating.deleteMany({ where: { userId } })` to this function
+    // as part of that phase's own delivery — do not add it here, it would not compile yet.
+    // Decks/builds a user made: delete the deck join rows and the deck itself (builds are shared
+    // catalog-adjacent rows referenced by other decks/matches too — never delete Build itself here).
+    const decks = await tx.deck.findMany({ where: { userId }, select: { id: true } })
+    await tx.deckBuild.deleteMany({ where: { deckId: { in: decks.map((d) => d.id) } } })
+    await tx.deck.deleteMany({ where: { userId } })
+
+    // Anonymize-and-sever: OTHER data subjects (opponents, club members, tournament history) have
+    // a legitimate interest in this data surviving — Art. 17(3) — so it stays, stripped of the
+    // personal link. `username` is released (it's @unique) so it can be re-registered by someone else.
+    const anonymizedUsername = `geloescht_${userId.slice(0, 8)}`
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        username: anonymizedUsername, displayName: 'Gelöschter Nutzer', email: null, passwordHash: null,
+        bio: null, discordTag: null, city: null, postalCode: null, latitude: null, longitude: null,
+        birthDate: null, totpSecret: null, parentalConsentEmail: null,
+      },
+    })
+    // Club ownership can't dangle (onDelete: Restrict in spec §3) — reassign to another admin
+    // member, or dissolve the club if the departing owner was its only member.
+    const ownedClubs = await tx.club.findMany({ where: { ownerId: userId }, include: { members: { where: { isAdmin: true, userId: { not: userId } } } } })
+    for (const club of ownedClubs) {
+      if (club.members[0]) await tx.club.update({ where: { id: club.id }, data: { ownerId: club.members[0].userId } })
+      else await tx.club.delete({ where: { id: club.id } }) // no other admin — dissolve
+    }
+    // Rulesets a user authored stay (other organizers/tournaments reference them) — reassign to a
+    // reserved system user rather than leaving a dangling createdById.
+    const systemUser = await tx.user.upsert({ where: { username: 'geloeschte-nutzer' }, create: { username: 'geloeschte-nutzer', role: 'USER' }, update: {} })
+    await tx.ruleset.updateMany({ where: { createdById: userId }, data: { createdById: systemUser.id } })
+    // Match/TournamentParticipant/judged-Match references: personal link severed by the User row's
+    // own anonymization above (player1Id/player2Id/judgeId still point at the now-anonymized row —
+    // spec §3 has no cascade there and none is needed; the row itself carries no PII anymore).
+  })
+  // Session/token invalidation: KNOWN GAP — the plan calls for bumping a `tokenVersion` field so
+  // existing 30-day JWTs stop authenticating immediately after erasure. That field is additive to
+  // User and paired with the backend review's open token-revocation item, which has NOT been
+  // implemented yet in this codebase. Until it lands, a session cookie issued before erasure can
+  // technically still authenticate against the anonymized row (which no longer carries PII or
+  // credentials, so no data is exposed, but the session is not revoked). Add the bump here when
+  // tokenVersion exists — do not invent the field from this task.
+}
