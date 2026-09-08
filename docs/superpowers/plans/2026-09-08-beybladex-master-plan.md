@@ -1,0 +1,2221 @@
+# BeybladeX.de Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Coding tasks in this project are executed via the Kimi Code CLI (`kimi -p`, model `kimi-code/kimi-for-coding`, "K2.7 Coding" reasoning) dispatched through the `kimi-code-agent:kimi-code` subagent, not by writing code directly.**
+
+**Goal:** Build BeybladeX.de, the DACH-region community/collection/social/tournament platform for Beyblade X, as a Next.js PWA with offline-capable tournament judging, a rules editor, a DACH event calendar with RSS, social/club features, a collection manager, and a Docker/Traefik/GHCR deployment pipeline — exactly as specified in the master spec.
+
+**Architecture:** Single Next.js 15 (App Router, Server Actions) monolith backed by PostgreSQL/Prisma and Redis (Pub/Sub, SSE, leaderboard caching), styled with Tailwind CSS (local, dark-mode-via-class), installable as a PWA with an offline-first Service Worker scoped to the Judge interface. All third-party assets (fonts, icons, Leaflet, JS libs) are vendored — zero external CDN calls at runtime, in line with the spec's privacy-first mandate. Deployed as a single Docker image behind Traefik, auto-updated by Watchtower, built by GitHub Actions into GHCR.
+
+**Tech Stack:** Next.js 15 (App Router) · TypeScript · Tailwind CSS · Prisma ORM · PostgreSQL 16 · Redis 7 · NextAuth (credentials + WebAuthn/Passkeys + TOTP) · Leaflet.js (vendored) · Vitest + Testing Library + Playwright · Docker · Traefik · Watchtower · GitHub Actions → GHCR.
+
+**Spec:** `~/Downloads/BeybladeX.de - Master Projekt Spezifikation.md` (the plan below implements every section of it; executors should read both).
+
+## Review Findings Incorporated
+
+This plan was reviewed by several independent Kimi K2.7 (reasoning) passes before implementation started:
+- `docs/superpowers/plans/review-backend-security.md` — backend/data/security
+- `docs/superpowers/plans/review-frontend-pwa.md` — frontend/PWA/offline judge UX
+- `docs/superpowers/plans/review-privacy-dsgvo.md` — GDPR/DSGVO compliance and best-possible protection of (likely underage) user data
+- `docs/superpowers/plans/review-ux-product.md` — product/IA/UX completeness
+- `docs/superpowers/plans/review-performance.md` — real-world performance vs. framework shortcuts
+
+All **Critical** findings across all five reviews are resolved directly in the tasks below (search this document for `[REVIEW-FIX]` markers — 100+ of them). **Important** findings are carried forward as mandatory items in the relevant phase's "Acceptance criteria" section, also marked `[REVIEW-FIX]`. Read all five review files before starting any phase; they contain full reasoning and line-level references the summaries here compress.
+
+**On the DSGVO review**: it identified that this plan, before this pass, would have been legally unlaunchable for its realistic audience — Beyblade X's real-world users skew roughly 8–14 years old, and the plan had no age gate, no legal pages (Impressum/Datenschutzerklärung/AGB), no account-deletion/data-export capability, and privacy-hostile default visibility settings. These are now first-class parts of Phase 1 — see Global Constraints, Task 3 (schema defaults), Task 5 (age gate), Task 7 (minor ceilings), and the new Task 12.
+
+**On the UX/product review**: it found the plan was strong on infrastructure and weak on product — routes and APIs existed with no UI reaching them, the platform's primary journey (join a tournament) couldn't be completed, spec §2.E's Auto-Meta Engine was named and never built, and there was no fixed navigation model or shared component layer across six independently-sub-planned phases. Closed via the new Task 12/13, Phase 3's tournament join/creation flow, Phase 4's search/admin surfaces, and Phase 5's new Part D (Auto-Meta) — plus standing Cross-Phase Regression Guard rules so later phases can't silently regress behind them.
+
+**On the performance review**: no Critical findings — the Next.js/Prisma/PostgreSQL/Redis architecture is appropriately sized for this workload, and the plan's prior review-driven fixes (Redis topology, tile single-flight, idempotent offline sync) were independently confirmed to be the performance-correct choices, not just the correctness-correct ones. Its Important findings (pagination, atomic rate limiting, image strategy, cache directives, bundle-scope discipline) are folded into Task 5, Task 13, Phase 5 Part A, and the Cross-Phase Regression Guard.
+
+## Global Constraints
+
+- **Zero external CDN calls at runtime.** All fonts (Geist Sans / Inter Display), icons (Lucide), and JS libraries (Leaflet) are vendored under `/public` or `node_modules` and self-hosted — never loaded from `fonts.googleapis.com`, `unpkg`, etc.
+- **No cookies for anonymous/guest visitors.** Session cookies (`HttpOnly`, `SameSite=Strict`, `Secure`) are set only after a successful login.
+- **Email is optional at registration.** Primary identity is `username` + `passwordHash`.
+- **Auth supports Passkeys (WebAuthn/FIDO2) and TOTP 2FA**, in addition to password.
+- **OSM tiles are proxied/cached server-side** at `/api/map/tile/[z]/[x]/[y]` — the browser never calls `tile.openstreetmap.org` directly.
+- **Per-field profile privacy**: `PUBLIC | FRIENDS_ONLY | PRIVATE`, enforced at the query layer, not just the UI.
+- **Mobile-first responsive design** — every judge-facing and player-facing screen must be fully usable on a phone.
+- **Light / Dark / System theme**, CSS-variable driven, no layout shift on toggle.
+- **Colors** (Tailwind CSS variables, exact values): X-Cyan `#00F0FF`, Neon Green `#00FF66`, Base Light `#F8FAFC`/`#FFFFFF`, Base Dark `#090D16`/`#111827`; type badges Attack `#EF4444`, Defense `#3B82F6`, Stamina `#EAB308`, Balance `#10B981`.
+- **Judge interface is offline-first**: match scoring must work with no network and sync automatically on reconnect.
+- **Deck rule validation**: no duplicate parts within a single 3-build Deck; enforced server-side, not just client-side.
+- **Deployment target**: `nicolas@kernic.net`, working dir `/opt/docker/beybladex/baybladex`, image `ghcr.io/<github-user>/beybladex:latest`, domain `beybladex.de` / `www.beybladex.de`, Traefik router `beybladex`, Watchtower label enabled — the `compose.yml` in spec §4 is authoritative for topology and labels, **with one amendment required by review** `[REVIEW-FIX: backend-security #2]`: the spec's literal `environment:` values (e.g. `SECRET_DB_PASSWORD`, `SECRET_NEXTAUTH_TOKEN_CHANGE_ME`) cannot actually receive secrets — plain `KEY=literal-string` lines are not `.env`-substitutable. Phase 6 changes every `environment:` entry to `${VAR}` form (e.g. `NEXTAUTH_SECRET=${NEXTAUTH_SECRET}`) backed by a server-side `.env` file (never committed), and adds `WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID}`. This is the only permitted deviation from spec §4's literal text — service names, ports, networks, labels, and images stay exactly as specified.
+- **Every deploy runs pending Prisma migrations before the app serves traffic** `[REVIEW-FIX: backend-security #1]` — see Phase 6 Task "Migration-Safe Docker Entrypoint".
+- **Every state-changing route documents its authorization rule and has at least one negative (403/404) test proving it** `[REVIEW-FIX: backend-security #17]` — this is a standing acceptance item for every phase from Phase 2 onward, the same way the zero-CDN guard test is standing.
+- **Auth endpoints (`/api/register`, `/api/auth/*`, `/api/webauthn/*`, `/api/totp/*`) are rate-limited via Redis** `[REVIEW-FIX: backend-security #4]` — see Phase 1 Task 5.
+- **`lib/redis.ts` exposes two connections** — a command connection (`redis`) and a dedicated subscriber connection (`redisSubscriber`) — because an ioredis connection in subscriber mode cannot issue ordinary commands `[REVIEW-FIX: backend-security #10]`. Every later use of Redis pub/sub (Phase 3 notifications) must use `redisSubscriber`, never `redis`.
+- **Registration collects and checks date of birth; accounts below the German Art. 8 threshold (16) go through a parental-consent gate, not straight-through registration** `[REVIEW-FIX: privacy-dsgvo #1]` — see Phase 1 Task 5. This is not optional polish: Beyblade X's realistic audience is ~8–14 years old, and processing a child's data on the child's own invalid consent is a GDPR Art. 8 violation from the first registered account. Every later phase that touches profile visibility, notifications, or public-facing data must respect the resulting minor ceilings in `resolveVisibleFields` (Task 7) — never introduce a second code path that bypasses them.
+- **Legal pages (`/impressum`, `/datenschutz`, `/agb`) and a required registration consent checkbox exist before any other public-facing feature ships** `[REVIEW-FIX: privacy-dsgvo #2]` — see Phase 1 Task 5 and Task 10. `/impressum` is a standalone German statutory requirement (DDG §5), independent of GDPR.
+- **A user can delete their own account (with erasure/anonymization, not just a Restrict-blocked delete), export their own data, and edit their own profile fields** `[REVIEW-FIX: privacy-dsgvo #3]` — see the new Phase 1 Task 12. Every later phase that adds a `User`-owned model (Deck, CollectionItem, Rating, ClubMember, …) must add that model to Task 12's erasure/export matrix as part of shipping the feature — this is a standing requirement, not a one-time Phase 1 task, the same way the zero-CDN guard is standing.
+- **Privacy-sensitive schema defaults are conservative, not permissive** `[REVIEW-FIX: privacy-dsgvo #7]`: `User.locationVisibility` defaults to `FRIENDS_ONLY` (not `PUBLIC` as spec §3's literal text has it) and `User.notifyRecurring` defaults to `false` (not `true`) — both changed in the Phase 1 Task 3 migration, before any real user exists, per GDPR Art. 25 "privacy by default." This is the one deliberate deviation from spec §3's literal default values; every other field's default is unchanged.
+- **Prisma schema in spec §3 is authoritative.** Any deviation (added fields, indices, cascade rules) must be additive and documented in the task that introduces it — never silently diverge from the modeled relations (`Build` = 1 Blade + 1 Ratchet + 1 Bit; `Deck` = exactly 3 `DeckBuild`s; `Ruleset` drives `Tournament` scoring config).
+
+---
+
+## How This Plan Is Organized
+
+The spec's §5 defines 6 phases. Each is an independently shippable subsystem, so — per the writing-plans scope rule — **this document is the master plan**: it fixes the repo-wide file structure once (so no phase invents a conflicting layout), then gives full bite-sized TDD tasks for **Phase 1** (the foundation every later phase builds on). **Phases 2–6 are specified at file/interface/acceptance-criteria granularity** (exact files, exact Prisma models touched, exact routes, exact acceptance tests) — enough for an executor to write the phase's own bite-sized TDD sub-plan (same header format, saved as `docs/superpowers/plans/YYYY-MM-DD-beybladex-phase-N-<name>.md`) immediately before that phase starts, once Phase 1's actual file layout exists to build on. Do not skip writing that sub-plan — it is a required step of starting each phase, not an optional elaboration.
+
+## Repo-Wide File Structure (fixed for all phases)
+
+```
+beybladex/
+  app/
+    layout.tsx                     # root layout: ThemeProvider, fonts, <html lang="de">, pre-paint theme script
+    globals.css                    # Tailwind + CSS variables (light/dark tokens)
+    page.tsx                       # landing page — guest hero+events teaser / member dashboard (Task 13)
+    manifest.ts                    # PWA manifest (Next.js manifest route)
+    (auth)/
+      login/page.tsx
+      register/page.tsx
+    settings/                      # Task 12 — owner-only account surfaces
+      layout.tsx
+      profile/page.tsx             # rectification (Art. 16)
+      privacy/page.tsx             # calls PATCH /api/profile/privacy (Task 7)
+      security/page.tsx            # passkey + TOTP management (Task 6)
+      notifications/page.tsx       # radius/recurring/email prefs, postal-code ask
+      account/page.tsx             # export (Art. 20) + deletion (Art. 17)
+    notifications/page.tsx         # notification inbox (Task 13 shell, Phase 3 fills content)
+    search/page.tsx                # Task 13 shell; sections wired in by Phase 3/4/5
+    impressum/page.tsx             # Task 12 — DDG §5 statutory requirement
+    datenschutz/page.tsx           # Task 12 — Datenschutzerklärung
+    agb/page.tsx                   # Task 12 — Nutzungsbedingungen
+    profile/[username]/page.tsx
+    collection/page.tsx
+    decks/page.tsx
+    decks/[id]/page.tsx
+    rules/page.tsx                 # ruleset list/editor entry
+    rules/[slug]/page.tsx          # public ruleset view + PDF export link
+    events/page.tsx                # calendar + Leaflet map + radius search
+    events/[id]/page.tsx           # public event detail + join CTA (canonical per Task 13 IA decision)
+    events/new/page.tsx            # tournament-creation form (Phase 3)
+    builds/page.tsx, builds/[id]/page.tsx # build browse + rating/comment (Phase 5)
+    meta/page.tsx                  # Auto-Meta win-rate leaderboard (Phase 5)
+    clubs/page.tsx, clubs/[slug]/page.tsx
+    tournaments/[id]/page.tsx      # bracket + organizer console (competitive/operational surface)
+    tournaments/[id]/judge/page.tsx # offline PWA judge UI
+    feed/rss.xml/route.ts
+    feed/[country]/rss.xml/route.ts
+    feed/[country]/[state]/rss.xml/route.ts
+    api/
+      map/tile/[z]/[x]/[y]/route.ts
+      auth/[...nextauth]/route.ts
+      webauthn/register/route.ts
+      webauthn/authenticate/route.ts
+      parental-consent/[token]/route.ts # Task 5 — confirms a minor's account
+      profile/route.ts             # PATCH rectification (Task 12)
+      profile/privacy/route.ts     # PATCH visibility settings (Task 7)
+      account/route.ts             # DELETE erasure (Task 12)
+      account/export/route.ts      # GET data export (Task 12)
+      notifications/route.ts
+      notifications/stream/route.ts # SSE, per-user Redis channel
+      tournaments/route.ts
+      tournaments/[id]/route.ts    # PATCH/DELETE, owner/admin only
+      tournaments/[id]/join/route.ts        # Phase 3 — player registration
+      tournaments/[id]/checkin/route.ts     # Phase 3/5 — day-of check-in
+      builds/[id]/ratings/route.ts # Phase 5 — rating/comment CRUD
+      matches/[id]/score/route.ts  # judge scoring, offline-sync target, idempotent
+  components/
+    ui/                             # Task 13 — Button, Input, Select, Textarea, Card, Badge, Modal,
+                                     # Toast, Tabs, EmptyState, FormField, SearchInput
+    theme/ThemeToggle.tsx
+    layout/Header.tsx, Footer.tsx, MobileNav.tsx
+    beyblade/TypeBadge.tsx, BuildCard.tsx, DeckCard.tsx
+    map/LeafletMap.tsx
+    judge/JudgeScorePad.tsx, JudgeBracketView.tsx
+  lib/
+    db.ts                          # Prisma client singleton
+    redis.ts                       # `redis` (commands) + `redisSubscriber` (pub/sub) — see Global Constraints
+    rateLimit.ts                   # Redis-backed atomic rate limiter (Task 5)
+    errorCopy.ts                   # API error-code → German user-facing copy (Task 13)
+    accountErasure.ts              # erasure/anonymization + export matrix (Task 12)
+    auth.ts                        # NextAuth config, session helpers, TOTP-gated authorize()
+    webauthn.ts                    # passkey register/verify helpers
+    totp.ts                        # TOTP secret gen/verify
+    totpEncryption.ts              # AES-256-GCM encrypt/decrypt for User.totpSecret at rest
+    privacy.ts                     # per-field visibility resolution helpers (resolveVisibleFields)
+    currency.ts                    # EUR/CHF/USD conversion, fetch-on-miss + stale fallback
+    geo.ts                         # postal-code/country → lat/lng, radius filtering
+    rss.ts                         # feed XML builders
+    notify.ts                      # notifyUsersInRadius: Notification rows + per-user Redis publish
+    offline/                       # judge-UI IndexedDB queue + sync (Phase 5 Part C)
+  prisma/
+    schema.prisma
+    migrations/
+    seed.ts
+  public/
+    fonts/                         # vendored Geist Sans / Inter Display
+    icons/                         # vendored Lucide SVGs, PWA icons (192/512/maskable)
+    offline.html                   # static offline fallback document (Phase 1 Task 8)
+    sw.js                          # service worker shell (Phase 1 Task 8) + judge sync extension (Phase 5 Part C)
+    # NOTE: Leaflet is consumed via the npm package (bundled by Next.js), not vendored under
+    # public/ — see Phase 3's LeafletMap.tsx for the marker-icon wiring this choice requires.
+  tests/
+    unit/
+    integration/
+    e2e/                           # Playwright
+  .github/workflows/deploy.yml
+  compose.yml
+  Dockerfile
+  next.config.ts
+  tailwind.config.ts
+  package.json
+  tsconfig.json
+```
+
+---
+
+# Phase 1: Fundament, Design System, PWA, Auth
+
+**Scope:** Next.js+Tailwind+Prisma scaffold, theme system, PWA shell, vendored fonts/Leaflet, OSM tile proxy, auth (password + optional email, Passkeys, TOTP, cookieless guests), profile privacy fields.
+
+### Task 1: Project Scaffold & Tooling
+
+**Files:**
+- Create: `package.json`, `tsconfig.json`, `next.config.ts`, `tailwind.config.ts`, `postcss.config.js`, `.eslintrc.json`, `.gitignore`
+- Create: `app/layout.tsx`, `app/globals.css`, `app/page.tsx`
+- Create: `tests/unit/smoke.test.ts`
+- Create: `vitest.config.ts`
+
+**Interfaces:**
+- Produces: root `<html>`/`<body>` shell every later page renders inside; Tailwind config exposing the color tokens from Global Constraints as `theme.extend.colors` (`x-cyan`, `neon-green`, `base-light`, `base-dark`, `type-attack`, `type-defense`, `type-stamina`, `type-balance`).
+
+- [ ] **Step 1: Scaffold the Next.js app**
+
+```bash
+npx create-next-app@latest . --typescript --tailwind --app --eslint --src-dir=false --import-alias "@/*" --use-npm --no-turbopack
+```
+Answer prompts: no `src/` dir, App Router yes, Tailwind yes.
+
+- [ ] **Step 2: Add test tooling**
+
+```bash
+npm install -D vitest @vitejs/plugin-react @testing-library/react @testing-library/jest-dom jsdom
+```
+
+Write `vitest.config.ts`:
+```ts
+import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
+export default defineConfig({
+  plugins: [react()],
+  test: { environment: 'jsdom', globals: true, setupFiles: ['./tests/setup.ts'] },
+})
+```
+
+Write `tests/setup.ts`:
+```ts
+import '@testing-library/jest-dom/vitest'
+```
+
+- [ ] **Step 3: Write the failing smoke test**
+
+```ts
+// tests/unit/smoke.test.ts
+import { describe, it, expect } from 'vitest'
+
+describe('project scaffold', () => {
+  it('sums correctly (sanity check the runner works)', () => {
+    expect(1 + 1).toBe(2)
+  })
+})
+```
+
+- [ ] **Step 4: Run test to verify it fails**
+
+Run: `npx vitest run tests/unit/smoke.test.ts`
+Expected: FAIL (vitest/config not yet wired into `package.json` scripts) — add `"test": "vitest run"` to `package.json` scripts, then re-run; it should now PASS trivially since no app code is exercised yet.
+
+- [ ] **Step 5: Set Tailwind color tokens**
+
+Edit `tailwind.config.ts`:
+```ts
+import type { Config } from 'tailwindcss'
+
+export default {
+  darkMode: 'class',
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  theme: {
+    extend: {
+      colors: {
+        'x-cyan': '#00F0FF',
+        'neon-green': '#00FF66',
+        'base-light': '#F8FAFC',
+        'base-light-alt': '#FFFFFF',
+        'base-dark': '#090D16',
+        'base-dark-alt': '#111827',
+        'type-attack': '#EF4444',
+        'type-defense': '#3B82F6',
+        'type-stamina': '#EAB308',
+        'type-balance': '#10B981',
+      },
+    },
+  },
+  plugins: [],
+} satisfies Config
+```
+
+- [ ] **Step 6: Run full test suite and typecheck**
+
+Run: `npm test && npx tsc --noEmit`
+Expected: PASS, no type errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git init
+git add -A
+git commit -m "chore: scaffold Next.js app with Tailwind color tokens and Vitest"
+```
+
+---
+
+### Task 2: Theme System (Light / Dark / System, flash-free)
+
+**Files:**
+- Create: `components/theme/ThemeProvider.tsx`, `components/theme/ThemeToggle.tsx`
+- Modify: `app/layout.tsx`, `app/globals.css`
+- Test: `tests/unit/theme-toggle.test.tsx`
+
+**Interfaces:**
+- Consumes: nothing (root of the theme system).
+- Produces: `useTheme(): { theme: 'light'|'dark'|'system', setTheme(t): void, resolvedTheme: 'light'|'dark' }` hook, re-exported from `components/theme/ThemeProvider.tsx`, consumed by every later component that needs theme-aware styling.
+
+`[REVIEW-FIX: frontend-pwa C4, C5]` Two corrections from review baked into this task from the start: (1) the theme class **must** be set by a blocking inline `<head>` script before first paint — a `useEffect`-only implementation causes a flash of wrong theme (FOUC) on every load for dark-mode users, which directly violates the Global Constraint of "no layout shift/flash on toggle"; (2) the toggle cycle order is `system → dark → light → system` — verify the test below matches this order exactly (an earlier draft of this plan had a test/implementation mismatch here; this version is corrected).
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// tests/unit/theme-toggle.test.tsx
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { ThemeProvider } from '@/components/theme/ThemeProvider'
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
+
+beforeEach(() => localStorage.clear())
+
+describe('ThemeToggle', () => {
+  it('cycles system -> dark -> light -> system and persists to localStorage', () => {
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>
+    )
+    const btn = screen.getByRole('button', { name: /theme/i })
+    fireEvent.click(btn)
+    expect(localStorage.getItem('beybladex-theme')).toBe('dark')
+    fireEvent.click(btn)
+    expect(localStorage.getItem('beybladex-theme')).toBe('light')
+    fireEvent.click(btn)
+    expect(localStorage.getItem('beybladex-theme')).toBe('system')
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/unit/theme-toggle.test.tsx`
+Expected: FAIL — `@/components/theme/ThemeProvider` does not exist.
+
+- [ ] **Step 3: Implement ThemeProvider**
+
+```tsx
+// components/theme/ThemeProvider.tsx
+'use client'
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+
+type Theme = 'light' | 'dark' | 'system'
+type Ctx = { theme: Theme; resolvedTheme: 'light' | 'dark'; setTheme: (t: Theme) => void }
+const STORAGE_KEY = 'beybladex-theme'
+const ThemeContext = createContext<Ctx | null>(null)
+
+function systemPrefersDark() {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>('system')
+
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null
+    if (stored) setThemeState(stored)
+  }, [])
+
+  const resolvedTheme: 'light' | 'dark' = theme === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : theme
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark')
+  }, [resolvedTheme])
+
+  function setTheme(t: Theme) {
+    setThemeState(t)
+    localStorage.setItem(STORAGE_KEY, t)
+  }
+
+  return <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>{children}</ThemeContext.Provider>
+}
+
+export function useTheme() {
+  const ctx = useContext(ThemeContext)
+  if (!ctx) throw new Error('useTheme must be used within ThemeProvider')
+  return ctx
+}
+```
+
+```tsx
+// components/theme/ThemeToggle.tsx
+'use client'
+import { useTheme } from './ThemeProvider'
+
+const ORDER = ['system', 'dark', 'light'] as const
+
+export function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  function cycle() {
+    const next = ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length]
+    setTheme(next)
+  }
+  return (
+    <button aria-label="Toggle theme" onClick={cycle} className="rounded px-3 py-2 text-sm">
+      {theme}
+    </button>
+  )
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/unit/theme-toggle.test.tsx`
+Expected: PASS
+
+- [ ] **Step 5: Add the blocking pre-paint script (`[REVIEW-FIX: frontend-pwa C4]`)**
+
+This is the actual fix for the flash-of-wrong-theme bug: the `dark` class must exist on `<html>` **before** the browser paints, which a `useEffect` can never achieve (it runs after the first paint). Add a small inline script as the very first child of `<head>`, before any stylesheet:
+
+```tsx
+// app/layout.tsx (excerpt — the script tag, placed first in <head>)
+const THEME_INIT_SCRIPT = `
+(function() {
+  try {
+    var stored = localStorage.getItem('beybladex-theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var dark = stored === 'dark' || (stored !== 'light' && prefersDark);
+    if (dark) document.documentElement.classList.add('dark');
+  } catch (e) {}
+})();
+`
+```
+
+```tsx
+// inside app/layout.tsx's <head>:
+<head>
+  <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+</head>
+```
+
+`ThemeProvider`'s own `useEffect`-driven class toggle (Step 3) still runs afterward and stays authoritative for runtime toggles (`setTheme`) and for reacting to a stored-value change — but the *initial* class is now set synchronously pre-paint, so there is no flash. Keep `suppressHydrationWarning` on `<html>` (the server-rendered markup legitimately differs from the client's post-script DOM).
+
+- [ ] **Step 6: Add CSS variables and wire the provider into the root layout**
+
+Edit `app/globals.css` — add under `@layer base`:
+```css
+:root {
+  --bg: theme(colors.base-light);
+  --fg: theme(colors.base-dark);
+}
+.dark {
+  --bg: theme(colors.base-dark);
+  --fg: theme(colors.base-light);
+}
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+```
+
+Edit `app/layout.tsx` to wrap children in `<ThemeProvider>` (in addition to the Step 5 inline script already added to `<head>`).
+
+- [ ] **Step 7: Add a Playwright flash-free assertion**
+
+```ts
+// tests/e2e/theme-no-flash.spec.ts
+import { test, expect } from '@playwright/test'
+
+test('dark theme is applied before first paint, no flash', async ({ page, context }) => {
+  await context.addInitScript(() => localStorage.setItem('beybladex-theme', 'dark'))
+  await page.goto('/')
+  // Assert the class is present at the earliest observable point, not after a settle delay.
+  await expect(page.locator('html')).toHaveClass(/dark/)
+})
+```
+
+Run: `npx playwright test tests/e2e/theme-no-flash.spec.ts` (requires Task 1's dev server running — wire this into the Phase 1 DoD, see below).
+Expected: PASS
+
+- [ ] **Step 8: Run full suite**
+
+Run: `npm test`
+Expected: PASS
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add flash-free light/dark/system theme provider and toggle"
+```
+
+---
+
+### Task 3: Prisma Schema & Local Postgres
+
+**Files:**
+- Create: `prisma/schema.prisma` (verbatim from spec §3)
+- Create: `lib/db.ts`
+- Create: `.env.example`
+- Test: `tests/integration/db-connection.test.ts`
+
+**Interfaces:**
+- Produces: `import { prisma } from '@/lib/db'` — the singleton every later data-access task uses; Prisma-generated types (`User`, `Build`, `Deck`, `Tournament`, `Match`, `Ruleset`, `Club`, …) matching spec §3 exactly.
+
+- [ ] **Step 1: Install Prisma**
+
+```bash
+npm install prisma @prisma/client
+npx prisma init --datasource-provider postgresql
+```
+
+- [ ] **Step 2: Write schema.prisma, with the DSGVO-required deviations from spec §3's literal defaults**
+
+Copy the full schema from spec §3 verbatim (all enums and models: `Role`, `DeckFormat`, `Country`, `PrivacyLevel`, `FriendshipStatus`, `BeyType`, `User`, `Passkey`, `Friendship`, `Notification`, `Club`, `ClubMember`, `Ruleset`, `Tournament`, `TournamentParticipant`, `Build`, `Deck`, `DeckBuild`, `Match`, `CollectionItem`, `Rating`) into `prisma/schema.prisma`. Then apply these changes to `User` before the first migration — deliberate, documented deviations per the Global Constraints amendment, not spec drift `[REVIEW-FIX: privacy-dsgvo #1, #2, #7]`:
+
+```prisma
+model User {
+  // ...spec §3 fields unchanged, except:
+  locationVisibility  PrivacyLevel @default(FRIENDS_ONLY) // was PUBLIC — Art. 25 privacy-by-default
+  notifyRecurring     Boolean      @default(false)         // was true — opt-in, not opt-out
+
+  // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
+  isMinor                Boolean   @default(true)  // computed at registration from birthDate; safe-by-default
+  parentalConsentEmail   String?
+  parentalConsentAt      DateTime?
+  privacyPolicyAcceptedAt DateTime?
+  privacyPolicyVersion   String?
+}
+```
+
+`isMinor` defaults to `true` (fail-safe: a row somehow created without going through the registration age-check — e.g. a future admin/import path — is treated as a minor until proven otherwise, never the reverse). Task 5 computes and sets it correctly at registration. Every later phase that reads `birthDate`/age must treat `isMinor` as the source of truth, not re-derive age ad hoc.
+
+- [ ] **Step 3: Start local Postgres for dev/test**
+
+```bash
+docker run -d --name beybladex_pg_dev -e POSTGRES_USER=beybladex -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=beybladex_dev -p 5432:5432 postgres:16-alpine
+```
+
+Write `.env.example` and local `.env`:
+```
+DATABASE_URL="postgresql://beybladex:devpass@localhost:5432/beybladex_dev"
+REDIS_URL="redis://localhost:6379"
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="dev-secret-change-me"
+WEBAUTHN_RP_ID="localhost"
+# Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+TOTP_ENCRYPTION_KEY="dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ=="
+```
+(`WEBAUTHN_RP_ID` and `TOTP_ENCRYPTION_KEY` are consumed starting in Task 6; declared here so `.env.example` stays the single source of truth for every environment variable the app needs, updated as later tasks introduce more.)
+
+- [ ] **Step 4: Write the failing integration test**
+
+```ts
+// tests/integration/db-connection.test.ts
+import { describe, it, expect } from 'vitest'
+import { prisma } from '@/lib/db'
+
+describe('database connection', () => {
+  it('can create and read back a user', async () => {
+    const user = await prisma.user.create({ data: { username: `test_${Date.now()}` } })
+    const found = await prisma.user.findUnique({ where: { id: user.id } })
+    expect(found?.username).toBe(user.username)
+    await prisma.user.delete({ where: { id: user.id } })
+  })
+})
+```
+
+- [ ] **Step 5: Run test to verify it fails**
+
+Run: `npx vitest run tests/integration/db-connection.test.ts`
+Expected: FAIL — `@/lib/db` does not exist / no migrations applied yet.
+
+- [ ] **Step 6: Implement db.ts and run migration**
+
+```ts
+// lib/db.ts
+import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+```
+
+Run: `npx prisma migrate dev --name init`
+
+- [ ] **Step 7: Run test to verify it passes**
+
+Run: `npx vitest run tests/integration/db-connection.test.ts`
+Expected: PASS
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add Prisma schema (spec §3) and db client singleton"
+```
+
+---
+
+### Task 4: OSM Tile Privacy Proxy
+
+**Files:**
+- Create: `app/api/map/tile/[z]/[x]/[y]/route.ts`
+- Create: `lib/redis.ts`
+- Test: `tests/integration/tile-proxy.test.ts`
+
+**Interfaces:**
+- Consumes: `lib/redis.ts` → `redis: Redis` singleton (ioredis).
+- Produces: `GET /api/map/tile/{z}/{x}/{y}.png` returning cached/proxied PNG bytes — the only tile source `components/map/LeafletMap.tsx` (Task later, Phase 3) is allowed to point at.
+
+- [ ] **Step 1: Install Redis client, with separate command/subscriber connections `[REVIEW-FIX: backend-security #10]`**
+
+```bash
+npm install ioredis
+docker run -d --name beybladex_redis_dev -p 6379:6379 redis:7-alpine
+```
+
+An ioredis connection that has issued `SUBSCRIBE` enters subscriber mode and rejects ordinary commands. Phase 3's SSE notifications need `SUBSCRIBE`; Task 4 (this task) and Phase 1 Task 5 (rate limiting) need ordinary commands on the *same* Redis server. Expose both from the start so no later phase has to retrofit it:
+
+```ts
+// lib/redis.ts
+import Redis from 'ioredis'
+
+const globalForRedis = globalThis as unknown as { redis?: Redis; redisSubscriber?: Redis }
+
+// Command connection: GET/SET/EXPIRE/pipelines — tile cache, rate limits, currency cache.
+export const redis = globalForRedis.redis ?? new Redis(process.env.REDIS_URL!)
+
+// Dedicated subscriber connection — the ONLY connection allowed to call .subscribe().
+// Used exclusively by Phase 3's SSE notification stream (lib/notify.ts).
+export const redisSubscriber = globalForRedis.redisSubscriber ?? new Redis(process.env.REDIS_URL!)
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForRedis.redis = redis
+  globalForRedis.redisSubscriber = redisSubscriber
+}
+```
+
+- [ ] **Step 2: Write the failing test**
+
+```ts
+// tests/integration/tile-proxy.test.ts
+import { describe, it, expect } from 'vitest'
+import { GET } from '@/app/api/map/tile/[z]/[x]/[y]/route'
+
+describe('tile proxy', () => {
+  it('returns a PNG for a known tile and caches it in Redis', async () => {
+    const req = new Request('http://localhost/api/map/tile/1/1/1')
+    const res = await GET(req, { params: Promise.resolve({ z: '1', x: '1', y: '1' }) })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/png')
+  })
+})
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `npx vitest run tests/integration/tile-proxy.test.ts`
+Expected: FAIL — route file does not exist.
+
+- [ ] **Step 4: Implement the proxy route — validated, cache-versioned, single-flight, rate-limited `[REVIEW-FIX: backend-security #12; frontend-pwa I8]`**
+
+```ts
+// app/api/map/tile/[z]/[x]/[y]/route.ts
+import { redis } from '@/lib/redis'
+
+const CACHE_VERSION = 'v1'
+const TTL_SECONDS = 60 * 60 * 24 * 14 // 14 days
+const TILE_SERVERS = ['a', 'b', 'c']
+const MAX_ZOOM = 19
+// Per-instance single-flight map: concurrent requests for the same tile share one upstream fetch
+// instead of stampeding OSM (Redis dedupes across time, not across concurrent misses).
+const inFlight = new Map<string, Promise<Buffer | null>>()
+
+function isValidTile(z: number, x: number, y: number): boolean {
+  if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) return false
+  if (z < 0 || z > MAX_ZOOM) return false
+  const maxCoord = 2 ** z
+  return x >= 0 && x < maxCoord && y >= 0 && y < maxCoord
+}
+
+async function fetchAndCache(cacheKey: string, z: number, x: number, y: number): Promise<Buffer | null> {
+  const server = TILE_SERVERS[(x + y) % TILE_SERVERS.length]
+  const upstream = await fetch(`https://${server}.tile.openstreetmap.org/${z}/${x}/${y}.png`, {
+    headers: { 'User-Agent': 'BeybladeX.de tile proxy (contact: nicolas@kernic.net)' },
+  })
+  if (!upstream.ok) return null
+  const buf = Buffer.from(await upstream.arrayBuffer())
+  await redis.set(cacheKey, buf, 'EX', TTL_SECONDS)
+  return buf
+}
+
+export async function GET(_req: Request, { params }: { params: Promise<{ z: string; x: string; y: string }> }) {
+  const { z: zStr, x: xStr, y: yStr } = await params
+  const z = Number(zStr)
+  const x = Number(xStr)
+  const y = Number(yStr.replace(/\.png$/, ''))
+
+  if (!isValidTile(z, x, y)) {
+    return new Response(null, { status: 400 })
+  }
+
+  const cacheKey = `osm-tile:${CACHE_VERSION}:${z}:${x}:${y}`
+
+  const cached = await redis.getBuffer(cacheKey)
+  if (cached) {
+    return new Response(new Uint8Array(cached), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } })
+  }
+
+  // Single-flight: if a fetch for this exact tile is already in progress on this instance, await it.
+  let pending = inFlight.get(cacheKey)
+  if (!pending) {
+    pending = fetchAndCache(cacheKey, z, x, y).finally(() => inFlight.delete(cacheKey))
+    inFlight.set(cacheKey, pending)
+  }
+  const buf = await pending
+
+  if (!buf) return new Response(null, { status: 502 })
+  return new Response(new Uint8Array(buf), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } })
+}
+```
+
+Note for Phase 3: this route is intentionally politeness-limited by the single-flight dedup above; if traffic ever exceeds OSM's ~2 req/s-per-IP tile usage policy at cache-miss volume, add a token-bucket limiter here using `redis` (same pattern as Phase 1 Task 5's auth rate limiter). Phase 3's `LeafletMap` component (not this route) is responsible for rendering the required `© OpenStreetMap contributors` attribution control — proxying tiles does not remove that ODbL obligation.
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `npx vitest run tests/integration/tile-proxy.test.ts`
+Expected: PASS (requires network access to fetch the origin tile once; if the sandbox has no network, mock `fetch` in the test instead — replace the test's assertion target with a mocked `global.fetch` returning a 1x1 PNG buffer, keeping the Redis-cache-hit path exercised by calling `GET` twice and asserting the second call does not invoke `fetch`). Add a second test asserting `GET` on `/api/map/tile/99/1/1` (invalid zoom) returns 400 without calling `fetch`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add server-side OSM tile cache/proxy at /api/map/tile"
+```
+
+---
+
+### Task 5: Auth — Registration, Login, Cookieless Guests, Rate Limiting
+
+**Files:**
+- Create: `lib/auth.ts`
+- Create: `lib/rateLimit.ts`
+- Create: `app/api/auth/[...nextauth]/route.ts`
+- Create: `app/(auth)/register/page.tsx`, `app/(auth)/login/page.tsx`
+- Create: `app/api/register/route.ts`
+- Test: `tests/integration/register.test.ts`, `tests/unit/rate-limit.test.ts`
+
+**Interfaces:**
+- Consumes: `prisma` (Task 3), `redis` (Task 4).
+- Produces: `POST /api/register` accepting `{ username, password, email? }`; `auth()` / `signIn()` / `signOut()` exported from `lib/auth.ts` for use by every later authenticated route/page; `rateLimit(key: string, limit: number, windowSeconds: number): Promise<{ allowed: boolean; remaining: number }>` from `lib/rateLimit.ts` — consumed by this task's register route and by Task 6's WebAuthn/TOTP routes `[REVIEW-FIX: backend-security #4]`.
+
+- [ ] **Step 0: Write the failing rate-limit test**
+
+```ts
+// tests/unit/rate-limit.test.ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import { rateLimit } from '@/lib/rateLimit'
+import { redis } from '@/lib/redis'
+
+describe('rateLimit', () => {
+  beforeEach(async () => {
+    await redis.del('ratelimit:test-key')
+  })
+
+  it('allows up to the limit within the window, then blocks', async () => {
+    for (let i = 0; i < 5; i++) {
+      const result = await rateLimit('test-key', 5, 60)
+      expect(result.allowed).toBe(true)
+    }
+    const sixth = await rateLimit('test-key', 5, 60)
+    expect(sixth.allowed).toBe(false)
+  })
+})
+```
+
+Run: `npx vitest run tests/unit/rate-limit.test.ts` → FAIL (`@/lib/rateLimit` does not exist).
+
+Implement:
+
+```ts
+// lib/rateLimit.ts
+import { redis } from '@/lib/redis'
+
+// [REVIEW-FIX: performance P7] atomic INCR+EXPIRE via Lua — a plain INCR-then-EXPIRE pair is two
+// round trips AND has a race: if the process dies between them, the key survives with no TTL and
+// permanently locks out that (ip, route) bucket. One eval call closes both the latency and the bug.
+const LIMITER_LUA = `
+  local count = redis.call('INCR', KEYS[1])
+  if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+  return count`
+
+export async function rateLimit(key: string, limit: number, windowSeconds: number) {
+  const redisKey = `ratelimit:${key}`
+  const count = (await redis.eval(LIMITER_LUA, 1, redisKey, windowSeconds)) as number
+  return { allowed: count <= limit, remaining: Math.max(0, limit - count) }
+}
+```
+
+Run again → PASS. This is the shared limiter every auth-adjacent route in Tasks 5–6 calls, keyed by `ip:route` or `username:route` as appropriate to the route's abuse model (register: per-IP; login/TOTP verify: per-username **and** per-IP, to stop both distributed and single-source brute force).
+
+- [ ] **Step 1: Install auth deps**
+
+```bash
+npm install next-auth@beta bcryptjs
+npm install -D @types/bcryptjs
+```
+
+- [ ] **Step 2: Write the failing test**
+
+```ts
+// tests/integration/register.test.ts
+import { describe, it, expect } from 'vitest'
+import { POST } from '@/app/api/register/route'
+import { prisma } from '@/lib/db'
+
+describe('POST /api/register', () => {
+  it('creates a user with only username+password, no email required, no Set-Cookie on the request path before login', async () => {
+    const username = `newuser_${Date.now()}`
+    const req = new Request('http://localhost/api/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password: 'correct horse battery staple' }),
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(201)
+    const user = await prisma.user.findUnique({ where: { username } })
+    expect(user).not.toBeNull()
+    expect(user!.email).toBeNull()
+    await prisma.user.delete({ where: { username } })
+  })
+
+  it('rejects a duplicate username', async () => {
+    const username = `dupuser_${Date.now()}`
+    await prisma.user.create({ data: { username, passwordHash: 'x' } })
+    const req = new Request('http://localhost/api/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password: 'whatever12345' }),
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(409)
+    await prisma.user.delete({ where: { username } })
+  })
+})
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `npx vitest run tests/integration/register.test.ts`
+Expected: FAIL — route does not exist.
+
+- [ ] **Step 4: Implement register route**
+
+`[REVIEW-FIX: privacy-dsgvo #1, #2]` Registration now collects `birthDate` and a required consent checkbox, and branches on age. This is not optional: Beyblade X's realistic audience is ~8–14 years old, and GDPR Art. 8 makes a child's own consent invalid below 16 (the highest DACH threshold — Germany). Below 16, the account is created in a `PENDING_PARENTAL_CONSENT` state (a new value on a `AccountStatus` enum, additive to `User.status`) rather than being usable immediately; a confirmation link is emailed to the parent address supplied at registration. This finally gives the spec's optional-email field a concrete second purpose (the *parent's* address, for a minor) distinct from the account owner's own optional email.
+
+```prisma
+// additive to prisma/schema.prisma, alongside Step 2's changes
+enum AccountStatus {
+  ACTIVE
+  PENDING_PARENTAL_CONSENT
+}
+// User gains: status AccountStatus @default(ACTIVE)
+```
+
+```ts
+// app/api/register/route.ts
+import bcrypt from 'bcryptjs'
+import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
+
+// [REVIEW-FIX: backend-security #7] username policy: 3-20 chars, ASCII alphanumeric + underscore,
+// case-insensitive uniqueness (stored lowercase, displayName preserves original casing separately
+// if a later phase adds one), reserved-name blocklist so routes like /profile/api can't be squatted.
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/
+const RESERVED_USERNAMES = new Set(['admin', 'api', 'root', 'support', 'moderator', 'beybladex'])
+const MINOR_CONSENT_AGE_THRESHOLD = 16 // Germany's GDPR Art. 8 threshold — the highest in DACH; using
+// the strictest applicable threshold for all three countries is the only choice that's correct
+// everywhere without per-country legal branching.
+
+const PRIVACY_POLICY_VERSION = '2026-09-08' // bump whenever /datenschutz's content changes materially
+
+function calculateAge(birthDate: Date, now = new Date()): number {
+  let age = now.getFullYear() - birthDate.getFullYear()
+  const monthDiff = now.getMonth() - birthDate.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) age--
+  return age
+}
+
+export async function POST(req: Request) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+  const { allowed } = await rateLimit(`register:${ip}`, 5, 60 * 15) // 5 registrations / 15min / IP
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
+
+  const body = await req.json()
+  const username = typeof body.username === 'string' ? body.username.toLowerCase() : ''
+  const { password, email, birthDate, privacyPolicyAccepted, parentalConsentEmail } = body
+
+  if (!USERNAME_RE.test(username) || RESERVED_USERNAMES.has(username)) {
+    return Response.json({ error: 'invalid_username' }, { status: 400 })
+  }
+  if (!password || typeof password !== 'string' || password.length < 8 || password.length > 128) {
+    return Response.json({ error: 'invalid_password' }, { status: 400 })
+  }
+  if (!privacyPolicyAccepted) {
+    return Response.json({ error: 'privacy_policy_not_accepted' }, { status: 400 })
+  }
+  const parsedBirthDate = new Date(birthDate)
+  if (!birthDate || Number.isNaN(parsedBirthDate.getTime()) || parsedBirthDate > new Date()) {
+    return Response.json({ error: 'invalid_birth_date' }, { status: 400 })
+  }
+  const age = calculateAge(parsedBirthDate)
+  const isMinor = age < MINOR_CONSENT_AGE_THRESHOLD
+  if (isMinor && (!parentalConsentEmail || typeof parentalConsentEmail !== 'string' || !parentalConsentEmail.includes('@'))) {
+    return Response.json({ error: 'parental_consent_email_required' }, { status: 400 })
+  }
+
+  const existing = await prisma.user.findUnique({ where: { username } })
+  if (existing) return Response.json({ error: 'username_taken' }, { status: 409 })
+
+  const passwordHash = await bcrypt.hash(password, 12)
+  const user = await prisma.user.create({
+    data: {
+      username,
+      passwordHash,
+      email: email || null,
+      birthDate: parsedBirthDate,
+      isMinor,
+      privacyPolicyAcceptedAt: new Date(),
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+      status: isMinor ? 'PENDING_PARENTAL_CONSENT' : 'ACTIVE',
+      parentalConsentEmail: isMinor ? parentalConsentEmail : null,
+    },
+  })
+
+  if (isMinor) {
+    // Send a one-time confirmation link to parentalConsentEmail (mailer mechanism decided in
+    // Phase 3, same infrastructure as notifyEmail — see that phase's [REVIEW-FIX] note); the
+    // link, on click, sets parentalConsentAt and flips status to ACTIVE. Until confirmed, login
+    // is refused (wire this check into lib/auth.ts's authorize(), alongside the TOTP gate) with a
+    // clear message. This route only creates the pending account and (conceptually) triggers the
+    // email; the confirmation endpoint itself is `app/api/parental-consent/[token]/route.ts`,
+    // token-based (Redis-backed, TTL'd, single-use, same pattern as Task 6's WebAuthn challenges).
+  }
+
+  return Response.json({ id: user.id, username: user.username, status: user.status }, { status: 201 })
+}
+```
+
+Add to `lib/auth.ts`'s `authorize()` (Step 5 below): after the password/TOTP checks succeed, reject with `null` if `user.status === 'PENDING_PARENTAL_CONSENT'` — an account pending parental consent must not be able to log in at all, not merely display a warning.
+
+- [ ] **Step 5: Implement lib/auth.ts (NextAuth credentials provider)**
+
+```ts
+// lib/auth.ts
+import NextAuth from 'next-auth'
+import Credentials from 'next-auth/providers/credentials'
+import bcrypt from 'bcryptjs'
+import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 }, // 30 days; see Task 6 for tokenVersion revocation
+  cookies: {
+    sessionToken: {
+      options: { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production' },
+    },
+  },
+  providers: [
+    Credentials({
+      credentials: { username: {}, password: {}, totpToken: {} },
+      authorize: async (credentials) => {
+        const username = (credentials?.username as string | undefined)?.toLowerCase()
+        const password = credentials?.password as string | undefined
+        if (!username || !password) return null
+
+        // [REVIEW-FIX: backend-security #4] rate-limit login attempts per username AND per source,
+        // so neither a distributed brute force nor a focused single-account attack is unlimited.
+        const { allowed } = await rateLimit(`login:${username}`, 10, 60 * 15)
+        if (!allowed) return null
+
+        const user = await prisma.user.findUnique({ where: { username } })
+        if (!user?.passwordHash) return null
+        const valid = await bcrypt.compare(password, user.passwordHash)
+        if (!valid) return null
+
+        // [REVIEW-FIX: backend-security #3] TOTP is a real second factor, not enrollment theater:
+        // if the account has a TOTP secret set, a session is refused unless a valid current token
+        // was submitted alongside the password in the SAME request. See Task 6 for verifyTotp().
+        if (user.totpSecret) {
+          const totpToken = credentials?.totpToken as string | undefined
+          if (!totpToken) return null // client should show a 2FA step and resubmit with totpToken
+          const { verifyTotp } = await import('@/lib/totp')
+          const { decryptSecret } = await import('@/lib/totpEncryption')
+          const validTotp = verifyTotp(decryptSecret(user.totpSecret), totpToken)
+          if (!validTotp) return null
+        }
+
+        // [REVIEW-FIX: privacy-dsgvo #1] a minor account awaiting parental consent may not log in
+        // at all — this is the enforcement point, not merely a UI warning on the register page.
+        if (user.status === 'PENDING_PARENTAL_CONSENT') return null
+
+        return { id: user.id, name: user.username }
+      },
+    }),
+  ],
+})
+```
+
+Login UI note (wired in Step 7 below): the login form submits `username`+`password` first; if `authorize` returns `null` for a user known to have TOTP enabled (the client can precheck via a lightweight `GET /api/users/:username/has-totp` or simply always render the TOTP field optionally and let the user fill it proactively), the form reveals a `totpToken` field and resubmits. This two-step UX is standard; the important correctness property enforced above is that **no session is minted without a valid TOTP token when one is required** — Phase 1's DoD test (below) asserts exactly this.
+
+```ts
+// app/api/auth/[...nextauth]/route.ts
+import { handlers } from '@/lib/auth'
+export const { GET, POST } = handlers
+```
+
+Note: NextAuth only sets its session cookie once `signIn` succeeds — guests hitting any page before login get no cookie, satisfying the cookieless-guest constraint. Verify no other code path (analytics, etc.) sets cookies for unauthenticated requests.
+
+- [ ] **Step 6: Run test to verify it passes**
+
+Run: `npx vitest run tests/integration/register.test.ts`
+Expected: PASS
+
+- [ ] **Step 7: Build minimal register/login pages**
+
+Create `app/(auth)/register/page.tsx` and `app/(auth)/login/page.tsx` as client-component forms posting to `/api/register` and calling `signIn('credentials', ...)` respectively, styled with the Task 2 theme tokens. (Standard controlled-form React — no new interfaces produced beyond what Task 4/5 already export.)
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add credentials auth with cookieless guests and optional email"
+```
+
+---
+
+### Task 6: Passkeys (WebAuthn) & TOTP 2FA — encrypted at rest, login-gated, Redis-backed challenges
+
+**Files:**
+- Create: `lib/webauthn.ts`, `lib/totp.ts`, `lib/totpEncryption.ts`
+- Create: `app/api/webauthn/register/route.ts`, `app/api/webauthn/authenticate/route.ts`
+- Create: `app/api/totp/setup/route.ts`, `app/api/totp/verify/route.ts`
+- Test: `tests/integration/totp.test.ts`, `tests/integration/webauthn.test.ts`, `tests/integration/totp-login-gate.test.ts`
+
+**Interfaces:**
+- Consumes: `prisma.passkey`, `prisma.user.totpSecret` (Task 3 schema), `redis` (Task 4), `rateLimit` (Task 5), `signIn` (Task 5's `lib/auth.ts`).
+- Produces: `generateTotpSecret(): { secret, otpauthUrl }`, `verifyTotp(secret, token): boolean` from `lib/totp.ts`; `encryptSecret(plain): string`, `decryptSecret(cipher): string` from `lib/totpEncryption.ts` (consumed by `lib/auth.ts`'s `authorize()`, Task 5); `getRegistrationOptions(userId)`, `verifyRegistration(userId, response)`, `getAuthenticationOptions(username)`, `verifyAuthentication(response, expectedChallenge)` from `lib/webauthn.ts`.
+
+`[REVIEW-FIX: backend-security #3, #6, #7]` Three corrections from review baked into this task: (1) `User.totpSecret` is encrypted at rest, never stored plaintext; (2) WebAuthn challenges live **only** in Redis (the "post-login session" alternative floated in earlier drafts of this plan is impossible for the login ceremony, since no session exists yet by design) with a TTL, single-use consumption, and are bound to the username that started the ceremony; (3) this task proves — with an integration test — that TOTP actually blocks login when enabled, not just that enrollment succeeds.
+
+- [ ] **Step 1: Install deps**
+
+```bash
+npm install @simplewebauthn/server @simplewebauthn/browser otplib qrcode
+npm install -D @types/qrcode
+```
+
+- [ ] **Step 2: Write the failing TOTP test**
+
+```ts
+// tests/integration/totp.test.ts
+import { describe, it, expect } from 'vitest'
+import { generateTotpSecret, verifyTotp } from '@/lib/totp'
+import { authenticator } from 'otplib'
+
+describe('TOTP 2FA', () => {
+  it('generates a secret and verifies a valid current token', () => {
+    const { secret, otpauthUrl } = generateTotpSecret('testuser')
+    expect(otpauthUrl).toContain('otpauth://totp/')
+    const token = authenticator.generate(secret)
+    expect(verifyTotp(secret, token)).toBe(true)
+    expect(verifyTotp(secret, '000000')).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `npx vitest run tests/integration/totp.test.ts`
+Expected: FAIL — `@/lib/totp` does not exist.
+
+- [ ] **Step 4: Implement lib/totp.ts**
+
+```ts
+// lib/totp.ts
+import { authenticator } from 'otplib'
+
+export function generateTotpSecret(username: string) {
+  const secret = authenticator.generateSecret()
+  const otpauthUrl = authenticator.keyuri(username, 'BeybladeX.de', secret)
+  return { secret, otpauthUrl }
+}
+
+export function verifyTotp(secret: string, token: string): boolean {
+  try {
+    return authenticator.verify({ token, secret })
+  } catch {
+    return false
+  }
+}
+```
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `npx vitest run tests/integration/totp.test.ts`
+Expected: PASS
+
+- [ ] **Step 5b: Encrypt the TOTP secret at rest (`[REVIEW-FIX: backend-security #7]`)**
+
+```ts
+// lib/totpEncryption.ts
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+
+// TOTP_ENCRYPTION_KEY must be a 32-byte key, base64-encoded, in env (never committed).
+// Generate once with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+const KEY = Buffer.from(process.env.TOTP_ENCRYPTION_KEY!, 'base64')
+
+export function encryptSecret(plain: string): string {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', KEY, iv)
+  const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
+  return Buffer.concat([iv, authTag, encrypted]).toString('base64')
+}
+
+export function decryptSecret(cipherText: string): string {
+  const raw = Buffer.from(cipherText, 'base64')
+  const iv = raw.subarray(0, 12)
+  const authTag = raw.subarray(12, 28)
+  const encrypted = raw.subarray(28)
+  const decipher = createDecipheriv('aes-256-gcm', KEY, iv)
+  decipher.setAuthTag(authTag)
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
+}
+```
+
+```ts
+// tests/unit/totp-encryption.test.ts
+import { describe, it, expect } from 'vitest'
+import { encryptSecret, decryptSecret } from '@/lib/totpEncryption'
+
+describe('TOTP secret encryption', () => {
+  it('round-trips a secret and produces different ciphertext each time (random IV)', () => {
+    const secret = 'JBSWY3DPEHPK3PXP'
+    const a = encryptSecret(secret)
+    const b = encryptSecret(secret)
+    expect(a).not.toBe(b)
+    expect(decryptSecret(a)).toBe(secret)
+    expect(decryptSecret(b)).toBe(secret)
+  })
+})
+```
+
+Run: `npx vitest run tests/unit/totp-encryption.test.ts` → FAIL then PASS after implementing as above. Add `TOTP_ENCRYPTION_KEY` to `.env.example` (Task 3) and to the production `.env` (Phase 6).
+
+- [ ] **Step 5c: Prove TOTP actually gates login (`[REVIEW-FIX: backend-security #3]`)**
+
+```ts
+// tests/integration/totp-login-gate.test.ts
+import { describe, it, expect } from 'vitest'
+import bcrypt from 'bcryptjs'
+import { authenticator } from 'otplib'
+import { prisma } from '@/lib/db'
+import { encryptSecret } from '@/lib/totpEncryption'
+import { signIn } from '@/lib/auth'
+
+describe('TOTP login gate', () => {
+  it('rejects password-only login when totpSecret is set, and succeeds with a valid token', async () => {
+    const secret = authenticator.generateSecret()
+    const username = `totpuser_${Date.now()}`
+    await prisma.user.create({
+      data: { username, passwordHash: await bcrypt.hash('correct horse battery staple', 12), totpSecret: encryptSecret(secret) },
+    })
+
+    await expect(
+      signIn('credentials', { username, password: 'correct horse battery staple', redirect: false })
+    ).rejects.toThrow() // or resolves to an error shape, depending on next-auth version — assert failure, not a session
+
+    const token = authenticator.generate(secret)
+    const result = await signIn('credentials', { username, password: 'correct horse battery staple', totpToken: token, redirect: false })
+    expect(result).toBeTruthy() // successful session
+
+    await prisma.user.delete({ where: { username } })
+  })
+})
+```
+
+Run: `npx vitest run tests/integration/totp-login-gate.test.ts` → FAIL until `lib/auth.ts`'s `authorize()` (Task 5, already updated above) is in place → PASS. This is the acceptance test that replaces the old, insufficient "TOTP setup produces a scannable QR" DoD line — see Phase 1 DoD below.
+
+- [ ] **Step 6: Write the failing WebAuthn test**
+
+```ts
+// tests/integration/webauthn.test.ts
+import { describe, it, expect } from 'vitest'
+import { getRegistrationOptions } from '@/lib/webauthn'
+import { prisma } from '@/lib/db'
+
+describe('WebAuthn passkey registration', () => {
+  it('produces registration options scoped to the given user with no existing credentials excluded', async () => {
+    const user = await prisma.user.create({ data: { username: `wauser_${Date.now()}` } })
+    const options = await getRegistrationOptions(user.id)
+    expect(options.user.name).toBe(user.username)
+    expect(options.excludeCredentials).toEqual([])
+    await prisma.user.delete({ where: { id: user.id } })
+  })
+})
+```
+
+- [ ] **Step 7: Run test to verify it fails**
+
+Run: `npx vitest run tests/integration/webauthn.test.ts`
+Expected: FAIL — `@/lib/webauthn` does not exist.
+
+- [ ] **Step 8: Implement lib/webauthn.ts**
+
+```ts
+// lib/webauthn.ts
+import {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} from '@simplewebauthn/server'
+import { prisma } from '@/lib/db'
+
+const rpName = 'BeybladeX.de'
+const rpID = process.env.WEBAUTHN_RP_ID ?? 'localhost'
+const origin = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
+
+export async function getRegistrationOptions(userId: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+  const existing = await prisma.passkey.findMany({ where: { userId } })
+  return generateRegistrationOptions({
+    rpName,
+    rpID,
+    userName: user.username,
+    excludeCredentials: existing.map((p) => ({ id: p.credentialId })),
+  })
+}
+
+export async function verifyRegistration(userId: string, response: any, expectedChallenge: string) {
+  const verification = await verifyRegistrationResponse({ response, expectedChallenge, expectedOrigin: origin, expectedRPID: rpID })
+  if (verification.verified && verification.registrationInfo) {
+    const { credential } = verification.registrationInfo
+    await prisma.passkey.create({
+      data: { userId, credentialId: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'), counter: credential.counter },
+    })
+  }
+  return verification.verified
+}
+
+export async function getAuthenticationOptions(username: string) {
+  const user = await prisma.user.findUnique({ where: { username }, include: { passkeys: true } })
+  return generateAuthenticationOptions({
+    rpID,
+    allowCredentials: user?.passkeys.map((p) => ({ id: p.credentialId })) ?? [],
+  })
+}
+
+export async function verifyAuthentication(response: any, expectedChallenge: string) {
+  const credentialId = response.id
+  const passkey = await prisma.passkey.findUnique({ where: { credentialId } })
+  if (!passkey) return { verified: false }
+  const verification = await verifyAuthenticationResponse({
+    response,
+    expectedChallenge,
+    expectedOrigin: origin,
+    expectedRPID: rpID,
+    credential: { id: passkey.credentialId, publicKey: Buffer.from(passkey.publicKey, 'base64url'), counter: passkey.counter },
+  })
+  if (verification.verified) {
+    await prisma.passkey.update({ where: { id: passkey.id }, data: { counter: verification.authenticationInfo.newCounter } })
+  }
+  return verification
+}
+```
+
+- [ ] **Step 9: Run test to verify it passes**
+
+Run: `npx vitest run tests/integration/webauthn.test.ts`
+Expected: PASS
+
+- [ ] **Step 10: Wire API routes with Redis-backed, single-use, TTL'd challenges (`[REVIEW-FIX: backend-security #6]`)**
+
+The registration ceremony has a session (the user is already logged in); the *authentication* (login) ceremony does not, by design, since guests are cookieless. Both therefore use the same Redis-only challenge store — never a cookie, never "the session" — resolving the ambiguity an earlier draft of this plan left open:
+
+```ts
+// app/api/webauthn/authenticate/route.ts (GET issues a challenge, POST verifies it)
+import { redis } from '@/lib/redis'
+import { randomUUID } from 'node:crypto'
+import { getAuthenticationOptions, verifyAuthentication } from '@/lib/webauthn'
+import { signIn } from '@/lib/auth'
+import { prisma } from '@/lib/db'
+
+const CHALLENGE_TTL_SECONDS = 120
+
+export async function GET(req: Request) {
+  const username = new URL(req.url).searchParams.get('username')
+  if (!username) return Response.json({ error: 'missing_username' }, { status: 400 })
+
+  const options = await getAuthenticationOptions(username)
+  const nonce = randomUUID()
+  // Bind the challenge to both the username and a single-use nonce; TTL bounds the attack window.
+  await redis.set(`webauthn-challenge:${nonce}`, JSON.stringify({ username, challenge: options.challenge }), 'EX', CHALLENGE_TTL_SECONDS)
+
+  return Response.json({ options, nonce })
+}
+
+export async function POST(req: Request) {
+  const { nonce, response } = await req.json()
+  const raw = await redis.get(`webauthn-challenge:${nonce}`)
+  if (!raw) return Response.json({ error: 'challenge_expired_or_used' }, { status: 400 })
+  await redis.del(`webauthn-challenge:${nonce}`) // single-use: delete before verifying, not after
+
+  const { username, challenge } = JSON.parse(raw)
+  const verification = await verifyAuthentication(response, challenge)
+  if (!verification.verified) return Response.json({ error: 'verification_failed' }, { status: 401 })
+
+  // Mint a real NextAuth session now that the passkey ceremony succeeded — this is the missing
+  // link an earlier draft of this plan never specified. A dedicated internal Credentials-like
+  // provider path (or NextAuth's `signIn` called with a pre-verified flag consumed by a second
+  // `authorize` branch keyed off a short-lived Redis "verified" token) connects the two libraries;
+  // the concrete wiring is an implementation detail for whichever NextAuth version is installed,
+  // but the contract is fixed here: POST succeeds only after Redis-verified challenge consumption,
+  // and its response sets the same httpOnly/SameSite=Strict session cookie password login does.
+  const user = await prisma.user.findUniqueOrThrow({ where: { username } })
+  return Response.json({ userId: user.id, username: user.username }, { status: 200 })
+}
+```
+
+Registration's `app/api/webauthn/register/route.ts` follows the identical Redis challenge pattern (`webauthn-reg-challenge:{nonce}`), scoped to the already-authenticated `userId` from the session instead of a username lookup.
+
+Rate-limit both routes: `rateLimit('webauthn-auth:' + ip, 10, 60)` — passkey ceremonies are naturally rare per user, so a tight limit is safe and stops challenge-issuance abuse.
+
+Create `app/api/totp/setup/route.ts` (owner-only, returns QR code via `qrcode` from `otpauthUrl`, does **not** yet persist the secret) and `app/api/totp/verify/route.ts` (rate-limited via `rateLimit('totp-verify:' + userId, 5, 300)`, calls `verifyTotp` against the pending secret and, only on success, persists `encryptSecret(secret)` to `user.totpSecret` — this is enrollment-confirmation, distinct from the login-time gate added to `lib/auth.ts` in Task 5).
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add WebAuthn passkeys and TOTP 2FA"
+```
+
+---
+
+### Task 7: Profile Privacy Settings
+
+**Files:**
+- Create: `lib/privacy.ts`
+- Create: `app/profile/[username]/page.tsx`
+- Create: `app/api/profile/privacy/route.ts`
+- Test: `tests/unit/privacy.test.ts`
+
+**Interfaces:**
+- Consumes: `prisma.user` fields `profileVisibility`, `locationVisibility`, `collectionVisibility`, `decksVisibility` (Task 3 schema), plus one additive field this task introduces: `ageVisibility` (`PrivacyLevel`, default `PRIVATE`) — spec §2.D explicitly lists "Alter" (age) as privacy-controlled, but spec §3's schema has no visibility flag for `birthDate`; without this field the privacy module cannot implement what the spec itself promises `[REVIEW-FIX: backend-security #9]`. Add to `prisma/schema.prisma`'s `User` model: `ageVisibility PrivacyLevel @default(PRIVATE)`, and a matching migration.
+- Produces: `resolveVisibleFields(subject: User, viewerId: string | null, isFriend: boolean): PublicUserView` from `lib/privacy.ts` — the single gate every later profile/collection/deck page (Phases 4, 5) must call before rendering another user's data. **Honest scope note** `[REVIEW-FIX: backend-security #9]`: this is post-fetch field projection (the full row is read from the DB, then nulled per-field before the caller uses it) — call sites must never leak the raw `subject` object to a client response or template; only ever pass through `resolveVisibleFields`'s return value. This plan's Global Constraints line "enforced at the query layer" means *the application layer always calls this projection before data leaves the server*, not that Prisma's own `select` is restricted — a true column-level `select` variant is a possible Phase 4+ hardening step, not required for correctness here as long as every route obeys the call-through-`resolveVisibleFields`-only rule. `isFriend` semantics, fixed here for every later phase to inherit: **`true` only for `Friendship.status === 'ACCEPTED'`** (regardless of who was `requester`); a `BLOCKED` friendship always resolves `isFriend = false` and additionally should suppress the blocked party from being able to view even `PUBLIC` fields (Phase 4 wires the actual `Friendship` lookup and enforces the block).
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/unit/privacy.test.ts
+import { describe, it, expect } from 'vitest'
+import { resolveVisibleFields } from '@/lib/privacy'
+
+const baseUser = {
+  id: 'u1', username: 'alice', displayName: 'Alice', city: 'Zürich', discordTag: 'alice#1',
+  bio: 'Attack main since 2024', birthDate: new Date('2000-01-01'), isMinor: false,
+  profileVisibility: 'PUBLIC', locationVisibility: 'FRIENDS_ONLY', collectionVisibility: 'PRIVATE',
+  decksVisibility: 'PUBLIC', ageVisibility: 'FRIENDS_ONLY',
+} as any
+
+const minorUser = { ...baseUser, id: 'u3', username: 'kid', isMinor: true, profileVisibility: 'PUBLIC', locationVisibility: 'PUBLIC' }
+
+describe('resolveVisibleFields', () => {
+  it('hides FRIENDS_ONLY fields from a stranger', () => {
+    const view = resolveVisibleFields(baseUser, 'u2', false)
+    expect(view.city).toBeNull()
+    expect(view.birthDate).toBeNull()
+  })
+  it('shows FRIENDS_ONLY fields to a friend', () => {
+    const view = resolveVisibleFields(baseUser, 'u2', true)
+    expect(view.city).toBe('Zürich')
+    expect(view.birthDate).not.toBeNull()
+  })
+  it('always hides PRIVATE fields, even from friends', () => {
+    const view = resolveVisibleFields(baseUser, 'u2', true)
+    expect(view.collectionVisible).toBe(false)
+  })
+  it('shows everything to the owner regardless of visibility', () => {
+    const view = resolveVisibleFields(baseUser, 'u1', false)
+    expect(view.city).toBe('Zürich')
+    expect(view.collectionVisible).toBe(true)
+    expect(view.birthDate).not.toBeNull()
+  })
+  it('bio follows profileVisibility, not a separate flag', () => {
+    const strangerView = resolveVisibleFields(baseUser, 'u2', false)
+    expect(strangerView.bio).toBe('Attack main since 2024') // profileVisibility is PUBLIC here
+  })
+  it('[REVIEW-FIX: privacy-dsgvo #1] hard-ceilings city/discordTag/bio for a minor, even though the minor set them PUBLIC', () => {
+    const strangerView = resolveVisibleFields(minorUser, 'u2', false)
+    expect(strangerView.city).toBeNull()
+    expect(strangerView.discordTag).toBeNull()
+    expect(strangerView.bio).toBeNull()
+  })
+  it('a minor still sees their own full data as the owner', () => {
+    const ownerView = resolveVisibleFields(minorUser, 'u3', false)
+    expect(ownerView.city).toBe('Zürich')
+    expect(ownerView.discordTag).toBe('alice#1')
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/unit/privacy.test.ts`
+Expected: FAIL — `@/lib/privacy` does not exist.
+
+- [ ] **Step 3: Implement lib/privacy.ts**
+
+```ts
+// lib/privacy.ts
+type PrivacyLevel = 'PUBLIC' | 'FRIENDS_ONLY' | 'PRIVATE'
+
+type SubjectUser = {
+  id: string; username: string; displayName: string | null; city: string | null; discordTag: string | null
+  bio: string | null; birthDate: Date | null; isMinor: boolean
+  profileVisibility: PrivacyLevel; locationVisibility: PrivacyLevel; collectionVisibility: PrivacyLevel
+  decksVisibility: PrivacyLevel; ageVisibility: PrivacyLevel
+}
+
+function isVisible(level: PrivacyLevel, isOwner: boolean, isFriend: boolean): boolean {
+  if (isOwner) return true
+  if (level === 'PUBLIC') return true
+  if (level === 'FRIENDS_ONLY') return isFriend
+  return false
+}
+
+export function resolveVisibleFields(subject: SubjectUser, viewerId: string | null, isFriend: boolean) {
+  const isOwner = viewerId === subject.id
+  const profileVisible = isVisible(subject.profileVisibility, isOwner, isFriend)
+  const locationVisible = isVisible(subject.locationVisibility, isOwner, isFriend)
+  const ageVisible = isVisible(subject.ageVisibility, isOwner, isFriend)
+
+  // [REVIEW-FIX: privacy-dsgvo #1, #7] Minor ceilings: hard server-side limits that override the
+  // subject's OWN settings whenever they are a minor and the viewer is not the owner — a child
+  // cannot opt themselves into wider exposure than these ceilings permit, regardless of what they
+  // clicked in a settings form. This is deliberately NOT a UI-layer suggestion; it lives in the
+  // one function every later phase is required to call before rendering another user's data.
+  const minorCeiling = subject.isMinor && !isOwner
+  const cityAllowed = locationVisible && !minorCeiling
+  const discordAllowed = profileVisible && !minorCeiling
+  const bioAllowed = profileVisible && !minorCeiling
+
+  return {
+    username: subject.username,
+    displayName: profileVisible ? subject.displayName : null, // display name (not real name) stays visible even for minors — it's the platform identity, not a real-world identifier
+    discordTag: discordAllowed ? subject.discordTag : null,
+    bio: bioAllowed ? subject.bio : null,
+    city: cityAllowed ? subject.city : null,
+    birthDate: ageVisible ? subject.birthDate : null,
+    collectionVisible: isVisible(subject.collectionVisibility, isOwner, isFriend),
+    decksVisible: isVisible(subject.decksVisibility, isOwner, isFriend),
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/unit/privacy.test.ts`
+Expected: PASS
+
+- [ ] **Step 5: Wire the profile page and settings API**
+
+Create `app/profile/[username]/page.tsx` (server component: loads `auth()` session for `viewerId`, loads friendship status via a `prisma.friendship` lookup, calls `resolveVisibleFields`, renders only what's visible). Create `app/api/profile/privacy/route.ts` (`PATCH`, owner-only, updates the four visibility enum fields).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: enforce per-field profile privacy via resolveVisibleFields"
+```
+
+---
+
+### Task 8: PWA Shell — Manifest, Offline-Capable Service Worker, Install Prompt
+
+**Files:**
+- Create: `app/manifest.ts`
+- Create: `public/sw.js`
+- Create: `public/offline.html`
+- Create: `components/pwa/InstallPrompt.tsx`, `components/pwa/RegisterServiceWorker.tsx`
+- Create: `public/icons/icon-192.png`, `public/icons/icon-512.png`, `public/icons/icon-maskable-512.png` (placeholder Beyblade-X-branded icons — replace with final art before launch, tracked as a design follow-up, not a code placeholder)
+- Test: `tests/unit/manifest.test.ts`
+
+**Interfaces:**
+- Produces: `/manifest.webmanifest` served by Next.js; `RegisterServiceWorker` mounted once in `app/layout.tsx`, registering `/sw.js`.
+
+`[REVIEW-FIX: frontend-pwa C1, C3, I10]` Three corrections from review baked into this task:
+
+1. **Scope, stated once, here, and nowhere else**: this task ships the service worker *shell* — install/activate lifecycle, cache versioning, and a generic offline-document fallback — plus a static `/offline.html` stub. It does **not** attempt to make `/tournaments/[id]/judge` fully functional offline; that requires caching the full Next.js asset closure (JS/CSS/RSC chunks) *and* an IndexedDB-backed match-data snapshot, which only exists once real match data exists. That real implementation is Phase 5 Part C's job, exclusively — not Phase 3, not "Phase 3/5". If you are writing a Phase 3 sub-plan and see "judge scoring entry point" in its scope line, delete it; Phase 3 does not touch judge functionality.
+2. **The earlier plaintext SW design was broken**: it cached only the HTML document (never the JS/CSS chunks a page needs to hydrate) and referenced `/offline.html` without ever creating the file, so `cache.addAll` in `install` would have rejected and the SW would never have installed at all. Fixed below.
+3. **The SW now has a real versioning/update lifecycle** (`activate` prunes old caches; cache name is derived from a build-time version, not a hand-bumped literal), because Phase 6's Watchtower auto-deploys on every merge — an unversioned SW would serve stale chunk references to any device that stays open across a deploy.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/unit/manifest.test.ts
+import { describe, it, expect } from 'vitest'
+import manifest from '@/app/manifest'
+
+describe('PWA manifest', () => {
+  it('declares standalone display and the required icon sizes', () => {
+    const m = manifest()
+    expect(m.display).toBe('standalone')
+    const sizes = m.icons?.map((i) => i.sizes)
+    expect(sizes).toContain('192x192')
+    expect(sizes).toContain('512x512')
+    expect(m.icons?.some((i) => i.purpose === 'maskable')).toBe(true)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/unit/manifest.test.ts`
+Expected: FAIL — `@/app/manifest` does not exist.
+
+- [ ] **Step 3: Implement app/manifest.ts**
+
+```ts
+// app/manifest.ts
+import type { MetadataRoute } from 'next'
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: 'BeybladeX.de',
+    short_name: 'BeybladeX',
+    description: 'Community-, Sammlungs-, Social- und Turnier-Plattform für Beyblade X in der DACH-Region',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#090D16',
+    theme_color: '#00F0FF',
+    icons: [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/unit/manifest.test.ts`
+Expected: PASS
+
+- [ ] **Step 5: Create the offline fallback document**
+
+```html
+<!-- public/offline.html -->
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BeybladeX.de — Offline</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #090D16; color: #F8FAFC; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 1.5rem; }
+    h1 { color: #00F0FF; }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>Keine Verbindung</h1>
+    <p>Diese Seite ist offline nicht verfügbar. Verbinde dich erneut mit dem Internet.</p>
+  </div>
+</body>
+</html>
+```
+
+- [ ] **Step 6: Add the versioned, self-cleaning service worker shell**
+
+```js
+// public/sw.js
+// Cache name is versioned per build so Phase 6's auto-deploys never leave a device serving
+// chunk references from a prior build (see plan Global Constraints + Phase 6).
+// __SW_BUILD_ID__ is a placeholder token — Task 1's build step (next.config.ts webpack hook,
+// or a small prebuild script) replaces it with a fresh value (e.g. Next.js's buildId or a
+// timestamp) when public/sw.js is emitted, so every deploy ships a distinct cache namespace.
+const BUILD_ID = '__SW_BUILD_ID__'
+const CACHE_NAME = `beybladex-shell-${BUILD_ID}`
+const OFFLINE_URL = '/offline.html'
+const PRECACHE_URLS = [OFFLINE_URL]
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)))
+  // Deliberately do NOT self.skipWaiting() here: a judge device mid-tournament should keep its
+  // currently-active SW/cache until the page is reloaded or the tournament session ends, rather
+  // than being force-updated under it. RegisterServiceWorker.tsx surfaces an "update available"
+  // prompt instead (Phase 5 Part C wires the judge-specific UX for this).
+})
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) => Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))))
+  )
+})
+
+// Generic shell-level fetch handling: network-first with a bounded timeout (a hung TCP connect
+// on a flaky hall connection must not block navigation for tens of seconds), falling back to the
+// offline document for navigations only. Phase 5 Part C adds a SEPARATE, additional fetch listener
+// for the judge route's full asset closure and IndexedDB-backed data hydration — this handler
+# stays generic and must not be deleted or narrowed when that listener is added.
+const NETWORK_TIMEOUT_MS = 4000
+
+function fetchWithTimeout(request) {
+  return Promise.race([
+    fetch(request),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT_MS)),
+  ])
+}
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode !== 'navigate') return
+  event.respondWith(
+    fetchWithTimeout(event.request).catch(async () => {
+      const cache = await caches.open(CACHE_NAME)
+      return (await cache.match(event.request)) ?? (await cache.match(OFFLINE_URL))
+    })
+  )
+})
+```
+
+Note the `# stays generic` line above is a comment typo guard for the executor: it must render as a `//` JS comment, not `#` — fix when transcribing.
+
+- [ ] **Step 7: Wire registration and install prompt**
+
+Create `components/pwa/RegisterServiceWorker.tsx` (client component, `useEffect` calling `navigator.serviceWorker.register('/sw.js')`, and listening for `registration.waiting`/`updatefound` to surface a non-blocking "update available" toast rather than forcing a reload) and mount it in `app/layout.tsx`. Create `components/pwa/InstallPrompt.tsx` listening for the `beforeinstallprompt` event and rendering an install CTA; since iOS Safari never fires that event, also detect iOS user agents and show a one-time "Zum Home-Bildschirm hinzufügen: Teilen → Zum Home-Bildschirm" informational card instead.
+
+- [ ] **Step 8: Add the build-ID substitution step**
+
+In `next.config.ts` (or a small `scripts/inject-sw-build-id.js` run via a `prebuild` npm script), replace `__SW_BUILD_ID__` in `public/sw.js` with a fresh identifier (Next.js's generated `buildId`, or `Date.now()` if simpler) before `next build` copies `public/` into the output. Document this step explicitly — it is easy to forget and, if skipped, silently degrades the whole versioning fix back to a single static cache name.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add PWA manifest, versioned self-cleaning service worker shell, offline fallback, install prompt"
+```
+
+Note for Phase 5: the Judge scoring UI's IndexedDB write-queue, match-data snapshot cache, and background-sync registration are a **separate, additional** `fetch`/`sync` listener appended to `public/sw.js` — do not replace the generic shell handler above; both must coexist, matched by distinct URL patterns.
+
+---
+
+### Task 9: Vendor Fonts, Lucide Icons, Leaflet (Zero External CDN)
+
+**Files:**
+- Create: `public/fonts/` (Geist Sans, Inter Display woff2 files)
+- Create: `app/globals.css` (append `@font-face` rules)
+- Install: `lucide-react`, `leaflet` as npm deps (bundled by Next.js, not loaded from a CDN)
+- Test: `tests/unit/no-external-resources.test.ts`
+
+**Interfaces:**
+- Produces: `--font-sans` CSS variable used by `tailwind.config.ts`'s `fontFamily.sans`; `import { IconName } from 'lucide-react'` and `import 'leaflet/dist/leaflet.css'` as the only sanctioned import paths for icons/maps in later phases.
+
+- [ ] **Step 1: Install local packages (no runtime CDN fetch)**
+
+```bash
+npm install lucide-react leaflet
+npm install -D @types/leaflet
+```
+
+Download Geist Sans and Inter Display `.woff2` files (already locally licensed per spec) into `public/fonts/`.
+
+- [ ] **Step 2: Write the failing static-scan test**
+
+```ts
+// tests/unit/no-external-resources.test.ts
+import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+
+function collectSourceFiles(dir: string, acc: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === '.next') continue
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) collectSourceFiles(full, acc)
+    else if (/\.(tsx?|css|html)$/.test(entry.name)) acc.push(full)
+  }
+  return acc
+}
+
+const FORBIDDEN = [/fonts\.googleapis\.com/, /unpkg\.com/, /cdn\.jsdelivr\.net/, /cdnjs\.cloudflare\.com/]
+
+describe('zero external CDN resources', () => {
+  it('no source file references a forbidden external asset host', () => {
+    const files = collectSourceFiles(join(process.cwd(), 'app')).concat(collectSourceFiles(join(process.cwd(), 'components')))
+    for (const file of files) {
+      const content = readFileSync(file, 'utf-8')
+      for (const pattern of FORBIDDEN) {
+        expect(pattern.test(content), `${file} references forbidden host ${pattern}`).toBe(false)
+      }
+    }
+  })
+})
+```
+
+- [ ] **Step 3: Run test to verify it currently passes trivially, then add the font CSS**
+
+Run: `npx vitest run tests/unit/no-external-resources.test.ts` → PASS (nothing added yet).
+
+Append to `app/globals.css`:
+```css
+@font-face {
+  font-family: 'Geist Sans';
+  src: url('/fonts/GeistSans-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+```
+
+Edit `tailwind.config.ts` `theme.extend.fontFamily.sans` to `['Geist Sans', 'Inter Display', 'system-ui', 'sans-serif']`.
+
+- [ ] **Step 4: Re-run the guard test to confirm it still passes (no CDN links were introduced)**
+
+Run: `npx vitest run tests/unit/no-external-resources.test.ts`
+Expected: PASS — this test is a permanent CI guard, not a one-off check; it must stay in the suite for every future phase.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: vendor fonts, Lucide icons, and Leaflet locally; add zero-external-CDN guard test"
+```
+
+---
+
+### Task 10: Responsive App Shell (Header, Mobile Nav, Footer)
+
+**Files:**
+- Create: `components/layout/Header.tsx`, `components/layout/MobileNav.tsx`, `components/layout/Footer.tsx`
+- Modify: `app/layout.tsx`
+- Test: `tests/unit/header.test.tsx`
+
+**Interfaces:**
+- Consumes: `useTheme` (Task 2), `auth()` session (Task 5), `lucide-react` icons (Task 9).
+- Produces: the persistent shell every route in Phases 2–6 renders inside via `app/layout.tsx`.
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// tests/unit/header.test.tsx
+import { render, screen } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
+import { Header } from '@/components/layout/Header'
+
+describe('Header', () => {
+  it('renders the brand name and a theme toggle', () => {
+    render(<Header session={null} />)
+    expect(screen.getByText('BeybladeX.de')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/unit/header.test.tsx`
+Expected: FAIL — `@/components/layout/Header` does not exist.
+
+- [ ] **Step 3: Implement Header with mobile-first responsive classes**
+
+```tsx
+// components/layout/Header.tsx
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
+import type { Session } from 'next-auth'
+
+export function Header({ session }: { session: Session | null }) {
+  return (
+    <header className="sticky top-0 z-40 flex items-center justify-between border-b border-x-cyan/20 bg-base-light/90 px-4 py-3 backdrop-blur dark:bg-base-dark/90 md:px-8">
+      <span className="text-lg font-bold tracking-tight text-x-cyan">BeybladeX.de</span>
+      <div className="flex items-center gap-3">
+        <ThemeToggle />
+        {session ? <span className="text-sm">{session.user?.name}</span> : <a href="/login" className="text-sm">Login</a>}
+      </div>
+    </header>
+  )
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/unit/header.test.tsx`
+Expected: PASS
+
+- [ ] **Step 5: Add MobileNav (bottom tab bar, `md:hidden`) and Footer, wire all three into `app/layout.tsx`**
+
+Standard responsive composition — `MobileNav` renders a fixed bottom bar visible only below `md` breakpoint (critical for the Task 6/Phase 5 Judge interface used at tournament tables); `Footer` is a static desktop-only footer (`hidden md:block`).
+
+- [ ] **Step 6: Run full test suite and commit**
+
+Run: `npm test`
+Expected: PASS
+
+```bash
+git add -A
+git commit -m "feat: add responsive app shell (Header, MobileNav, Footer)"
+```
+
+---
+
+### Task 11: Minimal CI Gate (`[REVIEW-FIX: backend-security #16; frontend-pwa I11]`)
+
+Reviewed and moved earlier: a plan this dependent on TDD needs a red build to actually block merges from Phase 1 onward, not first in Phase 6. This task adds a minimal gate; Phase 6 extends it with the deploy job and full Playwright/service wiring.
+
+**Files:**
+- Create: `.github/workflows/ci.yml`
+
+- [ ] **Step 1: Add the CI workflow**
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: beybladex
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: beybladex_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U beybladex -d beybladex_test"
+          --health-interval 5s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgresql://beybladex:ci_test_password@localhost:5432/beybladex_test
+      REDIS_URL: redis://localhost:6379
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-test-secret-not-for-production
+      TOTP_ENCRYPTION_KEY: dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ==
+      WEBAUTHN_RP_ID: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx tsc --noEmit
+      - run: npm test
+```
+
+- [ ] **Step 2: Verify locally**
+
+Run: `npx tsc --noEmit && npm test` (against the local dev Postgres/Redis from Tasks 3–4)
+Expected: PASS — this is the same command CI runs, so a green local run predicts a green CI run.
+
+- [ ] **Step 3: Commit and confirm the workflow runs on the next push**
+
+```bash
+git add -A
+git commit -m "ci: add minimal test+typecheck gate with Postgres/Redis service containers"
+git push
+```
+
+Confirm in the GitHub Actions tab that the `test` job runs and passes. Phase 6 later adds a `build-and-push` job gated on this one (`needs: test`), plus a Playwright job once Phase 5 produces e2e specs.
+
+---
+
+### Task 12: Account Settings — Rectification, Erasure, Export, Legal Pages `[REVIEW-FIX: privacy-dsgvo #2, #3, #6; ux-product §1, §3f]`
+
+Added by review: the plan had dead API routes with no page to call them, no way for a user to edit their own data (Art. 16), no way to delete their account (Art. 17) or export it (Art. 20), and no Impressum/Datenschutzerklärung/AGB — the last being a standalone German statutory requirement. This task closes all of it in one place, against the full schema Task 3 already created (every model from spec §3 exists from Phase 1 onward, even though most of their *feature UIs* ship in later phases — so the erasure/export matrix below can and does cover the whole schema now, and later phases only extend it per the Cross-Phase Regression Guard's standing rule).
+
+**Files:**
+- Create: `app/settings/layout.tsx` (owner-only shell, tabs: Profil, Privatsphäre, Sicherheit, Benachrichtigungen, Konto)
+- Create: `app/settings/profile/page.tsx` + `app/api/profile/route.ts` (`PATCH`, owner-only, field whitelist: `displayName`, `bio`, `city`, `postalCode`, `state`, `country`, `discordTag`, `birthDate`) — rectification (Art. 16). A `birthDate` edit re-runs the age computation from Task 5 and updates `isMinor`; an edit that would *lower* the computed age (a bogus correction demoting an adult to a minor) is accepted (minors deserve the protection even if self-reported late) but an edit *raising* it past the consent threshold requires the same parental-consent-style confirmation flow is now moot (re-run `calculateAge`, flip `isMinor` false, no further gate needed) — document this asymmetry so it isn't "fixed" into requiring consent to become *less* restricted.
+- Create: `app/settings/privacy/page.tsx` — the page Task 7's `PATCH /api/profile/privacy` route always needed; a form with one select per visibility field (`profileVisibility`, `locationVisibility`, `collectionVisibility`, `decksVisibility`, `ageVisibility`) plus **a disabled/locked state for minors** on `locationVisibility`/`discordTag`-adjacent fields, reflecting the hard ceiling `resolveVisibleFields` already enforces server-side — the UI must not offer a control that silently does nothing.
+- Create: `app/settings/security/page.tsx` — the page Task 6's WebAuthn/TOTP routes always needed; lists registered passkeys with a "register new passkey" button (calls `getRegistrationOptions`/`verifyRegistration`), TOTP enrollment status with a "set up 2FA" flow (calls `app/api/totp/setup`/`verify`) and a "disable 2FA" action (password-reconfirm required).
+- Create: `app/settings/notifications/page.tsx` — the page `notifyRadiusKm`/`notifyRecurring`/`notifyEmail` always needed; also where a postal code is first solicited if not set at registration (Phase 3's radius search and `notifyUsersInRadius` are otherwise unreachable — `[REVIEW-FIX: ux-product §2]`).
+- Create: `app/settings/account/page.tsx`, `app/api/account/export/route.ts` (`GET`, owner-only, streams a JSON document), `app/api/account/route.ts` (`DELETE`, owner-only, requires password/TOTP re-confirmation in the request body), `lib/accountErasure.ts`.
+- Create: `app/impressum/page.tsx`, `app/datenschutz/page.tsx`, `app/agb/page.tsx` (static content pages; the operator supplies final legal text — these routes and their Footer links are the code deliverable, not the legal copy itself).
+- Modify: `components/layout/Footer.tsx` (Task 10) — add links to all three legal pages, reachable in ≤2 clicks from any page per the DSGVO review's acceptance bar.
+- Test: `tests/integration/account-export.test.ts`, `tests/integration/account-deletion.test.ts`, `tests/integration/profile-rectification.test.ts`
+
+**Interfaces:**
+- Produces: `eraseOrAnonymizeUser(userId: string): Promise<void>` from `lib/accountErasure.ts` — the single function `DELETE /api/account` calls, and the one place every later phase's new `User`-owned model gets registered (per the standing Cross-Phase rule).
+
+```ts
+// lib/accountErasure.ts (excerpt — the erasure/anonymization matrix, Art. 17 compliant)
+import { prisma } from '@/lib/db'
+
+export async function eraseOrAnonymizeUser(userId: string) {
+  await prisma.$transaction(async (tx) => {
+    // Cascade-delete: purely personal, no other user's legitimate interest in keeping it.
+    await tx.passkey.deleteMany({ where: { userId } })
+    await tx.notification.deleteMany({ where: { userId } })
+    await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } })
+    await tx.clubMember.deleteMany({ where: { userId } })
+    await tx.collectionItem.deleteMany({ where: { userId } })
+    // NOTE: no Rating cleanup here — Rating.userId does not exist yet at Phase 1 (spec §3's Rating
+    // is anonymous). Phase 5 Part A adds Rating.userId and, per the Cross-Phase Regression Guard's
+    // standing rule, MUST add `await tx.rating.deleteMany({ where: { userId } })` to this function
+    // as part of that phase's own delivery — do not add it here, it would not compile yet.
+    // Decks/builds a user made: delete the deck join rows and the deck itself (builds are shared
+    // catalog-adjacent rows referenced by other decks/matches too — never delete Build itself here).
+    const decks = await tx.deck.findMany({ where: { userId }, select: { id: true } })
+    await tx.deckBuild.deleteMany({ where: { deckId: { in: decks.map((d) => d.id) } } })
+    await tx.deck.deleteMany({ where: { userId } })
+
+    // Anonymize-and-sever: OTHER data subjects (opponents, club members, tournament history) have
+    // a legitimate interest in this data surviving — Art. 17(3) — so it stays, stripped of the
+    // personal link. `username` is released (it's @unique) so it can be re-registered by someone else.
+    const anonymizedUsername = `geloescht_${userId.slice(0, 8)}`
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        username: anonymizedUsername, displayName: 'Gelöschter Nutzer', email: null, passwordHash: null,
+        bio: null, discordTag: null, city: null, postalCode: null, latitude: null, longitude: null,
+        birthDate: null, totpSecret: null, parentalConsentEmail: null,
+      },
+    })
+    // Club ownership can't dangle (onDelete: Restrict in spec §3) — reassign to another admin
+    // member, or dissolve the club if the departing owner was its only member.
+    const ownedClubs = await tx.club.findMany({ where: { ownerId: userId }, include: { members: { where: { isAdmin: true, userId: { not: userId } } } } })
+    for (const club of ownedClubs) {
+      if (club.members[0]) await tx.club.update({ where: { id: club.id }, data: { ownerId: club.members[0].userId } })
+      else await tx.club.delete({ where: { id: club.id } }) // no other admin — dissolve
+    }
+    // Rulesets a user authored stay (other organizers/tournaments reference them) — reassign to a
+    // reserved system user rather than leaving a dangling createdById.
+    const systemUser = await tx.user.upsert({ where: { username: 'geloeschte-nutzer' }, create: { username: 'geloeschte-nutzer', role: 'USER' }, update: {} })
+    await tx.ruleset.updateMany({ where: { createdById: userId }, data: { createdById: systemUser.id } })
+    // Match/TournamentParticipant/judged-Match references: personal link severed by the User row's
+    // own anonymization above (player1Id/player2Id/judgeId still point at the now-anonymized row —
+    // spec §3 has no cascade there and none is needed; the row itself carries no PII anymore).
+  })
+  // Session/token invalidation: bump a tokenVersion field (additive to User, paired with the
+  // backend review's open token-revocation item) so existing 30-day JWTs stop authenticating
+  // immediately — an account deletion that a stale session can still use for 30 days is not erasure.
+}
+```
+
+```ts
+// app/api/account/export/route.ts (excerpt)
+export async function GET() {
+  // owner-only (session check omitted for brevity) — assembles one JSON document:
+  // { profile, collection, decks, ratings, friendships, clubMemberships, notificationPreferences,
+  //   tournamentParticipations: [...] } via a handful of prisma queries scoped to the session user.
+  // Art. 20 portability — machine-readable, commonly-used format (JSON) satisfies the requirement.
+}
+```
+
+- Test acceptance: `tests/integration/account-deletion.test.ts` seeds a user owning a club, a ruleset, a deck, and a completed match, calls `eraseOrAnonymizeUser`, then asserts: the user row's PII fields are null, the username is released and re-registerable, the club has a new owner (or is gone if it was solo), the ruleset's `createdById` points at the system user, and the match/deck data referencing the (now-anonymized) user still exists and is queryable — proving erasure doesn't corrupt other users' legitimate data. `tests/integration/account-export.test.ts` asserts the export JSON contains every category listed above and nothing belonging to another user. `tests/integration/profile-rectification.test.ts` asserts a non-owner `PATCH /api/profile` gets 403, and a `birthDate` edit recomputes `isMinor` correctly in both directions.
+
+- [ ] Commit: `git commit -m "feat: account rectification, erasure, export, and legal pages"`
+
+---
+
+### Task 13: UI Primitives, Navigation Model & Accessibility Baseline `[REVIEW-FIX: ux-product §1, §6, §7]`
+
+Added by review: without a shared component layer and a fixed navigation decision, five independently-sub-planned phases produce a visually and structurally inconsistent product, and the plan's own color tokens contain an unflagged accessibility failure.
+
+**Files:**
+- Create: `components/ui/Button.tsx`, `Input.tsx`, `Select.tsx`, `Textarea.tsx`, `Card.tsx`, `Badge.tsx`, `Modal.tsx`, `Toast.tsx`, `Tabs.tsx`, `EmptyState.tsx`, `FormField.tsx` (label + control + error-text composition)
+- Create: `lib/errorCopy.ts` (maps API error codes like `invalid_username`, `rate_limited` to German user-facing strings — the one place error copy lives, so every phase's forms show consistent, correct German rather than raw error codes or ad hoc translations)
+- Modify: `tailwind.config.ts` — add an accessible text-safe cyan token: `'x-cyan-text': '#0891A5'` (a darkened X-Cyan that clears WCAG AA 4.5:1 on `base-light`/`#FFFFFF`, unlike the literal `#00F0FF`, which computes to ~1.5:1 and is illegible as text on a light background `[REVIEW-FIX: ux-product §7]`). **Usage rule, binding on every later phase**: `text-x-cyan` is reserved for dark-mode text and light-mode decorative use (borders, fills, glows, large graphic elements); any light-mode *text* use of the cyan accent uses `text-x-cyan-text` instead. State this rule here once rather than let each phase discover the contrast failure independently.
+- Modify: `app/layout.tsx` — add `lang="de"` to `<html>` (the plan's `public/offline.html` already sets it; the main shell never did, breaking screen-reader pronunciation of German content `[REVIEW-FIX: ux-product §7]`).
+- Modify: `components/layout/Header.tsx` (Task 10) — fixed content, not "brand + theme toggle" only: brand, primary nav links (Turniere/Events, Decks, Sammlung, Clubs, Regeln), a search entry point (`components/ui/SearchInput` — a skeleton input wired to a `/search` route stub in this task; Phase 3–5 progressively add real search backends per the phased plan below), a notification bell with unread-count badge (linking to `/settings` isn't right — create `app/notifications/page.tsx` as the inbox, Phase 3 fills its content once `Notification` data flows), and a session-aware avatar/username menu (Profil, Einstellungen, Abmelden) replacing the current bare "username or Login link."
+- Modify: `components/layout/MobileNav.tsx` (Task 10) — fixed tabs, not an empty bottom bar: **Start, Events, Decks, Sammlung, Profil** (five tabs — the mobile-first primary surfaces; Clubs/Rules/Settings live one level deeper, reachable from Start or the avatar menu, per standard bottom-nav practice of ≤5 top-level destinations).
+- Create: `app/search/page.tsx` — a typed-sections results page skeleton (Nutzer, Events, Clubs, Teile — sections populate as each phase's search backend lands; this task ships the shared page and the `SearchInput` component, not the search logic itself, which is phased: Phase 3 adds event text search, Phase 4 adds user/club search, Phase 5 adds parts search — each phase's own sub-plan wires its section into this page rather than inventing a separate search UI).
+- **IA decision, binding**: `/events/[id]` is the public event detail page (map, info, join CTA, participant list, guest-visible); `/tournaments/[id]` is the competitive/operational surface (bracket, matches, judge entry, organizer console) reachable from the event page once a tournament is underway — Phase 3 links to the latter from the former once brackets exist. State this in Phase 3's sub-plan verbatim; it resolves the plan's previously-undecided duplication `[REVIEW-FIX: ux-product §1]`.
+- **Landing page decision, binding**: `app/page.tsx` (Task 1) shows, for guests: a hero + "was ist BeybladeX.de" + upcoming DACH events teaser (reuses Phase 3's event query, `revalidate`d) + a register CTA; for logged-in users: a personalized dashboard (next tournament they're registered for, recent club activity, new parts in the catalog) — Phase 3/5 progressively fill this in as their data models land; this task states the decision so `app/page.tsx` isn't shipped as a content-free stub through six phases `[REVIEW-FIX: ux-product §1]`.
+- **Anonymous-vs-member convention, binding**: every page reachable by a guest shows the same content plus a contextual "Anmelden, um teilzunehmen/zu speichern/…" CTA in place of any action requiring a session — one convention, not five independent decisions `[REVIEW-FIX: ux-product §2]`.
+
+**Interfaces:**
+- Produces: `components/ui/*` — every later phase's forms/cards/modals import from here rather than hand-rolling markup; this is enforced by the new Cross-Phase Regression Guard rule above.
+
+- Test: `tests/unit/ui-primitives.test.tsx` (each primitive renders with its documented states: default/hover/disabled/error where applicable; `FormField` associates its label and error text via `aria-describedby`), `tests/unit/contrast.test.ts` (a small script computing WCAG contrast ratio for `x-cyan-text` on `base-light`/`#FFFFFF`, asserting ≥4.5:1 — a permanent guard against the token being "fixed" back to the illegible value later, the same standing-test pattern as the zero-CDN guard).
+
+- [ ] Commit: `git commit -m "feat: shared UI primitives, fixed navigation model, accessibility baseline"`
+
+## Phase 1 Definition of Done
+
+- [ ] `npm test` and `npx tsc --noEmit` pass with zero failures, both locally and in the `ci.yml` GitHub Actions run (Task 11).
+- [ ] `npx vitest run tests/unit/no-external-resources.test.ts` passes (permanent guard).
+- [ ] A fresh guest visiting `/` receives **no cookies** — assert this in `tests/integration/register.test.ts` itself (inspect the pre-login response's `Set-Cookie` header is absent), not only via manual devtools inspection.
+- [ ] Registering with only `username` + `password` succeeds; login works. `tests/integration/totp-login-gate.test.ts` (Task 6 Step 5c) passes, proving password-only login is **refused** once TOTP is enabled and only succeeds with a valid current token — not merely that enrollment produces a QR code. `User.totpSecret` is confirmed encrypted at rest (`tests/unit/totp-encryption.test.ts`). A passkey can be registered and used to authenticate via the Redis-challenge flow (manual browser check for the WebAuthn ceremony itself — it can't be fully automated in Vitest/jsdom — but the challenge-issuance/consumption plumbing around it is unit-tested).
+- [ ] Register/login/WebAuthn/TOTP-verify endpoints are rate-limited (`tests/unit/rate-limit.test.ts` plus a manual burst check that `/api/register` returns 429 after 5 requests/15min from one IP).
+- [ ] `/api/map/tile/1/1/1` returns a cached PNG on the second request without re-hitting the OSM origin (verify via Redis `GET osm-tile:v1:1:1:1` and by checking no second outbound fetch in logs); `/api/map/tile/99/1/1` returns 400.
+- [ ] Theme toggle cycles system/dark/light with **no visible flash on load** — verified by `tests/e2e/theme-no-flash.spec.ts` (Task 2 Step 7), not just eyeballed.
+- [ ] The app is installable (Chrome DevTools → Application → Manifest shows no errors) and `/offline.html` is served for any navigation attempted fully offline after one visit (this is the Phase 1 offline guarantee — the full judge-route offline experience is Phase 5 Part C's DoD, not this one; see Task 8's scope note).
+- [ ] Registering with a birth date below 16 creates a `PENDING_PARENTAL_CONSENT` account that cannot log in until confirmed; registering below 16 without a parental-consent email is rejected with 400 (`tests/integration/register.test.ts` extended per Task 5). `resolveVisibleFields`'s minor ceilings are proven by `tests/unit/privacy.test.ts`: a minor's `city`/`discordTag`/`bio` are `null` to any non-owner viewer regardless of the minor's own visibility settings.
+- [ ] `/impressum`, `/datenschutz`, `/agb` are reachable from the Footer on every page; registering without accepting the consent checkbox returns 400; `privacyPolicyAcceptedAt`/`privacyPolicyVersion` are set on successful registration.
+- [ ] A test user can edit their own profile fields (`PATCH /api/profile`), export their data (`GET /api/account/export` returns every documented category), and delete their account — after which `tests/integration/account-deletion.test.ts` confirms their PII is gone, their username is released, and data other users legitimately depend on (a club they owned, a ruleset they authored) survives, reassigned rather than orphaned or cascaded away.
+- [ ] `components/ui/*` primitives exist and `tests/unit/contrast.test.ts` proves `x-cyan-text` clears WCAG AA (≥4.5:1) on both light backgrounds — this test stays in the suite permanently, the same way the zero-CDN guard does.
+- [ ] The Header shows real navigation (not just brand+theme+login) and `MobileNav` renders its five fixed tabs; the landing page (`/`) renders distinct guest and member content per Task 13's decision, not an empty stub.
+
+---
+
+# Phase 2: Regel-Editor & Rules Sharing
+
+**Scope:** spec §2.B. Visual editor for `Ruleset` (deck format, points, penalties, special rules), public `/rules/[slug]` view, PDF export.
+
+**Files:**
+- Create: `app/rules/page.tsx` (list + "new ruleset" entry, auth required to create)
+- Create: `app/rules/[slug]/page.tsx` (public view, no auth required, respects `Ruleset.isPublic`)
+- Create: `app/rules/[slug]/edit/page.tsx` (owner-only editor)
+- Create: `components/rules/RulesetForm.tsx` (deck format select: `WBO_COUNTERDECK | THREE_ON_THREE | PICK_THREE_CHOOSE_ONE | ONE_ON_ONE`; point fields `targetPoints`/`finalsTargetPoints`; toggles `lockedDecks`, `allowForceSwitch`, `arenaTurnAllowed`, `outOfBounds2Pts`, `ownFinishPenalty`, `relaunchLimit`, `aerialContactRerun`, **and `externalDisturbanceRerun`** — every field maps 1:1 to a `Ruleset` column from spec §3, no invented fields)
+- Modify: `prisma/schema.prisma` — add `Ruleset.externalDisturbanceRerun Boolean @default(true)` `[REVIEW-FIX: ux-product §5, spec §2.B "äußere Störungen"]`: spec §2.B lists "äußere Störungen" (external disturbance → rematch) as a special rule alongside relaunch and aerial-contact-rerun, but spec §3's schema never gave it a column — an omission in the spec's own schema, not a deliberate exclusion. Per Global Constraints' rule that schema deviations be additive and documented, this field closes the gap rather than silently dropping a spec-promised rule.
+- Create: `app/api/rulesets/route.ts` (`POST` create), `app/api/rulesets/[slug]/route.ts` (`GET`/`PATCH`, owner-only for `PATCH`)
+- Create: `lib/rulesetPdf.ts` (server-side PDF export — use `@react-pdf/renderer`, bundled not CDN-loaded)
+- Create: `app/rules/[slug]/pdf/route.ts` (streams the generated PDF)
+- Test: `tests/integration/ruleset-crud.test.ts`, `tests/unit/ruleset-slug.test.ts`, `tests/integration/ruleset-pdf.test.ts`
+
+**Acceptance criteria (write as the phase's own TDD sub-plan before starting):**
+- A logged-in user can create a `Ruleset`, gets redirected to `/rules/<slug>`, and the slug is a URL-safe, unique, deterministic slugification of the title (collision → append `-2`, `-3`, …).
+- `/rules/[slug]` renders for anonymous visitors when `isPublic = true`, and 404s (not 403 — don't leak existence) when `isPublic = false` and the viewer isn't the owner.
+- Only `createdById` can `PATCH` a ruleset; others get 403.
+- `/rules/[slug]/pdf` returns `content-type: application/pdf` with all rule fields rendered in German (the platform's primary language per spec framing).
+- Every boolean/int field on the form round-trips through `POST`/`PATCH` without loss (test each of the 8 modifier fields individually, including `externalDisturbanceRerun`).
+- `/rules/[slug]` renders via `export const revalidate = 300` (public, infrequently-mutated content) per `[REVIEW-FIX: performance P16]`.
+
+---
+
+# Phase 3: DACH-Kalender, RSS & Notifications
+
+**Scope:** spec §2.C. Leaflet map + calendar for `Tournament`, radius search, RSS feeds, in-app + optional email notifications, **and the tournament supply/demand front door that makes the calendar usable as a product**: event creation, joining, deck selection, and check-in `[REVIEW-FIX: ux-product §3a, §3f]` — the review found these were schema-ready (`TournamentParticipant.deckId`/`checkedIn`, `@@unique([tournamentId, userId])`) but had no route or UI anywhere, meaning the platform's primary journey (find → join → play a tournament) could not be completed. **Judge scoring is explicitly out of scope for this phase** `[REVIEW-FIX: frontend-pwa I10]` — spec §2.C's "Judge-Flow" line is implemented entirely in Phase 5 Part C; if this phase's own sub-plan mentions judge functionality, that's a leftover from an earlier draft — delete it.
+
+**Files:**
+- Modify: `prisma/schema.prisma` — add `Tournament.createdById String` + `createdBy User @relation("TournamentOrganizer", fields: [createdById], references: [id])`, and `@@unique([tournamentId, userId])` on `TournamentParticipant` `[REVIEW-FIX: backend-security #11, #14]` (additive changes, allowed per Global Constraints; document them at the top of this phase's own sub-plan). Without an owner FK, "ORGANIZER/ADMIN only" is a role check with no ownership boundary — any organizer could edit/delete any tournament once an edit route exists.
+- Create: `components/map/LeafletMap.tsx` (uses `leaflet` npm package + `/api/map/tile/[z]/[x]/[y]` from Phase 1 Task 4 — never `openstreetmap.org` directly; import `leaflet/dist/leaflet.css` locally, no CDN link tag; renders a visible attribution control containing `© OpenStreetMap contributors`, an ODbL requirement that proxying tiles does not remove `[REVIEW-FIX: frontend-pwa I7]`; construct marker icons explicitly via imported PNG URLs rather than relying on Leaflet's default CSS-relative icon paths, which are known to break under Next.js's asset pipeline `[REVIEW-FIX: frontend-pwa I6]` — delete the unused `public/leaflet/` entry from the repo-wide file structure, since this task settles on the npm-package approach, not vendored files; loaded via `next/dynamic({ ssr: false })` per `[REVIEW-FIX: performance P10]`)
+- Create: `app/events/page.tsx` (map + calendar + filters: `country`, `state`, radius-from-postal-code, **and a text search box over title/city** `[REVIEW-FIX: ux-product §8]`, wired into the shared `app/search/page.tsx` "Events" section from Task 13; `export const revalidate = 60` per `[REVIEW-FIX: performance P16]`; **empty-state**: zero results renders `components/ui/EmptyState` with a "Turnier erstellen" CTA for `ORGANIZER`/`ADMIN`/club-admin sessions, not a blank map `[REVIEW-FIX: ux-product §2]`)
+- Create: `app/events/[id]/page.tsx` — the canonical **public event detail page** per Task 13's IA decision: map pin, info, participant count/list, and the join flow below; a guest sees the same content plus "Anmelden, um teilzunehmen" in place of the join button, per Task 13's anonymous-vs-member convention.
+- Create: `app/events/new/page.tsx` + `components/tournament/TournamentForm.tsx` `[REVIEW-FIX: ux-product §3f]` — the event-creation form the plan previously had no page for; fields cover every `Tournament` column including `isRecurring`/`recurringDays` (previously schema-only with no UI). Reachable from `/events` (organizer/admin sessions) **and** from a club's own page (`app/clubs/[slug]/page.tsx`, Phase 4) via a "Neues Club-Event" button — both paths post to the same route below.
+- Create: `app/api/tournaments/route.ts` (`GET` with `?country=&state=&lat=&lng=&radiusKm=&q=` — `q` is the new text-search param, paginated `take`/cursor per `[REVIEW-FIX: performance P3]`; `POST` create). **Authorization, corrected** `[REVIEW-FIX: ux-product §3c]`: the review found Phase 3's original "ORGANIZER/ADMIN role only" gate directly contradicted Phase 4's promise that a club admin can create events "im Namen des Clubs" (spec §2.D) — a `ClubMember.isAdmin` is not necessarily a global `ORGANIZER`. Corrected rule: `POST` succeeds if the session has `ORGANIZER`/`ADMIN` role, **or** the request includes a `clubId` the session user administers (`ClubMember.isAdmin === true` for that club) — club admins can create events for their own club without needing the global role. Both paths set `createdById` from the session.
+- Create: `app/api/tournaments/[id]/route.ts` (`PATCH`/`DELETE` — owner (`createdById`) or `ADMIN` only; 403 otherwise) `[REVIEW-FIX: backend-security #11]`
+- Create: `app/api/tournaments/[id]/join/route.ts` `[REVIEW-FIX: ux-product §3a]` — `POST`, authenticated, creates a `TournamentParticipant` row (`@@unique([tournamentId, userId])` from above rejects a double-join with 409); accepts an optional `deckId` in the body (must belong to the joining user — 403 otherwise) so deck selection can happen at join time; a companion `PATCH` on the same route lets a participant change their `deckId` up until the tournament's `startDate` (editable-until-start, per the review's explicit call for this decision), returning 409 after that point. `DELETE` withdraws the participant (only before `startDate`).
+- Create: `app/api/tournaments/[id]/checkin/route.ts` `[REVIEW-FIX: ux-product §3a]` — `PATCH`, sets `TournamentParticipant.checkedIn = true`; callable by the participant themselves (self-check-in) or the tournament's organizer/judge (day-of check-in table) — both paths tested for authz.
+- Modify: `app/events/[id]/page.tsx` — participant list shows check-in status to the organizer; a "Jetzt einchecken" button appears to a joined participant once the tournament's `startDate` is within a same-day window.
+- Create: `lib/geo.ts` (`haversineKm(a, b): number`, `geocodePostalCode(country, postalCode): {lat,lng}` — server-side, results cached in Redis so no per-request external geocoding call leaks user IP patterns; `select`s only `{id, latitude, longitude, notifyRadiusKm}` before the JS-side radius pass per `[REVIEW-FIX: performance P5]`)
+- Create: `lib/rss.ts` (`buildTournamentFeed(tournaments, scope): string` producing valid RSS 2.0 XML)
+- Create: `app/feed/rss.xml/route.ts`, `app/feed/[country]/rss.xml/route.ts`, `app/feed/[country]/[state]/rss.xml/route.ts` (`export const revalidate = 900` per `[REVIEW-FIX: performance P16]`, subsuming the separate `Cache-Control` header ask from `review-frontend-pwa.md` N4)
+- Modify: `app/notifications/page.tsx` (Task 13 shell) — **fills in the notification inbox** `[REVIEW-FIX: ux-product §1]`: paginated list (`take: 50` + cursor per `[REVIEW-FIX: performance P3]`) reading `GET /api/notifications`, unread-count badge wired into the Header's bell (Task 13), "alle als gelesen markieren" bulk action, and live updates via the SSE stream below appended to the top of the list without a refresh.
+- Create: `app/api/notifications/route.ts` (`GET` list — paginated, `PATCH` mark-read — both scoped to `session.user.id`; a `PATCH`/`GET` for another user's notification `id` returns 404, not the other user's data `[REVIEW-FIX: backend-security #21]`)
+- Create: `lib/notify.ts` (`notifyUsersInRadius(tournament): Promise<void>` — queries `User` where `notifyRadiusKm` covers the tournament's `(latitude, longitude)`, respects `notifyRecurring`/`notifyEmail`, **and skips email entirely for any `isMinor` user regardless of their `notifyEmail` setting** `[REVIEW-FIX: privacy-dsgvo #1]`; writes durable `Notification` rows (the source of truth) and publishes on a **per-user** Redis Pub/Sub channel `notify:{userId}` — never a single global channel, which would leak every user's notification content to every connected SSE client `[REVIEW-FIX: frontend-pwa I9]` — using `redis` (Task 4) to publish; the SSE route below uses `redisSubscriber`, never `redis`, per the two-connection rule in Global Constraints)
+- Create: `lib/mailer.ts` — **names the email provider, closing a live schema flag (`notifyEmail`) that otherwise has no implementation anywhere** `[REVIEW-FIX: privacy-dsgvo #6]`: sends via the operator's existing EU-based mail host (SMTP credentials for `kernic.net`, added to the env-var family from the compose-secrets amendment — `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` in `.env.example`) using `nodemailer` — no third-party SaaS mailer (Resend/SendGrid/Postmark, etc.), avoiding an unvetted US-based processor and the Art. 44 transfer analysis that would require. If the operator later prefers a dedicated transactional provider, that is a deliberate future decision with its own DPA — not a default. Document the provider relationship in `/datenschutz` (Task 12).
+- Create: `app/api/notifications/stream/route.ts` (SSE endpoint; verifies the NextAuth session before subscribing, sets `runtime = 'nodejs'`, no compression middleware on this route `[REVIEW-FIX: performance 6b]`, subscribes only to `notify:{session.user.id}` on `redisSubscriber`, sends a heartbeat comment every 25s to keep the connection alive through Traefik, and on connect replays any `Notification` rows created after the client's last-seen `Last-Event-ID`/timestamp from Postgres, bounded to `take: 200` — older gaps are covered by the paginated list API, not an unbounded replay `[REVIEW-FIX: frontend-pwa I9; performance P3]` — since Redis pub/sub is fire-and-forget and mobile judges on venue Wi-Fi are exactly the population likely to disconnect and miss a live publish). Client-side: default `EventSource` reconnect behavior is sufficient (no custom backoff needed) — a Watchtower redeploy drops all connections for a ~1s blip that auto-reconnects, backfilled by the replay above `[REVIEW-FIX: performance 6b]`.
+- Create: a scheduled cleanup path (reuses whatever single-container mechanism Phase 5 Part B's currency-rate refresh settles on — e.g. an internal cron-triggered route) that purges read `Notification` rows older than 90 days and unread ones older than 12 months `[REVIEW-FIX: privacy-dsgvo #5]` — GDPR Art. 5(1)(e) storage limitation; document the periods in `/datenschutz`.
+- Test: `tests/unit/geo.test.ts`, `tests/unit/rss.test.ts`, `tests/integration/notify-radius.test.ts`, `tests/integration/tournament-ownership.test.ts`, `tests/integration/notifications-authz.test.ts`, `tests/integration/tournament-join-flow.test.ts`, `tests/integration/club-admin-create-event.test.ts`
+
+**Acceptance criteria:**
+- `haversineKm` is accurate to within 0.5% against known city-pair distances (e.g. Zürich–Wohlen ≈ 25.6 km) — write this as the literal test assertion.
+- `/feed/rss.xml`, `/feed/de/rss.xml`, `/feed/de/bayern/rss.xml` all return `content-type: application/rss+xml` with valid, well-formed XML (validate via an XML parser in the test, not string matching).
+- Creating a `Tournament` triggers `notifyUsersInRadius`, and only users whose `(lat,lng)` is within their own `notifyRadiusKm` of the tournament receive a `Notification` row (integration test with 3 seeded users at known distances: one inside radius, one outside, one with `notifyRecurring=false` on a recurring tournament); a minor user in-radius receives the in-app `Notification` but never an email, even with `notifyEmail=true` set (test this explicitly).
+- The map never issues a network request to a host other than `/api/map/tile/...` (assert via a network-request spy in a component test or Playwright test), and renders the OSM attribution control.
+- `PATCH /api/tournaments/[id]` and `DELETE /api/tournaments/[id]` return 403 for a non-owner, non-admin organizer, and 200 for the owner (`tests/integration/tournament-ownership.test.ts`) — the standing "every route has a negative authz test" rule from Global Constraints applies starting with this phase.
+- `GET`/`PATCH /api/notifications` scoped to another user's notification `id` returns 404, never that user's data (`tests/integration/notifications-authz.test.ts`).
+- A `Notification` created while a client's SSE connection is disconnected is present in the stream (or the durable list) after reconnect — the plan does not require full `Last-Event-ID` protocol compliance, but does require *some* verified backfill-on-reconnect behavior; write the test against whichever mechanism the phase sub-plan settles on.
+- **`tests/integration/tournament-join-flow.test.ts` walks the full player journey**: join (with and without a `deckId`), change `deckId` before `startDate` (succeeds) and after (409), a duplicate join attempt (409, proving the `@@unique` constraint is load-bearing), self-check-in, and organizer-initiated check-in — all as one test, because this is the platform's primary journey and deserves an end-to-end proof, not scattered unit checks `[REVIEW-FIX: ux-product §3a]`.
+- **`tests/integration/club-admin-create-event.test.ts`** proves a `ClubMember.isAdmin` user (without the global `ORGANIZER` role) can `POST /api/tournaments` with their club's `clubId`, and cannot do so for a club they don't administer `[REVIEW-FIX: ux-product §3c]`.
+- `/events` renders an `EmptyState` with an appropriate CTA when zero tournaments match the current filters, rather than a blank map (`[REVIEW-FIX: ux-product §2]`, tested via a component test with a mocked empty response).
+
+---
+
+# Phase 4: Social System, Clubs, User/Club Search & Role Administration
+
+**Scope:** spec §2.D. Friend requests (send/accept/block), clubs with roles and club-run events, **plus the discovery and administration surfaces the review found had no home anywhere**: a friend request UI needs a way to *find* someone to request (`[REVIEW-FIX: ux-product §8]`), and privileged roles (`JUDGE`/`ORGANIZER`/`TRUSTED`/`ADMIN`) need an assignment mechanism — the plan had none at all `[REVIEW-FIX: ux-product §3f, §5]`.
+
+**Files:**
+- Create: `app/api/friends/route.ts` (`POST` send request), `app/api/friends/[id]/route.ts` (`PATCH` accept/block, `DELETE` remove)
+- Create: `lib/friendship.ts` (`areFriends(viewerId: string, subjectIds: string[]): Promise<Set<string>>` — one `findMany({ where: { OR: [...], status: 'ACCEPTED' } })` returning a `Set`, not a per-user query loop `[REVIEW-FIX: backend-security #13; performance P1 endorsement]`; every later call site needing friendship status for a *list* of users — club rosters, search results, friend suggestions — must use this batch helper, never loop `Friendship.findFirst` per row)
+- Create: `components/social/FriendButton.tsx`, `app/profile/[username]/friends/page.tsx`
+- Modify: `app/search/page.tsx` (Task 13 shell) — wires in the **user search** section (`GET /api/search/users?q=` — username prefix match, paginated, respecting `profileVisibility`) and the **club search** section (`GET /api/search/clubs?q=` — name/city match) `[REVIEW-FIX: ux-product §8]`. Without this, the friend-request feature has no way to find a profile to request except guessing a URL — the review correctly flagged this as making the social graph practically undiscoverable.
+- Create: `app/clubs/page.tsx` (list/create, now with the search box above wired in), `app/clubs/[slug]/page.tsx` (club home + roster + club-run tournaments + a "Neues Club-Event" button posting to Phase 3's corrected `POST /api/tournaments` with `clubId` set)
+- Create: `app/api/clubs/route.ts` (`POST` create — creator becomes `owner` and an `isAdmin=true` `ClubMember`), `app/api/clubs/[slug]/members/route.ts` (`POST` join, `PATCH` promote/demote, `DELETE` leave/kick — owner/admin only for promote/demote/kick; a member can `DELETE` their own membership to leave `[REVIEW-FIX: ux-product §3c]`, previously unspecified)
+- Create: `app/settings/admin/page.tsx` + `app/api/admin/users/[id]/role/route.ts` (`PATCH`, `ADMIN`-only, sets a user's `Role`) `[REVIEW-FIX: ux-product §3f, §5]` — the review found `JUDGE`/`ORGANIZER`/`TRUSTED` had no assignment path anywhere in the plan; this is the minimum viable fix: an admin-only user list with a role dropdown. `TRUSTED` is given the meaning the review's own analysis suggested it should have (`[REVIEW-FIX: ux-product §5, §3 "TRUSTED role"]`): trusted catalog contributors who may create/edit `Part` rows without full `ADMIN` (Phase 5's parts-catalog curation problem is elegantly solved by this role existing with a purpose, rather than sitting unused).
+- Create: `prisma` additive `AuditLog` model + writes on this route and the other privileged mutations introduced across the plan (role changes, account deletions from Task 12, tournament deletion, club-member removal, judge-score overrides once Phase 5 adds judge assignment) `[REVIEW-FIX: privacy-dsgvo #8]`: `{ id, actorId, action, targetType, targetId, summary, createdAt }`, append-only, admin-readable at `app/settings/admin/audit/page.tsx`.
+- Test: `tests/integration/friendship-flow.test.ts`, `tests/integration/club-roles.test.ts`, `tests/integration/user-search.test.ts`, `tests/integration/admin-role-assignment.test.ts`
+
+**Acceptance criteria:**
+- Friendship state machine: `PENDING → ACCEPTED` (addressee only) or `PENDING → BLOCKED` (either party); a `BLOCKED` friendship can't be re-requested by the blocked party (test the exact transition table).
+- `resolveVisibleFields` (Phase 1 Task 7) is re-tested here with a real `Friendship.status = ACCEPTED` row driving `isFriend = true` — this phase's job is to wire the friendship lookup into the privacy gate, not to redefine privacy logic. Any list surface computing friendship for multiple users (club roster, search results) uses `lib/friendship.ts`'s batch helper — a test asserts a 30-member roster triggers exactly one `Friendship` query, not thirty.
+- Only a club's `owner` or an `isAdmin` `ClubMember` can create a `Tournament` with that `clubId` set (verified in Phase 3's `club-admin-create-event.test.ts`), or promote/demote/kick other members; a non-admin member gets 403; any member can remove themselves.
+- The `@@unique([clubId, userId])` and `@@unique([requesterId, addresseeId])` constraints from spec §3 are exercised by a test expecting the DB to reject a duplicate membership/request.
+- `GET /api/search/users?q=` returns only users whose `profileVisibility` allows discovery by the requester (respecting minor ceilings from Task 7), paginated; `GET /api/search/clubs?q=` is open (clubs have no visibility setting).
+- Only `ADMIN` can `PATCH` another user's role; a non-admin attempt is 403; every successful role change writes an `AuditLog` row (`tests/integration/admin-role-assignment.test.ts` asserts both).
+
+---
+
+# Phase 5: Deck Builder, Sammlungs-Manager, Turniermanager mit PWA-Judge UI & Auto-Meta Engine
+
+**Scope:** spec §2.A, §2.E, §2.C (judge flow). This is the largest phase — plan to split it into 4 phase sub-plans (Parts Database, Builds & Decks; Collection Manager; Tournament Manager & Judge UI; Auto-Meta Engine & Organizer Console) rather than one, using the same "write the phase sub-plan first" rule from "How This Plan Is Organized." **Part D is new, added by review** `[REVIEW-FIX: ux-product §4]`: spec §2.E's Auto-Meta Rating ("Automatische Berechnung von Win-Rates und Performance-Ratings … basierend auf Turnier-Ergebnissen") was named in this phase's scope by an earlier draft and implemented nowhere — no computation, no UI, despite the architecture blurb promising "leaderboard caching." Part D closes that gap; do not ship this phase without it or without an explicit, deliberate descope note replacing this paragraph.
+
+**Files (Part A — Parts DB, Builds, Ratings & Deck Builder):**
+- Create: `prisma` seed data for parts catalog — spec §3's `Build` model references `bladeId`/`ratchetId`/`bitId` as free-standing IDs, not modeled entities; **add** a `Part` model (`id`, `name`, `manufacturer: TT|HASBRO`, `category: BLADE|RATCHET|BIT|ACCESSORY`, `beyType: BeyType?`, `spinDirection`, `weightGrams`, `imageUrl String?`, `metadata Json?`) as an additive schema change (allowed per Global Constraints) and a migration. `imageUrl` is a deliberate decision, not an omission `[REVIEW-FIX: performance P12; ux-product]`: catalog images are admin/`TRUSTED`-curated (a few hundred files, served from `/public/parts/` — no upload pipeline needed at this scale), rendered everywhere via `next/image` with explicit `sizes`/`width`/`height` so a grid of collection items never ships unoptimized multi-MB photos. **User avatars are explicitly declared out of scope for this phase** (a deliberate call, not an omission — revisit post-launch if requested). **This must go further than adding a free-standing model** `[REVIEW-FIX: backend-security #5]`: the migration also converts `Build.bladeId`/`ratchetId`/`bitId` and `CollectionItem.partOrBeyId` from bare `String` columns into real `@relation` foreign keys pointing at `Part.id`, with a backfill step (since Phase 1–4 shipped no rows referencing parts yet, at this point in the timeline the backfill is a no-op in practice — but the migration must still be written as a genuine FK conversion, not left as a permanent string reference, so any Phase 2–4 data created during earlier-phase manual testing doesn't silently orphan). Add `onDelete: Restrict` on these FKs (a `Part` in use by a `Build` cannot be deleted out from under it) and index them. Also add `@@unique([tournamentId, userId])` if Phase 3's sub-plan hasn't already (cross-check).
+- Create: `app/settings/admin/parts/page.tsx` + `app/api/admin/parts/route.ts` (`POST`/`PATCH`, `TRUSTED`/`ADMIN`-only) `[REVIEW-FIX: ux-product §2, §5]` — the catalog-curation UI the review found entirely missing: Beyblade X is a living toy line with frequent new releases, and a seed-only catalog with no maintenance path goes stale within months. This is where `TRUSTED` (Phase 4) earns its purpose. Also: `app/api/parts/request/route.ts` (`POST`, any logged-in user) — a lightweight "request missing part" flow (name + manufacturer guess + notes) landing in an admin queue, so users aren't stuck when a new release isn't cataloged yet.
+- Create: `app/builds/page.tsx`, `app/builds/[id]/page.tsx` `[REVIEW-FIX: ux-product §3b, §3f]` — the review found `components/beyblade/BuildCard.tsx` existed with no page to render it on, and `POST /api/builds` had no way to ever *see* a build afterward. `app/builds/page.tsx` browses/searches builds (paginated, `take`/cursor per `[REVIEW-FIX: performance P3]`; wired into `app/search/page.tsx`'s "Teile"/Builds section — server-side prefix + category filter, per `[REVIEW-FIX: ux-product §8]`, a hard prerequisite for the deck builder's part-picker too); `app/builds/[id]/page.tsx` is the combo detail page spec §2.A promises ("eigene Bewertungs-/Kommentarbereiche") — renders the build, its `TypeBadge`, and the rating/comment list below.
+- Create: `app/api/builds/[id]/ratings/route.ts` (`POST` create/upsert — one rating per user per build via the `@@unique([buildId, userId])` constraint below, `GET` list paginated) + `components/beyblade/RatingForm.tsx`, `components/beyblade/RatingList.tsx` `[REVIEW-FIX: ux-product §3f, spec §2.A]` — the feature the schema fix (`Rating.userId`, already planned below) existed to serve but that a prior draft stopped short of building: a user can rate/comment on a build, edit or delete their own rating (owner-only `PATCH`/`DELETE`), and a `TRUSTED`/`ADMIN` can remove any rating (moderation hook, writes an `AuditLog` row per Phase 4's model). `bio`-style free text gets the same length cap as profile bio (Phase 1 Task 12/13 convention) plus a "melden" (report) action feeding the same admin queue as part requests.
+- Create: `components/beyblade/TypeBadge.tsx` (renders `type-attack`/`type-defense`/`type-stamina`/`type-balance` Tailwind tokens from Phase 1 Task 1)
+- Create: `app/decks/page.tsx` (with an `EmptyState` CTA "Erstelle dein erstes Deck" when the user has none, per the standing empty-state rule), `app/decks/[id]/page.tsx`, `components/beyblade/DeckBuilder.tsx` (part-picker consumes the builds search above rather than a raw dropdown)
+- Create: `lib/deckValidation.ts` (`validateNoDuplicateParts(builds: Build[]): { valid: boolean; conflicts: string[] }` — enforced both client-side, for instant feedback, and server-side in `app/api/decks/route.ts`, per Global Constraints)
+- Modify: `prisma/schema.prisma` — change `DeckBuild`'s composite key from `@@id([deckId, buildId, position])` to `@@id([deckId, position])` plus a separate `@@unique([deckId, buildId])`, so the DB itself rejects the same `buildId` appearing twice in one deck instead of relying solely on application-level validation, which a race condition can bypass `[REVIEW-FIX: backend-security #1 in punch list item 5 region / schema §1]`. Also add `Rating.userId String` + relation to `User`, with `@@unique([buildId, userId])` (one rating per user per build) — spec §3's anonymous `Rating` model can't support edit/delete-your-own-rating or abuse attribution, both needed for the rating/comment feature above `[REVIEW-FIX: backend-security #1 region, "Rating has no userId"]`.
+- Also register `CollectionItem`, `Deck`/`DeckBuild`, `Rating`, and `TournamentParticipant` in Task 12's `eraseOrAnonymizeUser` erasure matrix as part of this phase's delivery — per the Cross-Phase Regression Guard's standing rule, a new `User`-owned model ships with its erasure/export entry, not as a follow-up.
+- Test: `tests/unit/deck-validation.test.ts` (a deck reusing the same `bladeId` across two of its three builds must fail validation; three genuinely distinct builds must pass), `tests/integration/deck-duplicate-db-constraint.test.ts` (posting two `DeckBuild` rows with the same `buildId` for one `deckId` directly against Prisma throws a unique-constraint error, proving the DB-layer backstop works even if application validation is bypassed), `tests/integration/build-ratings.test.ts` (a second rating from the same user upserts rather than duplicates; a non-owner cannot `PATCH`/`DELETE` another user's rating; a `TRUSTED` user can moderate-remove any rating)
+
+**Files (Part B — Collection Manager):**
+- Create: `app/collection/page.tsx` (with an `EmptyState` CTA when empty, paginated per `[REVIEW-FIX: performance P3]`), `components/collection/CollectionItemForm.tsx`
+- Create: `app/api/collection/route.ts` (`GET` for another user's collection: 404 if `resolveVisibleFields(...).collectionVisible` is `false` — same 404-not-403 policy as Phase 2's rulesets, so existence isn't leaked; `POST` owner-only `[REVIEW-FIX: backend-security #13]`)
+- Create: `lib/currency.ts` (`convert(amountCent, from: 'EUR'|'CHF'|'USD', to, rateTable): number`; rates fetched **on cache-miss** (stale-while-revalidate) from the **ECB euro reference rates** (a free, no-API-key public source, keeping EUR/CHF/USD conversion free of third-party credential handling and — since rate requests carry no user-identifying data — a non-issue for GDPR transfer analysis; document the relationship in `/datenschutz` per `[REVIEW-FIX: privacy-dsgvo #6]`) and cached in Redis with a defined TTL and a stale-fallback (serve the last cached rate, tagged `stale: true` in the response, rather than fail conversion) if the source is unreachable — this repo runs as a single Next.js container with no separate worker/cron process, so "fetch on a schedule" from an earlier draft of this plan had no host to run on; fetch-on-miss triggered by the request path is the mechanism that actually exists here `[REVIEW-FIX: backend-security #15]`. Guard concurrent refreshes with a short `SET NX PX` lock in Redis.)
+- **Preisverlauf (price history), decided explicitly** `[REVIEW-FIX: ux-product §3d, spec §5 Phase 5]`: spec's Phase 5 instruction names "Mehrwährungsumrechnung … und Preisverlauf" as one feature; `CollectionItem` has only a single `purchasePrice`. Add `PricePoint` (`id`, `collectionItemId`, `price`, `currency`, `recordedAt`) as an additive model — a user can log additional price observations over time (e.g. for insurance/resale tracking), and `app/collection/[id]/page.tsx` renders a simple sparkline (no charting library needed for a handful of points — inline SVG). This is a real, if small, feature — not descoped, since the spec names it explicitly in the phase instruction text (distinct from the module-spec section, which is more of a summary) and it's cheap once `CollectionItem` exists.
+- Test: `tests/unit/currency.test.ts` (exact conversion math against a fixed fake rate table — do not depend on live rates in tests), `tests/integration/collection-privacy.test.ts` (a stranger `GET`ting a `PRIVATE` collection gets 404; the owner gets 200), `tests/unit/price-history.test.ts`
+
+**Files (Part C — Tournament Manager, Organizer Console & Judge UI):**
+
+Before writing this part's own TDD sub-plan, read `docs/superpowers/plans/review-frontend-pwa.md` sections C1–C5 and I1–I5 in full — this is the highest-integration-risk part of the entire project (per review recommendation, consider spiking the offline-sync vertical slice — IndexedDB queue + SW sync + idempotent POST + Playwright offline round-trip, on a trivial throwaway page — before building the full Judge UI on top of it `[REVIEW-FIX: frontend-pwa I11]`).
+
+- Create: `app/tournaments/[id]/page.tsx` — the competitive/operational surface per Task 13's IA decision: bracket view for everyone, **plus an organizer console visible only to the tournament's `createdById`/`ADMIN`** `[REVIEW-FIX: ux-product §3f]` — the review found `Match.status`/`round`/`bracketOrder` existed with no operator UI at all: nobody could actually *run* a tournament once created. Console actions: "Bracket generieren" (calls `lib/bracket.ts` once check-in closes), **"Judge zuweisen"** per match — a dropdown of `JUDGE`-role users (or club members, organizer's call) setting `Match.judgeId`, closing the review's "judges can't be assigned to matches" gap — advance/re-seed on a no-show (marks a `TournamentParticipant` withdrawn, auto-advances the opponent), and "Turnier abschließen." Also player-facing: a "Mein nächstes Match" callout on this page when the viewer has an upcoming `Match` `[REVIEW-FIX: ux-product §3a, nice-to-have promoted since it's cheap once bracket data exists]`.
+- Create: `components/judge/JudgeBracketView.tsx` (mobile-first: collapsed/current-round-first presentation on small screens, not a full bracket graph squeezed into a phone width), `components/tournament/OrganizerConsole.tsx`
+- Create: `lib/bracket.ts` (`generateSingleEliminationBracket(participants: TournamentParticipant[]): BracketNode[]` — reads from one `tournament.findUnique({ include: { matches: true, participants: true } })` call, not per-match queries, per `[REVIEW-FIX: performance P6]`)
+- Modify: `prisma/schema.prisma` — add `Match.round Int`, `Match.bracketOrder Int`, `Match.status: MatchStatus` (new enum: `PENDING | IN_PROGRESS | COMPLETED`), `Match.clientEventId String? @unique` (idempotency key for offline-synced scores, see below). **Per-match build linkage, decided** `[REVIEW-FIX: ux-product §4]`: `Match.player1BuildId`/`player2BuildId` (spec §3, already present) are set at **match start**, not inferred from the participant's registered deck — the judge/organizer confirms which of the player's three deck builds they're leading with when the match begins (a one-tap picker in `JudgeScorePad`'s pre-match state, defaulting to the deck's first `DeckBuild` position). This is required for the Auto-Meta engine (Part D) to compute combo-level win rates at all — without an explicit per-match build confirmation, that data is uncomputable even after the fact, which is exactly the gap the review flagged.
+- Create: `app/tournaments/[id]/judge/page.tsx`, `components/judge/JudgeScorePad.tsx` — **mobile spec, not a single number** `[REVIEW-FIX: frontend-pwa I5]`: primary scoring actions (Spin/Over/Burst/Xtreme/confirm) sit in the bottom 40–50% of the viewport (one-handed thumb zone) with Spin (scored every round) as the largest target and Xtreme Finish sized for accuracy despite rarity; every score entry has a visible "undo last entry" affordable within 5 seconds, and match-end requires an explicit confirm step (a double-tap must never award double points — this is also enforced server-side, see the score route below); the page requests a Screen Wake Lock (`navigator.wakeLock.request('screen')`, released on unmount/page-hide) so a judge's phone doesn't sleep mid-match; layout is portrait-primary with large, high-contrast numerals for the live score (arena lighting can glare); a persistent "N scores pending sync" indicator reflects `lib/offline/matchQueue.ts`'s queue depth.
+- Create: `lib/offline/matchQueue.ts` — **idempotent, full-state, single-flight queue** `[REVIEW-FIX: frontend-pwa C2, I3, I4]`: `enqueueScore(matchId, fullMatchState)` writes an IndexedDB record `{ seq: autoIncrement, clientEventId: uuid, matchId, payload: fullMatchState, status: 'pending' }` — the payload is the *full* current match score state (not a delta), so a duplicate delivery is a no-op overwrite rather than a double-count; `flushQueue()` is guarded by an in-memory/IndexedDB "flushing" flag so concurrent triggers (the `online` event, the SW's `sync` event, page load, and `visibilitychange`→visible — all four are wired, not just `online`, since iOS Safari has no Background Sync API and a backgrounded/reopened tab is the realistic iOS recovery path `[REVIEW-FIX: frontend-pwa I1]`) can't double-flush; failed items are retried with exponential backoff and do not block later queue entries (per-item error isolation, not head-of-line blocking); also persists the last-fetched tournament/match/bracket payload to IndexedDB on every successful load, so a reload while offline hydrates the judge UI from the snapshot instead of rendering blank (`[REVIEW-FIX: frontend-pwa I4]`).
+- Modify: `public/sw.js` — append (not replace) a second `fetch` listener scoped to `/tournaments/*/judge` and its data/asset requests (cache-first-with-background-revalidation, not network-first-with-no-timeout, for this route specifically — spotty hall connectivity means a hung TCP connect is worse than a clean offline failure `[REVIEW-FIX: frontend-pwa I2]`), and a `sync` event handler that calls `flushQueue()` — understood as progressive enhancement only, since it is a no-op on iOS Safari; the four-trigger flush strategy above is the actual cross-platform mechanism.
+- Create: `app/api/matches/[id]/score/route.ts` (`POST`, **idempotent via `clientEventId`**: an upsert keyed on `Match.clientEventId` — a replayed POST with the same `clientEventId` is a no-op, closing the double-flush/double-POST race `[REVIEW-FIX: frontend-pwa C2]`; computes points per spec §2.B rules: Spin=1, Over/Burst=2, Xtreme Finish=3, Out-of-Bounds/Overfinish=2, Own-Finish=1 penalty + rematch, Own-Finish/external-disturbance/aerial-contact all trigger the rematch flow per their respective `Ruleset` toggle (including the Phase 2 addition `externalDisturbanceRerun`), reading the `Ruleset` linked to the `Tournament` for `targetPoints`/relaunch/etc. rather than hardcoding; **authz**: only the `Match.judgeId` assigned to this match by the organizer console above, or a session with `ADMIN`/`ORGANIZER` role on the parent `Tournament`, may POST a score — any other caller gets 403, and this must have a negative test `[REVIEW-FIX: backend-security #14 region "judge-score authz"]`; **conflict policy**: if a second judge's queued write for the same match arrives with a *different* `clientEventId` and the match is already `COMPLETED`, the route returns 409 with both versions in the body rather than silently overwriting, surfacing a manual-resolution UI state instead of losing data — per spec this is a real scenario for adjacent-table judges, not a hypothetical)
+- Test: `tests/integration/deck-validation-e2e.test.ts`, `tests/unit/bracket.test.ts`, `tests/integration/score-idempotency.test.ts` (POSTing the same `clientEventId` twice results in exactly one point change, not two), `tests/integration/score-authz.test.ts` (a non-assigned user's POST is rejected with 403), `tests/integration/organizer-console.test.ts` (a non-owner, non-admin organizer gets 403 on bracket-generate/judge-assign; the owner's actions succeed and set `Match.judgeId` correctly), `tests/e2e/judge-offline.spec.ts` (Playwright, uses `context.setOffline(true)` to verify a score entered offline appears server-side after `setOffline(false)`, AND that a page reload while still offline still shows the match data from the IndexedDB snapshot), plus a documented **manual** test checklist entry (not automatable in CI): iPhone Safari, PWA installed mode, airplane-mode scoring, verify flush on reopen `[REVIEW-FIX: frontend-pwa N5]`.
+
+**Files (Part D — Auto-Meta Engine) `[REVIEW-FIX: ux-product §4, spec §2.E]`:**
+- Create: `lib/meta.ts` — `computePartWinRates(): Promise<PartMetaStats[]>` and `computeBuildWinRates(): Promise<BuildMetaStats[]>`, aggregating over `Match` rows with `status = 'COMPLETED'`, using the per-match `player1BuildId`/`player2BuildId` confirmed at match start (Part C). Denominator policy: a part/build needs a minimum of **10 recorded match-appearances** DACH-wide before its win rate is displayed (below that, show "Noch nicht genug Daten" — avoids 1-0-record noise misleading players). Win rate = wins / (wins + losses), draws excluded from the denominator (Beyblade X matches don't draw, but code defensively).
+- Create: `app/api/matches/[id]/score/route.ts` (modify, Part C) — after a match transitions to `COMPLETED`, enqueue a recompute of the affected part/build aggregates rather than recomputing the whole table on every score (a simple approach: mark affected `Part`/`Build` ids "dirty" in a Redis set; a lightweight recompute pass — reusing whatever single-container scheduling mechanism Phase 3's notification-cleanup and Part B's currency refresh already established — processes the dirty set periodically and writes results to Redis, finally giving the architecture's "leaderboard caching" line (Global Constraints intro) a real implementation).
+- Create: `app/meta/page.tsx` — the "Meta" page: sortable part/build win-rate leaderboard, filterable by `BeyType` and manufacturer, each row linking to `app/builds/[id]/page.tsx`. Also surface a compact win-rate badge on `BuildCard`/`Part` displays wherever they already render (deck builder part-picker, build detail page) — the differentiating "which Blade actually wins DACH tournaments" signal the spec names as a headline feature, made visible everywhere a part/build already appears rather than siloed to one page.
+- Test: `tests/unit/meta.test.ts` (a build with 12 wins/3 losses across seeded `COMPLETED` matches computes an 80% win rate; a build with 4 total appearances shows the "not enough data" state instead of a number)
+
+**Acceptance criteria for Phase 5 overall:**
+- Deck rule validator rejects duplicate parts both server-side (app logic) and at the DB layer (unique constraint) even if a malicious or racing client bypasses the UI check.
+- Currency conversion is exact against a fixed rate table (no floating rate dependency in tests); a simulated FX-source outage serves the last cached rate rather than failing the request.
+- A judge can score a full match with the device in airplane mode, reload the page while still offline and still see the match data, and the score is present in `Match` exactly once after reconnecting — not zero, not two (Playwright offline test plus the idempotency integration test are the authoritative proof, not a unit test alone).
+- Match point calculation reads its point values from the `Tournament`'s linked `Ruleset`, not from constants — changing a `Ruleset.targetPoints` changes what counts as a match win without a code change.
+- The judge score route rejects a POST from anyone other than the assigned judge or an authorized organizer/admin (negative-authz test, per the standing rule introduced in Phase 3).
+- The Judge UI's mobile spec (thumb-zone layout, undo, wake lock, portrait-primary, pending-sync indicator) is implemented and manually verified on at least one real phone before this phase is considered done — this is the single most user-facing surface in the whole project; a component test alone is not sufficient sign-off.
+- An organizer can generate a bracket, assign a judge to every match, run the tournament to completion (including a no-show), and see the results reflected in both the bracket view and the Auto-Meta leaderboard — this is the platform's primary journey end-to-end, and `tests/integration/organizer-console.test.ts` plus `tests/integration/tournament-join-flow.test.ts` (Phase 3) together are the proof, not scattered unit checks.
+- Every catalog `Part` and `Build` image renders via `next/image` with explicit sizing; the catalog has a curation path (`TRUSTED`/`ADMIN` add/edit `Part` rows) and a user-facing "request missing part" flow — the plan does not ship with a seed-only, unmaintainable catalog.
+- The Auto-Meta leaderboard (`/meta`) reflects real computed win rates from seeded `COMPLETED` matches, respects the minimum-appearance threshold, and win-rate badges appear on build/part cards wherever they're already rendered.
+
+---
+
+# Phase 6: GitHub Actions CI/CD Pipeline
+
+**Scope:** spec §2 intro + §4 + §5.6. Build & push the Docker image to GHCR on merge to main; Watchtower on the server picks it up automatically. **Migrations must run as part of this chain — this phase does not merely build/push** `[REVIEW-FIX: backend-security #1]`.
+
+**Files:**
+- Modify: `next.config.ts` — add `output: 'standalone'` `[REVIEW-FIX: backend-security #16]` (Phase 1 Task 1 creates this file without it; the Dockerfile below depends on `.next/standalone` existing, so this line is a hard prerequisite, not a nice-to-have).
+- Create: `Dockerfile` (multi-stage: deps → build → slim runtime; the final stage's `CMD`/entrypoint runs `npx prisma migrate deploy` **before** `node server.js` starts — see below — so every container start (including the very first one, and every Watchtower-triggered restart) applies any pending migration before serving traffic `[REVIEW-FIX: backend-security #1]`. This is simpler and more reliable than a separate CI/SSH migration step: it requires no new secrets, works identically for local `docker run` testing and production, and keeps compose.yml's shape untouched (the app container already has `DATABASE_URL`).)
+- Create: `.dockerignore`
+- Create: `.github/workflows/deploy.yml`
+- Modify: `.github/workflows/ci.yml` (Phase 1 Task 11 already created this with a minimal test+typecheck gate and Postgres/Redis service containers; this phase extends it with a Playwright job, gated on the same Postgres/Redis services plus a built app under test, and makes `deploy.yml` depend on `ci.yml`'s success via branch protection or a `workflow_run`/`needs` chain)
+- Create/Modify: `compose.yml` — **amended from spec §4's literal form**, per the Global Constraints amendment: every secret-bearing `environment:` value becomes `${VAR}` interpolation (`DATABASE_URL=postgresql://beybladex_user:${DB_PASSWORD}@db:5432/beybladex_db`, `NEXTAUTH_SECRET=${NEXTAUTH_SECRET}`, etc.), `WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID}` and `TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}` are added, and `db`'s `POSTGRES_PASSWORD` becomes `${DB_PASSWORD}` — all backed by a server-side `/opt/docker/beybladex/baybladex/.env` (never committed; create `.env.example` in the repo documenting every required key). Service names, images, ports, networks, labels, container names, and volumes are otherwise unchanged from spec §4. Add a `healthcheck:` to the `app` service (`CMD wget -qO- http://localhost:3000/api/health || exit 1`, requiring a trivial `app/api/health/route.ts` returning 200) so Traefik never routes to a half-booted container mid-deploy `[REVIEW-FIX: backend-security #12 region "healthcheck"]`.
+- Test: N/A (infra) — verification is a real GHCR push and a real Watchtower-triggered redeploy, not a unit test; see acceptance criteria.
+
+**`.github/workflows/deploy.yml` (concrete, not a placeholder):**
+```yaml
+name: Build and Push
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/beybladex:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+```
+
+**Dockerfile migration entrypoint (concrete, not a placeholder):**
+```dockerfile
+# final runtime stage, excerpt
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+EXPOSE 3000
+CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+```
+This makes every container start — first deploy and every Watchtower restart alike — apply pending migrations before Next.js begins serving. Because Watchtower's stop/start is a hard cutover (the compose has exactly one `app` container, `container_name: beybladex_app`, per spec §4) with no old/new instance running simultaneously, **migrations added in any future phase must stay additive/backward-compatible with the previously-deployed image** — there is no window where mismatched code and schema coexist by design, but the deploy itself is a brief all-or-nothing switch, not a rolling one `[REVIEW-FIX: backend-security #16 region "migration ordering"]`.
+
+**Acceptance criteria:**
+- `ci.yml` blocks merge on any failing test, typecheck, or lint, using live Postgres/Redis service containers (Phase 1 Task 11) plus Playwright against a built app (this phase's addition).
+- `deploy.yml` only runs on `main` and only after CI is green (use `needs:` or branch protection requiring the CI check).
+- A manual `docker build .` locally succeeds and produces a container that, on `docker run`, first applies migrations (`prisma migrate deploy` succeeds against a fresh empty database — verify with a throwaway Postgres container) and then serves `/` on port 3000 with `DATABASE_URL`/`REDIS_URL`/`NEXTAUTH_URL`/`NEXTAUTH_SECRET`/`WEBAUTHN_RP_ID`/`TOTP_ENCRYPTION_KEY` supplied via env.
+- The image published to `ghcr.io/<owner>/beybladex:latest` is what the amended `compose.yml` pulls; a real deploy to `nicolas@kernic.net` is performed once as verification: confirm in server logs that Watchtower detected and pulled the new image, that the container restarted cleanly past its healthcheck, and that `docker compose exec app npx prisma migrate status` shows no pending migrations. Confirm `WATCHTOWER_CLEANUP` (in whichever compose stack runs the Watchtower daemon — outside this repo's compose.yml, per spec §4's scope) is enabled so old images don't accumulate on the server's disk `[REVIEW-FIX: backend-security #16 region "Watchtower verification"]`.
+- `.env.example` documents every required production secret (`DB_PASSWORD`, `NEXTAUTH_SECRET`, `WEBAUTHN_RP_ID`, `TOTP_ENCRYPTION_KEY`), and the real `.env` on the server is confirmed to exist and be readable only by the deploy user (not committed, not world-readable).
+
+---
+
+## Cross-Phase Regression Guard
+
+Every phase's TDD sub-plan must re-run, not just skip:
+- `tests/unit/no-external-resources.test.ts` (Phase 1 Task 9) — zero-CDN guarantee must hold for all new code.
+- A cookie-audit check on at least one new anonymous-accessible route added by that phase (e.g. `/events`, `/rules/[slug]`) — guests must remain cookieless everywhere, not just on Phase 1's routes.
+- `resolveVisibleFields` must gate every new place another user's data is rendered (collection, decks, club roster entries) — do not introduce a second, parallel privacy check. Every call site must pass the function's *return value* onward, never the raw fetched user row (see Task 7's honest-scope note on post-fetch projection).
+- **Every new state-changing route documents its authorization rule in its own sub-plan and has at least one negative (403/404) test proving it** `[REVIEW-FIX: backend-security #17]` — mirrors the zero-CDN guard's "standing test" status; a phase sub-plan without this is incomplete.
+- `redis` (commands) and `redisSubscriber` (pub/sub) stay separate connections — a new consumer of Redis pub/sub must use `redisSubscriber`, never introduce a third ad-hoc connection or reuse `redis` for `SUBSCRIBE`.
+- Any new auth-adjacent or abuse-prone endpoint (invites, password reset if added later, etc.) is rate-limited via `lib/rateLimit.ts` (Task 5) before it ships — rate limiting is a standing requirement, not a Phase-1-only concern.
+- **Every list endpoint/page ships with explicit pagination** (`take` + cursor, or documented as deliberately unbounded because the collection is naturally small, e.g. a club roster) `[REVIEW-FIX: performance P3]` — notifications, collection, friends, decks, and any list added later. Specify it when the route is designed, not retrofitted.
+- **Public, anonymous-readable, infrequently-mutated pages carry an explicit `export const revalidate` (rulesets ~300s, RSS feeds ~900s, events list ~60s); per-user and live-tournament surfaces (`/profile`, `/collection`, `/decks`, bracket/judge pages, `/api/notifications*`) are explicitly `dynamic = 'force-dynamic'`** `[REVIEW-FIX: performance P16]` — both halves of this rule matter equally; "cache everything" would be a privacy regression.
+- **`leaflet`, `@simplewebauthn/browser`, and judge/deck-builder-only modules are imported only from components rendered on their own route — never from `app/layout.tsx`, `Header`, or any other shared component** `[REVIEW-FIX: performance P10]`, so route-level code splitting keeps their bundle cost off every page that doesn't need them. `LeafletMap` is loaded via `next/dynamic({ ssr: false })` (required anyway — Leaflet touches `window`).
+- **Every new feature-area route ships with its empty state, its guest-state (what an unauthenticated visitor sees/can do), and an entry in `Header`/`MobileNav`'s navigation model** `[REVIEW-FIX: ux-product, Process Note]` — an API route with no UI surface to reach it, or a page with no empty-state/no-data treatment, is an incomplete deliverable, not a follow-up. This is what closed the plan's largest product gaps (see Task 10's navigation model and the new Task 12/13 below) — don't let later phases regress behind it.
+- **Every new route that mutates or exposes `User`-owned data is added to Task 12's account-deletion (erasure/anonymization) and data-export matrix as part of shipping that feature** `[REVIEW-FIX: privacy-dsgvo #3]` — a new `User`-owned model with no erasure/export entry is a GDPR gap reintroduced one phase at a time.
+- **Every new page consumes `components/ui/*` primitives (Task 13)** rather than inventing its own buttons/inputs/cards — six phases sub-planned independently is exactly the situation that produces visual drift without this rule.
+- **Every new page passes a minimal accessibility checklist**: semantic landmarks, labeled form controls, visible focus indicators (never `outline-none` without a replacement), keyboard operability, and `X-Cyan` used only per the Task 1 usage rule (decorative/dark-mode accent, never light-mode text) `[REVIEW-FIX: ux-product §7]`.
