@@ -36,6 +36,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # .next/types (route typegen) is gitignored and only exists after a build/dev run;
+      # generate it explicitly so `tsc --noEmit` passes on a fresh checkout.
+      - run: npx next typegen
       - run: npx prisma migrate deploy
       - run: npx tsc --noEmit
       - run: npm test
