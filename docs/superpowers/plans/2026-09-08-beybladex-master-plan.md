@@ -1144,6 +1144,22 @@ Run: `npx vitest run tests/unit/totp-encryption.test.ts` → FAIL then PASS afte
 
 - [ ] **Step 5c: Prove TOTP actually gates login (`[REVIEW-FIX: backend-security #3]`)**
 
+`[REVIEW-FIX: implementation]` **Test the `authorize()` function directly, not `signIn()`.** An earlier draft of this plan called `signIn('credentials', {...})` from a plain Vitest test — this breaks under NextAuth v5's App Router build: its top-level `signIn` internally calls Next.js's `headers()`, which throws `` `headers` was called outside a request scope `` when invoked outside an actual Next.js request (a Route Handler, Server Action, or Server Component render) — a bare Vitest process has no such scope, so this failure is unavoidable via `signIn()` and was only ever going to be discovered when these tests actually ran against live infra in CI (which is exactly what happened during implementation). The fix is also the more correct test design: `authorize()` holds 100% of this project's own business logic (password check, TOTP gate, minor-status gate); `signIn()` beyond that is NextAuth's own plumbing, already covered by its own test suite — testing our `authorize()` in isolation is both unblocked and the right unit boundary.
+
+Restructure `lib/auth.ts` (Step 5 above) to export `authorize` as a standalone named async function, then pass it into the `Credentials` provider's `authorize` option:
+
+```ts
+// lib/auth.ts (excerpt — replaces the inline authorize: async (credentials) => {...} from Step 5)
+export async function authorize(credentials: Partial<Record<'username' | 'password' | 'totpToken' | 'webauthnToken', unknown>>) {
+  // ...exact same body as Step 5's inline function...
+}
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  // ...session/cookies config unchanged...
+  providers: [Credentials({ credentials: { username: {}, password: {}, totpToken: {}, webauthnToken: {} }, authorize })],
+})
+```
+
 ```ts
 // tests/integration/totp-login-gate.test.ts
 import { describe, it, expect } from 'vitest'
@@ -1151,7 +1167,7 @@ import bcrypt from 'bcryptjs'
 import { authenticator } from 'otplib'
 import { prisma } from '@/lib/db'
 import { encryptSecret } from '@/lib/totpEncryption'
-import { signIn } from '@/lib/auth'
+import { authorize } from '@/lib/auth'
 
 describe('TOTP login gate', () => {
   it('rejects password-only login when totpSecret is set, and succeeds with a valid token', async () => {
@@ -1161,18 +1177,19 @@ describe('TOTP login gate', () => {
       data: { username, passwordHash: await bcrypt.hash('correct horse battery staple', 12), totpSecret: encryptSecret(secret) },
     })
 
-    await expect(
-      signIn('credentials', { username, password: 'correct horse battery staple', redirect: false })
-    ).rejects.toThrow() // or resolves to an error shape, depending on next-auth version — assert failure, not a session
+    const withoutToken = await authorize({ username, password: 'correct horse battery staple' })
+    expect(withoutToken).toBeNull()
 
     const token = authenticator.generate(secret)
-    const result = await signIn('credentials', { username, password: 'correct horse battery staple', totpToken: token, redirect: false })
-    expect(result).toBeTruthy() // successful session
+    const withToken = await authorize({ username, password: 'correct horse battery staple', totpToken: token })
+    expect(withToken).toMatchObject({ id: expect.any(String), name: username })
 
     await prisma.user.delete({ where: { username } })
   })
 })
 ```
+
+Apply the same `authorize`-not-`signIn` pattern to any other test that needs to exercise the login gate (e.g. Task 5's parental-consent confirmation test, which asserts login is refused pre-confirmation and succeeds after) — call `authorize({ username, password })` directly rather than `signIn(...)`.
 
 Run: `npx vitest run tests/integration/totp-login-gate.test.ts` → FAIL until `lib/auth.ts`'s `authorize()` (Task 5, already updated above) is in place → PASS. This is the acceptance test that replaces the old, insufficient "TOTP setup produces a scannable QR" DoD line — see Phase 1 DoD below.
 
