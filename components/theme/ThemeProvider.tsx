@@ -5,9 +5,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 type Theme = 'light' | 'dark' | 'system'
 type Ctx = { theme: Theme; resolvedTheme: 'light' | 'dark'; setTheme: (t: Theme) => void }
 const STORAGE_KEY = 'beybladex-theme'
-// Default value (instead of null + throw) so components like ThemeToggle render
-// standalone in unit tests without a provider; the app always mounts ThemeProvider.
-const ThemeContext = createContext<Ctx>({ theme: 'system', resolvedTheme: 'light', setTheme: () => {} })
+const ThemeContext = createContext<Ctx | null>(null)
 
 function systemPrefersDark() {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -36,5 +34,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 export function useTheme() {
-  return useContext(ThemeContext)
+  const ctx = useContext(ThemeContext)
+  if (!ctx) throw new Error('useTheme must be used within ThemeProvider')
+  return ctx
 }
