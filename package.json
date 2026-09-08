@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/inject-sw-build-id.js",
     "build": "next build",
+    "postbuild": "node scripts/inject-sw-build-id.js --restore",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run tests/unit",
