@@ -75,6 +75,7 @@ model User {
   locationVisibility   PrivacyLevel   @default(FRIENDS_ONLY) // was PUBLIC — Art. 25 privacy-by-default
   collectionVisibility PrivacyLevel   @default(PUBLIC)
   decksVisibility      PrivacyLevel   @default(PUBLIC)
+  ageVisibility        PrivacyLevel   @default(PRIVATE) // spec §2.D: "Alter" is privacy-controlled
 
   notifyRadiusKm       Int?           @default(50)
   notifyRecurring      Boolean        @default(false) // was true — opt-in, not opt-out
