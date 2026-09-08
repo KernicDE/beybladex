@@ -1191,6 +1191,13 @@ describe('TOTP login gate', () => {
 
 Apply the same `authorize`-not-`signIn` pattern to any other test that needs to exercise the login gate (e.g. Task 5's parental-consent confirmation test, which asserts login is refused pre-confirmation and succeeds after) — call `authorize({ username, password })` directly rather than `signIn(...)`.
 
+**Standing convention for a different, later situation** `[REVIEW-FIX: implementation]`: tasks from here on (Task 12 onward) add routes that call `auth()` (not `authorize()`) to read the *current session* of an already-logged-in caller — e.g. `app/api/profile/route.ts`, `app/api/account/route.ts`. Testing those means mocking `auth()` itself (`vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))`), and the mocked resolved value **must** be shaped like a real NextAuth session — `{ user: { id, name }, expires }` — not a flat `{ id, name }` object, because every route checks `session?.user?.id`, never `session?.id`. This is a different helper from the `authorize()`-testing pattern above (whose return value *is* legitimately flat, since `authorize()` returns a bare user object, not a session) — don't conflate the two. The standard helper for `auth()`-mocking tests:
+```ts
+function asSession(value: { id: string; name: string } | null) {
+  return (value ? { user: value, expires: new Date(Date.now() + 86400_000).toISOString() } : null) as unknown as NonNullable<Awaited<ReturnType<typeof auth>>>
+}
+```
+
 Run: `npx vitest run tests/integration/totp-login-gate.test.ts` → FAIL until `lib/auth.ts`'s `authorize()` (Task 5, already updated above) is in place → PASS. This is the acceptance test that replaces the old, insufficient "TOTP setup produces a scannable QR" DoD line — see Phase 1 DoD below.
 
 - [ ] **Step 6: Write the failing WebAuthn test**
@@ -1754,15 +1761,22 @@ git commit -m "feat: vendor fonts, Lucide icons, and Leaflet locally; add zero-e
 
 - [ ] **Step 1: Write the failing test**
 
+`[REVIEW-FIX: implementation]` `Header` renders `ThemeToggle` internally, which calls `useTheme()` — that throws outside a `<ThemeProvider>` (Task 2's deliberate fail-loud guard). Wrap the render in the same provider `tests/unit/theme-toggle.test.tsx` already uses, rather than weakening `ThemeProvider`'s error-on-missing-context behavior to accommodate an unwrapped render — the guard is the correct production behavior and must stay:
+
 ```tsx
 // tests/unit/header.test.tsx
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { Header } from '@/components/layout/Header'
+import { ThemeProvider } from '@/components/theme/ThemeProvider'
 
 describe('Header', () => {
   it('renders the brand name and a theme toggle', () => {
-    render(<Header session={null} />)
+    render(
+      <ThemeProvider>
+        <Header session={null} />
+      </ThemeProvider>
+    )
     expect(screen.getByText('BeybladeX.de')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument()
   })
@@ -1993,6 +2007,7 @@ Added by review: without a shared component layer and a fixed navigation decisio
 - Modify: `components/layout/MobileNav.tsx` (Task 10) — fixed tabs, not an empty bottom bar: **Start, Events, Decks, Sammlung, Profil** (five tabs — the mobile-first primary surfaces; Clubs/Rules/Settings live one level deeper, reachable from Start or the avatar menu, per standard bottom-nav practice of ≤5 top-level destinations).
 - Create: `app/search/page.tsx` — a typed-sections results page skeleton (Nutzer, Events, Clubs, Teile — sections populate as each phase's search backend lands; this task ships the shared page and the `SearchInput` component, not the search logic itself, which is phased: Phase 3 adds event text search, Phase 4 adds user/club search, Phase 5 adds parts search — each phase's own sub-plan wires its section into this page rather than inventing a separate search UI).
 - **IA decision, binding**: `/events/[id]` is the public event detail page (map, info, join CTA, participant list, guest-visible); `/tournaments/[id]` is the competitive/operational surface (bracket, matches, judge entry, organizer console) reachable from the event page once a tournament is underway — Phase 3 links to the latter from the former once brackets exist. State this in Phase 3's sub-plan verbatim; it resolves the plan's previously-undecided duplication `[REVIEW-FIX: ux-product §1]`.
+- **Mobile legal-page access, binding** `[REVIEW-FIX: implementation]`: Task 12's Footer links to `/impressum`/`/datenschutz`/`/agb` only render on desktop (`Footer` is `hidden md:block`, per Task 10) — on mobile there is currently no path to them at all, which risks the DSGVO review's "≤2 clicks from any page" acceptance bar on the exact viewport most users will actually have. Add the same three links to the avatar/session menu this task builds (or a compact links row in `MobileNav`'s overflow — implementer's choice) so mobile has an equivalent path.
 - **Landing page decision, binding**: `app/page.tsx` (Task 1) shows, for guests: a hero + "was ist BeybladeX.de" + upcoming DACH events teaser (reuses Phase 3's event query, `revalidate`d) + a register CTA; for logged-in users: a personalized dashboard (next tournament they're registered for, recent club activity, new parts in the catalog) — Phase 3/5 progressively fill this in as their data models land; this task states the decision so `app/page.tsx` isn't shipped as a content-free stub through six phases `[REVIEW-FIX: ux-product §1]`.
 - **Anonymous-vs-member convention, binding**: every page reachable by a guest shows the same content plus a contextual "Anmelden, um teilzunehmen/zu speichern/…" CTA in place of any action requiring a session — one convention, not five independent decisions `[REVIEW-FIX: ux-product §2]`.
 
