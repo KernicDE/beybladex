@@ -10,7 +10,7 @@ vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 const mockAuth = vi.mocked(auth)
 
 function asSession(value: { id: string; name: string } | null) {
-  return value as unknown as NonNullable<Awaited<ReturnType<typeof auth>>>
+  return (value ? { user: value, expires: new Date(Date.now() + 86400_000).toISOString() } : null) as unknown as NonNullable<Awaited<ReturnType<typeof auth>>>
 }
 
 describe('GET /api/account/export (Art. 20)', () => {
