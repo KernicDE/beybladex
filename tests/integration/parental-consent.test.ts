@@ -4,7 +4,7 @@ import { POST as register } from '@/app/api/register/route'
 import { GET as consent } from '@/app/api/parental-consent/[token]/route'
 import { prisma } from '@/lib/db'
 import { redis } from '@/lib/redis'
-import { signIn } from '@/lib/auth'
+import { authorize } from '@/lib/auth'
 
 async function registerMinor(username: string) {
   const req = new Request('http://localhost/api/register', {
@@ -33,9 +33,8 @@ describe('parental-consent confirmation flow', () => {
     expect(user!.parentalConsentAt).toBeNull()
 
     // login is refused while consent is pending
-    await expect(
-      signIn('credentials', { username, password: 'correct horse battery staple', redirect: false })
-    ).rejects.toThrow()
+    const refused = await authorize({ username, password: 'correct horse battery staple' })
+    expect(refused).toBeNull()
 
     // No mailer yet (Phase 3), so read the token back from Redis directly:
     // the register route stores exactly one parental-consent token for this user.
@@ -59,7 +58,7 @@ describe('parental-consent confirmation flow', () => {
     expect(activated!.parentalConsentAt).not.toBeNull()
 
     // login now succeeds
-    const loginResult = await signIn('credentials', { username, password: 'correct horse battery staple', redirect: false })
+    const loginResult = await authorize({ username, password: 'correct horse battery staple' })
     expect(loginResult).toBeTruthy()
 
     await prisma.user.delete({ where: { username } })

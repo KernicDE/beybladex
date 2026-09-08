@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs'
 import { authenticator } from 'otplib'
 import { prisma } from '@/lib/db'
 import { encryptSecret } from '@/lib/totpEncryption'
-import { signIn } from '@/lib/auth'
+import { authorize } from '@/lib/auth'
 
 describe('TOTP login gate', () => {
   it('rejects password-only login when totpSecret is set, and succeeds with a valid token', async () => {
@@ -14,13 +14,12 @@ describe('TOTP login gate', () => {
       data: { username, passwordHash: await bcrypt.hash('correct horse battery staple', 12), totpSecret: encryptSecret(secret) },
     })
 
-    await expect(
-      signIn('credentials', { username, password: 'correct horse battery staple', redirect: false })
-    ).rejects.toThrow() // or resolves to an error shape, depending on next-auth version — assert failure, not a session
+    const withoutToken = await authorize({ username, password: 'correct horse battery staple' })
+    expect(withoutToken).toBeNull()
 
     const token = authenticator.generate(secret)
-    const result = await signIn('credentials', { username, password: 'correct horse battery staple', totpToken: token, redirect: false })
-    expect(result).toBeTruthy() // successful session
+    const withToken = await authorize({ username, password: 'correct horse battery staple', totpToken: token })
+    expect(withToken).toMatchObject({ id: expect.any(String), name: username })
 
     await prisma.user.delete({ where: { username } })
   })
