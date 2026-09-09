@@ -16,7 +16,7 @@ function useRouterSafe() {
   }
 }
 
-export function SearchInput({ className = '' }: { className?: string }) {
+export function SearchInput({ action = '/search', className = '' }: { action?: string; className?: string }) {
   const router = useRouterSafe()
   // Read ?q= straight from the URL — no useSearchParams(), so this works in any
   // context (including unit tests without a router).
@@ -29,7 +29,7 @@ export function SearchInput({ className = '' }: { className?: string }) {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     const q = value.trim()
-    const target = q ? `/search?q=${encodeURIComponent(q)}` : '/search'
+    const target = q ? `${action}?q=${encodeURIComponent(q)}` : action
     if (router) router.push(target)
     else window.location.assign(target)
   }
