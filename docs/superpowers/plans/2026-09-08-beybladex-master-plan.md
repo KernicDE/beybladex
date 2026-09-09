@@ -2418,6 +2418,26 @@ This makes every container start — first deploy and every Watchtower restart a
 
 ---
 
+# Phase 9: Location Autofill — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+
+**Status: planned, not started.** Same standing note as Phase 7/8: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
+
+**Scope:** four related location-entry conveniences for `components/tournament/TournamentForm.tsx`'s location fields (`locationName`, `street`, `postalCode`, `city`, `state`, `country`, `latitude`, `longitude`, `currency`) — closes the `// TODO: once lib/geo.ts lands, auto-geocode...` comment already sitting in that file since Phase 3. All four build on `lib/geo.ts`'s existing Nominatim integration (Redis-cached, 1 req/s cluster-wide lock, documented OSM usage-policy compliance) rather than introducing a second geocoding provider — no Google Places/Maps API, which would mean a paid key, a CDN script violating the zero-external-CDN policy, and a different privacy-transfer story than the already-reviewed OSM/Nominatim relationship documented in `/datenschutz`.
+
+**1. Known-address autocomplete.** Extend `lib/geo.ts` with a free-text address search (Nominatim's `/search` endpoint with a `q=` query, not just the existing postal-code-only lookup) — debounced type-ahead as the organizer types `locationName`/`street`, showing matching venues/addresses. Same politeness/caching rules as the existing postal-code geocoder: Redis-cached by normalized query string, the same 1 req/s cluster-wide lock (reuse it, don't create a second rate limit), same required `User-Agent`. Selecting a suggestion fills `street`/`postalCode`/`city`/`state`/`country`/`latitude`/`longitude` all at once (see item 4) — the organizer can still hand-edit any field afterward, this is autofill, not a locked/derived value.
+
+**2. Lat/Lng auto-determination, with a manual paste escape hatch.** Once `street`+`postalCode`+`city`+`country` are filled (whether by autocomplete or by hand), auto-geocode them via `lib/geo.ts` (extend `geocodePostalCode`'s pattern to a full-address variant, same caching/rate-limit posture) to populate `latitude`/`longitude` — this is the TODO the form has carried since Phase 3. **Additionally**, accept a pasted coordinate pair directly: a small input (or paste-anywhere-in-the-form handler) that recognizes Google Maps' copy-from-map format — a bare `"<lat>, <lng>"` string, e.g. `"50.045492040670695, 8.207992799997236"` — and parses it with a dedicated `parseGoogleMapsLatLng(input: string): GeoPoint | null` pure function (in `lib/geo.ts`, unit-tested against the exact example the user gave and against malformed input) that fills `latitude`/`longitude` directly, bypassing geocoding entirely. This is the authoritative override: a pasted coordinate always wins over autofill, since the organizer pasting it has more precise venue knowledge than a geocoder (e.g. the exact building entrance, not just the postal code's centroid).
+
+**3. Currency auto-selected by country.** `Tournament.currency` (free `String`, defaults `"EUR"`) is set automatically from `country` on the client the moment the organizer picks a country in `TournamentForm.tsx` — `CH → "CHF"`, `DE`/`AT → "EUR"` — but remains a normal, user-editable `Select` afterward (an organizer running a cross-border event, or a CH-based club that prices in EUR, can still override it). This is a client-side default-on-change behavior, not a server-side constraint — the existing `currency` field/validation is untouched, only the form's initial-value-on-country-change logic changes.
+
+**4. State/region/canton auto-determination.** `Tournament.state` (free `String`) gets the same autofill treatment as `city`/`postalCode` in items 1–2: Nominatim's reverse-geocoding response includes an administrative-region field (`address.state` for DE/AT, `address.state` or `address.county` for CH cantons — verify the exact field Nominatim returns per-country at implementation time, since OSM's tagging isn't perfectly uniform across DACH) — populate `state` from that response whenever an address is resolved via autocomplete or full-address geocoding (item 1/2), remaining a normal editable text field the organizer can correct if Nominatim's region name doesn't match local convention (e.g. official canton abbreviations vs. full names).
+
+**Tests:** `tests/unit/geo-address.test.ts` (address-search response parsing, full-address geocoding, and `parseGoogleMapsLatLng` — including the exact `"50.045492040670695, 8.207992799997236"` example, plus rejection of malformed input), a component test on `TournamentForm` asserting the currency auto-select fires on country change but doesn't override a value the organizer already hand-edited, and that a pasted lat/lng string takes precedence over any concurrent autofill result.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
 ## Cross-Phase Regression Guard
 
 Every phase's TDD sub-plan must re-run, not just skip:
