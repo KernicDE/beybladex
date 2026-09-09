@@ -22,6 +22,29 @@ COPY . .
 # package.json), so it must exist before `next build` type-checks routes that
 # import @prisma/client.
 RUN npx prisma generate
+# BUILD-TIME ENV STUBS (not the real production secrets — those are supplied at
+# CONTAINER RUNTIME via `docker run -e` / compose.yml's ${VAR} interpolation,
+# never baked into this image). `next build`'s page-data collection step
+# imports every route module to trace it, and several modules read process.env
+# at MODULE-EVAL time, not just inside request handlers — most visibly
+# lib/totpEncryption.ts's `Buffer.from(process.env.TOTP_ENCRYPTION_KEY!, ...)`,
+# which throws synchronously on `undefined` and fails the whole build. The
+# values below are the same throwaway CI constants already used in
+# .github/workflows/ci.yml — real enough in *shape* (a valid 32-byte base64
+# key, a syntactically valid URL) to satisfy build-time module evaluation,
+# never used to serve real traffic.
+ARG DATABASE_URL="postgresql://build:build@localhost:5432/build"
+ARG REDIS_URL="redis://localhost:6379"
+ARG NEXTAUTH_URL="http://localhost:3000"
+ARG NEXTAUTH_SECRET="build-time-placeholder-not-for-production"
+ARG TOTP_ENCRYPTION_KEY="dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ=="
+ARG WEBAUTHN_RP_ID="localhost"
+ENV DATABASE_URL=$DATABASE_URL \
+    REDIS_URL=$REDIS_URL \
+    NEXTAUTH_URL=$NEXTAUTH_URL \
+    NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
+    TOTP_ENCRYPTION_KEY=$TOTP_ENCRYPTION_KEY \
+    WEBAUTHN_RP_ID=$WEBAUTHN_RP_ID
 RUN npm run build
 # Shrink node_modules to production deps only; the runner stage copies this
 # pruned tree wholesale (see note there).
