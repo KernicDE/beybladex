@@ -273,15 +273,26 @@ export function flushQueue(deps: { store?: QueueStore; post?: PostFn; now?: () =
   // `online` event fired, flushQueue() ran, but the just-failed entry's backoff hadn't elapsed
   // yet, so listDue() correctly found nothing due — and with no further trigger, ZERO retry
   // requests were ever made afterward, even though a 15s window passed and the item's backoff
-  // was only ~1-2s. Self-chain a short recheck whenever this pass left something backed off: a
-  // no-op (single cheap IndexedDB read via listDue) if still not due, a real retry once it is.
+  // was only ~1-2s.
+  //
+  // Checking `summary.retried` (this pass's OWN attempt count) is NOT enough — it stayed a
+  // second real-CI reproduction: a `page.reload()` between the original failure and the next
+  // trigger destroys any pending JS timer on the old page, and if the reload's own page-load
+  // flush fires BEFORE the backoff window has elapsed, that pass finds nothing due at all
+  // (`attempted: 0, retried: 0`), so a check keyed on `retried` never re-arms even though the
+  // item is still sitting in the store waiting for its window to pass. Check the STORE's actual
+  // depth instead — it counts every non-'sending' entry regardless of whether it's due yet —
+  // so a recheck keeps getting scheduled until the queue is genuinely empty, surviving reloads
+  // (each new page's own mount re-arms the chain the same way) and not-yet-due entries alike.
   // Guarded by `navigator.onLine` so this doesn't spin while genuinely offline (harmless either
-  // way — listDue/single-flight already bound the actual cost — but pointless there).
-  void activeFlush.then((summary) => {
-    if (summary.retried > 0 && (typeof navigator === 'undefined' || navigator.onLine)) {
-      setTimeout(() => void flushQueue(deps), BACKOFF_BASE_MS)
-    }
-  })
+  // way — listDue/single-flight already bound the actual network cost — but pointless there).
+  void activeFlush
+    .then(() => store.depth())
+    .then((depth) => {
+      if (depth > 0 && (typeof navigator === 'undefined' || navigator.onLine)) {
+        setTimeout(() => void flushQueue(deps), BACKOFF_BASE_MS)
+      }
+    })
   return activeFlush
 }
 
