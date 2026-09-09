@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BeybladeX.de
 
-## Getting Started
+Die DACH-Region-Community-, Sammlungs-, Social- und Turnier-Plattform für **Beyblade X**. Live unter [beybladex.de](https://beybladex.de).
 
-First, run the development server:
+Ein Next.js-PWA-Monolith mit offline-fähiger Turnier-Judge-UI, Regel-Editor, DACH-Eventkalender (inkl. RSS), Social/Club-Funktionen, Sammlungs- und Deckmanager sowie einer eigenen, Ruleset-getriebenen Turnier-Engine (Single-/Double-Elimination, Swiss, Round Robin, Multi-Stage) — gebaut, um mehr zu leisten als generische Bracket-Tools wie Challonge, mit Fokus auf die deutschsprachige Community.
+
+## Features (live)
+
+- **Auth**: Passwort, optional E-Mail, Passkeys (WebAuthn/FIDO2), TOTP-2FA, kein Cookie für anonyme Besucher, DSGVO-konformer Elternzustimmungs-Flow für Minderjährige
+- **Turniere**: Erstellung, Anmeldung, Check-in, Bracket-Generierung für Single-Elimination, Double-Elimination, Swiss und Round Robin — auch mehrstufig (z. B. Swiss-Vorrunde → Double-Elim-Playoffs) in einem Turnier
+- **Offline-Judge-PWA**: Match-Scoring funktioniert ohne Netzwerk (IndexedDB-Queue, idempotenter Sync, Wake-Lock, Daumenzonen-Layout) und synchronisiert automatisch bei Reconnect
+- **Regel-Engine**: Punktelogik liest aus einem konfigurierbaren `Ruleset` (kein Hardcoding) — eigene Rulesets anlegbar, inkl. World Beyblade Organization Rules und Blader League Germany Rules
+- **Auto-Meta-Engine**: Win-Rate-Auswertung pro Part/Build aus echten, richterbestätigten Matchergebnissen (`/meta`)
+- **Sammlung & Decks**: Teile-Katalog, Deckbuilder mit Server-seitiger Duplikatsprüfung, Sammlungsverwaltung mit Mehrwährungsumrechnung (EUR/CHF/USD) und Preisverlauf
+- **Social**: Freundschaften, Clubs, Benachrichtigungen (SSE, Redis Pub/Sub), Profil mit granularer Feld-Sichtbarkeit (`PUBLIC` / `FRIENDS_ONLY` / `PRIVATE`)
+- **DACH-Eventkalender**: Umkreissuche, Leaflet-Karte (server-seitig gecachte OSM-Tiles), RSS-Feeds pro Land/Bundesland
+- **Datenschutz**: Impressum/Datenschutzerklärung/AGB, Art.-16/17/20-Selbstbedienung (Berichtigung, Löschung/Anonymisierung, Datenexport), datensparsame Defaults
+
+## Tech-Stack
+
+Next.js 16 (App Router, Server Actions) · TypeScript · Tailwind CSS v4 (CSS-first, kein `tailwind.config.ts`) · Prisma ORM · PostgreSQL 16 · Redis 7 (Pub/Sub, SSE, Caching) · NextAuth (Credentials + WebAuthn + TOTP) · Leaflet.js · Vitest + Testing Library + Playwright · Docker · Traefik · Watchtower · GitHub Actions → GHCR.
+
+**Grundsatz**: keine externen CDN-Aufrufe zur Laufzeit — Fonts, Icons und JS-Bibliotheken sind gebundlet/self-hosted, gegen Regression abgesichert durch `tests/unit/no-external-resources.test.ts`.
+
+## Lokale Entwicklung
 
 ```bash
+npm install
+cp .env.example .env   # Werte anpassen, siehe Kommentare in der Datei
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**Kein lokales Docker für Postgres/Redis** (bewusste Betreiber-Entscheidung) — echte Infrastruktur existiert nur in CI und auf dem Deploy-Server:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm test              # Unit-Tests (vitest run tests/unit) — keine externen Abhängigkeiten
+npm run test:integration   # Integrationstests — braucht echtes Postgres/Redis, nur in CI
+npm run test:all      # beide zusammen (der Befehl, den ci.yml nutzt)
+npm run test:e2e          # Playwright gegen den Dev-Server
+npm run test:e2e:offline  # Playwright gegen einen echten Production-Build (Offline-Judge-Spec)
+npx tsc --noEmit       # Typecheck
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Neue Migrationen werden lokal per `prisma migrate diff` erzeugt (ohne Live-DB) und ausschließlich von CI/dem Deploy-Container per `prisma migrate deploy` angewendet — siehe Kommentare in `prisma/migrations/`.
 
-## Learn More
+## Deployment
 
-To learn more about Next.js, take a look at the following resources:
+Docker-Image → GHCR (`ghcr.io/kernicde/beybladex:latest`), gebaut von GitHub Actions (`deploy.yml`, ausgelöst nach grüner CI), hinter Traefik auf `nicolas@kernic.net`, automatisch aktualisiert durch Watchtower. Details, Topologie und Betriebs-Gotchas: `compose.yml`, `Dockerfile`, sowie die Phase-6-Abschnitte in der [Masterplan-Datei](docs/superpowers/plans/2026-09-08-beybladex-master-plan.md).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Projektstand & Roadmap
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Der vollständige, laufend aktualisierte Implementierungsplan liegt in [`docs/superpowers/plans/2026-09-08-beybladex-master-plan.md`](docs/superpowers/plans/2026-09-08-beybladex-master-plan.md). Kurzfassung:
 
-## Deploy on Vercel
+| Stufe | Umfang | Status |
+|---|---|---|
+| **MVP1** | Phasen 1–6: Fundament, Design-System, Auth, Regel-Editor, DACH-Kalender & Social, Deck-/Sammlungs-/Turniermanager mit Offline-Judge-UI & Auto-Meta, CI/CD-Pipeline | ✅ **Live** auf beybladex.de |
+| **MVP1.5** | Phasen 7–13: Lücken/Politur am laufenden Betrieb — QR-Workflows & Zahlungsverfolgung, Markdown-Authoring, Standort-Autofill, Profil-/Turnier-/Regelseiten-Tiefe, offizielle Sets & Teile-Bilder, Club-Chat, Club-Profilfelder & Beitrittsrichtlinien | 📋 Geplant, nicht gestartet |
+| **MVP2** | Phasen 14–17: Ranglisten-System mit Elo-Rating (Saisons, öffentliche Rangliste), Rating-basiertes Bracket-Seeding, Dual-Spin-Part-Modus (aktuelle CX-Serie), eigene visuelle Identität/Branding | 📋 Geplant, nicht gestartet |
+| **MVP3** | 3-vs-3-Team-Wettkampfformat (analog WBO Masters League) | 💭 Noch nicht ausgeplant (Design-Skizze vorhanden) |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Jede Phase in der Masterplan-Datei ist bis auf Datei-/Interface-/Akzeptanzkriterien-Ebene spezifiziert, aber bewusst noch nicht implementiert — nichts aus MVP1.5/MVP2/MVP3 wird ohne explizite Freigabe begonnen.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Lizenz
+
+Privates Projekt, kein Open-Source-Lizenzmodell definiert.
