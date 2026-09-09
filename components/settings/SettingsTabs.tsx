@@ -11,11 +11,14 @@ const TABS = [
   { href: '/settings/account', label: 'Konto' },
 ] as const
 
-export function SettingsTabs() {
+// Admin tab renders only for ADMIN sessions (the layout knows the role and passes it in);
+// the admin pages themselves re-check and redirect — the hidden tab hides nothing.
+export function SettingsTabs({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
+  const tabs = isAdmin ? [...TABS, { href: '/settings/admin', label: 'Admin' } as const] : TABS
   return (
     <nav aria-label="Einstellungen" className="mt-4 flex flex-wrap gap-2">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = pathname === tab.href
         return (
           <Link

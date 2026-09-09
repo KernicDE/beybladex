@@ -3,6 +3,9 @@ import { prisma } from '@/lib/db'
 
 export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    // The original username for the audit summary — gone once the row is anonymized below.
+    const originalUsername = (await tx.user.findUnique({ where: { id: userId }, select: { username: true } }))?.username ?? userId
+
     // Cascade-delete: purely personal, no other user's legitimate interest in keeping it.
     await tx.passkey.deleteMany({ where: { userId } })
     await tx.notification.deleteMany({ where: { userId } })
@@ -51,6 +54,19 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // spec §3 has no cascade there and none is needed; the row itself carries no PII anymore).
     // TournamentParticipant rows are kept for the same Art. 17(3) reason: a tournament's
     // participant history legitimately outlives one participant's account.
+
+    // Audit trail (Phase 4, [REVIEW-FIX: privacy-dsgvo #8]): append-only, actor is the account
+    // owner acting on themselves. actorId is a plain string column — the log must outlive the
+    // (anonymized-in-place, never deleted) user row.
+    await tx.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'account.delete',
+        targetType: 'user',
+        targetId: userId,
+        summary: `Konto @${originalUsername} gelöscht und anonymisiert`,
+      },
+    })
   })
   // Session/token invalidation: KNOWN GAP — the plan calls for bumping a `tokenVersion` field so
   // existing 30-day JWTs stop authenticating immediately after erasure. That field is additive to
