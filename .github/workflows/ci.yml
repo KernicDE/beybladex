@@ -165,6 +165,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npx prisma migrate deploy
       - run: npm run test:e2e
+      # The offline/airplane-mode acceptance spec needs the PRODUCTION server: Next 16 dev mode
+      # gates hydration on the HMR WebSocket, which context.setOffline(true) blocks forever, so a
+      # dev-server page reloaded offline never hydrates (framework limitation, proven from the
+      # playwright-report trace of the 2026-09-09 run). Production hydration has no WebSocket
+      # dependency. The build runs here (prebuild injects the SW build id; postbuild restores).
+      - run: npm run test:e2e:offline
       # CI text logs alone can't show what a failing page actually rendered — upload the
       # trace/screenshot (playwright.config.ts's trace: 'on-first-retry' / screenshot:
       # 'only-on-failure') so a failure is debuggable without reproducing it blind.

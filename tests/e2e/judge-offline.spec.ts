@@ -5,11 +5,26 @@
 // (not zero, not two), and a page RELOAD WHILE STILL OFFLINE still shows the match data —
 // hydrated from the IndexedDB snapshot (page-side) on the SW-cached document (cache-first).
 //
-// Requirements to run: DATABASE_URL (Postgres) and REDIS_URL reachable — the Playwright
-// webServer starts `npm run dev` and this spec seeds its own fixture rows via Prisma, so it
-// runs on any dev machine with infra up AND in CI; it cannot run with no database at all.
+// Requirements to run: DATABASE_URL (Postgres) and REDIS_URL reachable — the spec seeds its
+// own fixture rows via Prisma, so it runs on any machine with infra up AND in CI; it cannot
+// run with no database at all.
 // (iOS Safari manual checklist per [REVIEW-FIX: frontend-pwa N5] stays a documented manual test:
 // installed PWA, airplane mode, flush on reopen.)
+//
+// RUNTIME REQUIREMENT (2026-09-09, third CI failure): this spec is executed by
+// playwright.offline.config.ts against `next build` + `next start` on port 3100 (npm run
+// test:e2e:offline), NOT against `npm run dev`. Root cause, proven from the CI trace of run
+// 34401416295: Next 16's dev client gates hydration on the `/_next/hmr` WebSocket — hydrate()
+// awaits the initial RSC payload, whose decoder only closes once BOTH the inline Flight stream
+// AND the dev debugChannel (WebSocket-backed) close (next/dist/client/app-index.js +
+// react-server-dom-turbopack client). Under context.setOffline(true) the WebSocket can never
+// connect, so a dev-server page RELOADED while offline stays inert SSR markup forever — score
+// 0:0, badge "Sync OK" (both are the server-rendered defaults), zero console errors, HMR ws
+// retrying ERR_INTERNET_DISCONNECTED every 5s. The same trace proves the app's offline layer
+// was healthy: the SW served the cached document (identical Date header) and every chunk, the
+// flush POST was blocked as intended, the queue entry persisted, and the pre-reload
+// "1 Ergebnisse warten auf Sync" badge assertion PASSED. Moving this spec back to the dev
+// server will re-break it regardless of app changes — do not "fix" it there again.
 import { test, expect, type Page } from '@playwright/test'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../../lib/db'

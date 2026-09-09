@@ -2,6 +2,12 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // judge-offline.spec.ts runs against the PRODUCTION server (playwright.offline.config.ts):
+  // Next 16 dev mode never hydrates a page reloaded while offline — hydrate() awaits the RSC
+  // payload, whose decoder also waits for the HMR-WebSocket-backed dev debug channel, which
+  // context.setOffline(true) blocks forever (proven from CI run 34401416295's trace). The app
+  // code is not involved; only the production runtime supports the airplane-mode criterion.
+  testIgnore: /judge-offline\.spec\.ts/,
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:3000',
