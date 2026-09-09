@@ -1,9 +1,14 @@
 // app/profile/[username]/page.tsx
 // Server component: loads the subject user, then projects it through resolveVisibleFields
 // before rendering anything — the raw subject row must never reach the template/response.
+import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { resolveVisibleFields } from '@/lib/privacy'
+import { friendshipBetween, isFriendWith } from '@/lib/friendship'
+import { FriendButton } from '@/components/social/FriendButton'
+
+export const dynamic = 'force-dynamic'
 
 export default async function ProfilePage({ params }: PageProps<'/profile/[username]'>) {
   const { username } = await params
@@ -15,15 +20,32 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
     return <main className="p-6"><p>Profil nicht gefunden.</p></main>
   }
 
-  // TODO(Phase 4): real Friendship lookup (Friendship.status === 'ACCEPTED' → isFriend = true;
-  // BLOCKED additionally suppresses even PUBLIC fields). Phase 4 wires lib/friendship.ts in.
-  const isFriend = false
+  // Phase 4: real Friendship lookup — isFriend is true ONLY for status === 'ACCEPTED' in
+  // either direction (lib/friendship.ts semantics, fixed in Phase 1 Task 7). BLOCKED rows
+  // resolve to isFriend = false and simply gate nothing extra here.
+  const isFriend = viewerId ? await isFriendWith(viewerId, subject.id) : false
+
+  // The FriendButton's initial state: the row between viewer and subject, if any.
+  const existingFriendship = viewerId && viewerId !== subject.id
+    ? await friendshipBetween(viewerId, subject.id)
+    : null
 
   const view = resolveVisibleFields(subject, viewerId, isFriend)
+  const isOwner = viewerId === subject.id
 
   return (
     <main className="p-6 space-y-4">
       <h1 className="text-2xl font-bold">{view.displayName ?? view.username}</h1>
+      {viewerId && !isOwner && (
+        <FriendButton
+          subjectId={subject.id}
+          initial={{
+            friendshipId: existingFriendship?.id ?? null,
+            status: existingFriendship?.status ?? null,
+            outgoing: existingFriendship?.requesterId === viewerId,
+          }}
+        />
+      )}
       {view.bio && <p>{view.bio}</p>}
       <dl className="space-y-1">
         {view.city && (
@@ -47,7 +69,14 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
       </dl>
       {view.collectionVisible && <p>Sammlung ist sichtbar.</p>}
       {view.decksVisible && <p>Decks sind sichtbar.</p>}
-      {viewerId === subject.id && <p>Das ist dein eigenes Profil.</p>}
+      {isOwner && (
+        <p>
+          Das ist dein eigenes Profil.{' '}
+          <Link href={`/profile/${subject.username}/friends`} className="underline underline-offset-2">
+            Freunde anzeigen
+          </Link>
+        </p>
+      )}
     </main>
   )
 }
