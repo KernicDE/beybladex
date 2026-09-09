@@ -1,13 +1,15 @@
 // tests/integration/organizer-console.test.ts
 // Phase 5 Part C — organizer console authz and effects (standing Global-Constraints rule:
 // every state-changing route documents its authz rule and has a negative test). All console
-// actions (bracket generate, judge assign, no-show, complete) are owner/ADMIN-only: a non-owner,
-// non-admin user gets 403 on each. The owner's actions succeed: bracket generation persists the
-// full single-elimination bracket, judge assignment sets Match.judgeId, a no-show marks the
-// participant withdrawn and auto-advances the opponent into the next round's slot, and
-// completing sets Tournament.completedAt. Integration — CI-only (Postgres/Redis).
+// actions (stage create, bracket generate, judge assign, no-show, complete) are owner/ADMIN-only:
+// a non-owner, non-admin user gets 403 on each. The owner's actions succeed: a stage is created,
+// bracket generation persists the full single-elimination bracket for the stage, judge assignment
+// sets Match.judgeId, a no-show marks the participant withdrawn and auto-advances the opponent
+// into the next round's slot, and completing sets Tournament.completedAt. Integration — CI-only
+// (Postgres/Redis).
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { POST as GENERATE_BRACKET } from '@/app/api/tournaments/[id]/bracket/route'
+import { POST as CREATE_STAGE } from '@/app/api/tournaments/[id]/stages/route'
+import { POST as GENERATE_BRACKET } from '@/app/api/tournaments/[id]/stages/[stageId]/generate/route'
 import { PATCH as ASSIGN_JUDGE } from '@/app/api/tournaments/[id]/matches/[matchId]/judge/route'
 import { POST as NOSHOW } from '@/app/api/tournaments/[id]/noshow/route'
 import { POST as COMPLETE } from '@/app/api/tournaments/[id]/complete/route'
@@ -62,23 +64,31 @@ describe('organizer console', () => {
     const base = `http://localhost/api/tournaments/${tournament.id}`
     const ctx = { params: Promise.resolve({ id: tournament.id }) }
 
-    // — Negative authz: a JUDGE-role intruder gets 403 on bracket-generate and no-show,
-    //   401 unauthenticated, and cannot touch a match judge assignment either.
+    // — Negative authz: a JUDGE-role intruder gets 403 on stage-create, bracket-generate,
+    //   no-show and tournament-complete; unauthenticated bracket-generate → 401.
     mockAuth.mockResolvedValue(asSession({ id: intruder.id, name: intruder.username }))
-    expect((await GENERATE_BRACKET(req('POST', `${base}/bracket`), ctx)).status).toBe(403)
+    expect((await CREATE_STAGE(req('POST', `${base}/stages`, { name: 'X', format: 'SINGLE_ELIMINATION' }), ctx)).status).toBe(403)
     expect((await NOSHOW(req('POST', `${base}/noshow`, { userId: players[0].id }), ctx)).status).toBe(403)
     expect((await COMPLETE(req('POST', `${base}/complete`), ctx)).status).toBe(403)
     mockAuth.mockResolvedValue(asSession(null))
-    expect((await GENERATE_BRACKET(req('POST', `${base}/bracket`), ctx)).status).toBe(401)
+    expect((await CREATE_STAGE(req('POST', `${base}/stages`, { name: 'X', format: 'SINGLE_ELIMINATION' }), ctx)).status).toBe(401)
 
-    // — Owner generates the bracket: 4 participants → 3 persisted matches (2 semis + final),
-    //   and a second generate is refused 409.
+    // — Owner creates the stage; an intruder cannot generate for it (403); the owner then
+    //   generates the bracket: 4 participants → 3 persisted matches (2 semis + final), and a
+    //   second generate is refused 409.
     mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
-    const gen = await GENERATE_BRACKET(req('POST', `${base}/bracket`), ctx)
+    const stageRes = await CREATE_STAGE(req('POST', `${base}/stages`, { name: 'Hauptbracket', format: 'SINGLE_ELIMINATION' }), ctx)
+    expect(stageRes.status).toBe(201)
+    const { id: stageId } = (await stageRes.json()) as { id: string }
+    const stageCtx = { params: Promise.resolve({ id: tournament.id, stageId }) }
+    mockAuth.mockResolvedValue(asSession({ id: intruder.id, name: intruder.username }))
+    expect((await GENERATE_BRACKET(req('POST', `${base}/stages/${stageId}/generate`), stageCtx)).status).toBe(403)
+    mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
+    const gen = await GENERATE_BRACKET(req('POST', `${base}/stages/${stageId}/generate`), stageCtx)
     expect(gen.status).toBe(201)
     expect((await gen.json()).created).toBe(3)
     expect(await prisma.match.count({ where: { tournamentId: tournament.id } })).toBe(3)
-    expect((await GENERATE_BRACKET(req('POST', `${base}/bracket`), ctx)).status).toBe(409)
+    expect((await GENERATE_BRACKET(req('POST', `${base}/stages/${stageId}/generate`), stageCtx)).status).toBe(409)
 
     // — Judge assignment: owner assigns the judge to every round-1 match; intruder's attempt 403.
     const r1Matches = await prisma.match.findMany({ where: { tournamentId: tournament.id, round: 1 }, orderBy: { bracketOrder: 'asc' } })
@@ -138,6 +148,7 @@ describe('organizer console', () => {
     expect(completed!.completedAt).not.toBeNull()
 
     await prisma.match.deleteMany({ where: { tournamentId: tournament.id } })
+    await prisma.tournamentStage.deleteMany({ where: { tournamentId: tournament.id } })
     await prisma.tournamentParticipant.deleteMany({ where: { tournamentId: tournament.id } })
     await prisma.tournament.delete({ where: { id: tournament.id } })
     await prisma.ruleset.delete({ where: { id: ruleset.id } })

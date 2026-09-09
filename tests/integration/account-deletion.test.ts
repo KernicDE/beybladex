@@ -23,11 +23,15 @@ type Ids = {
   users: string[]; clubs: string[]; rulesets: string[]; tournaments: string[]
   decks: string[]; builds: string[]; matches: string[]; participants: string[]
   friendships: string[]; collectionItems: string[]; notifications: string[]; passkeys: string[]
-  parts: string[]
+  parts: string[]; stages: string[]
 }
 
 async function cleanup(ids: Ids) {
   for (const id of ids.matches) await prisma.match.delete({ where: { id } }).catch(() => {})
+  for (const id of ids.stages) {
+    await prisma.stageStanding.deleteMany({ where: { stageId: id } })
+    await prisma.tournamentStage.delete({ where: { id } }).catch(() => {})
+  }
   for (const id of ids.participants) await prisma.tournamentParticipant.delete({ where: { id } }).catch(() => {})
   for (const id of ids.friendships) await prisma.friendship.delete({ where: { id } }).catch(() => {})
   for (const id of ids.notifications) await prisma.notification.delete({ where: { id } }).catch(() => {})
@@ -72,7 +76,7 @@ async function seedRichUser(suffix: string) {
     users: [owner.id, admin.id, opponent.id],
     clubs: [], rulesets: [], tournaments: [], decks: [], builds: [], matches: [],
     participants: [], friendships: [], collectionItems: [], notifications: [], passkeys: [],
-    parts: [],
+    parts: [], stages: [],
   }
 
   // club with another admin member (must be reassigned, not dissolved)
@@ -127,9 +131,15 @@ async function seedRichUser(suffix: string) {
     data: { tournamentId: tournament.id, userId: owner.id, deckId: deck.id, checkedIn: true },
   })
   ids.participants.push(participant.id)
+  // Phase 5 Part C2: every Match requires a stage (a plain single-elimination stage here).
+  const stage = await prisma.tournamentStage.create({
+    data: { tournamentId: tournament.id, order: 1, name: 'Hauptbracket', format: 'SINGLE_ELIMINATION' },
+  })
+  ids.stages.push(stage.id)
   const match = await prisma.match.create({
     data: {
       tournamentId: tournament.id,
+      stageId: stage.id,
       judgeId: admin.id,
       player1Id: owner.id,
       player2Id: opponent.id,
@@ -247,7 +257,7 @@ describe('account deletion (Art. 17)', () => {
     const ids: Ids = {
       users: [user.id], clubs: [], rulesets: [], tournaments: [], decks: [], builds: [],
       matches: [], participants: [], friendships: [], collectionItems: [], notifications: [], passkeys: [],
-      parts: [],
+      parts: [], stages: [],
     }
     mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
 
@@ -271,7 +281,7 @@ describe('account deletion (Art. 17)', () => {
     const ids: Ids = {
       users: [user.id], clubs: [], rulesets: [], tournaments: [], decks: [], builds: [],
       matches: [], participants: [], friendships: [], collectionItems: [], notifications: [], passkeys: [],
-      parts: [],
+      parts: [], stages: [],
     }
 
     await eraseOrAnonymizeUser(user.id)

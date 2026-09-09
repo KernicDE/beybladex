@@ -11,7 +11,7 @@ export async function GET() {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
 
-  const [user, collection, decks, ratings, partRequests, friendships, clubMemberships, tournamentParticipations] =
+  const [user, collection, decks, ratings, partRequests, friendships, clubMemberships, tournamentParticipations, stageStandings] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
       prisma.collectionItem.findMany({ where: { userId }, include: { pricePoints: true } }),
@@ -21,6 +21,8 @@ export async function GET() {
       prisma.friendship.findMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
       prisma.clubMember.findMany({ where: { userId }, include: { club: true } }),
       prisma.tournamentParticipant.findMany({ where: { userId }, include: { tournament: true } }),
+      // Phase 5 Part C2 — User-owned per-stage tournament record (erasure: cascade on user delete).
+      prisma.stageStanding.findMany({ where: { userId }, include: { stage: { select: { name: true, format: true, tournamentId: true } } } }),
     ])
   if (!user) return Response.json({ error: 'not_found' }, { status: 404 })
 
@@ -57,6 +59,7 @@ export async function GET() {
       notifyEmail: user.notifyEmail,
     },
     tournamentParticipations,
+    stageStandings,
   }
 
   return Response.json(document, {

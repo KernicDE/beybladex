@@ -35,6 +35,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -86,6 +87,12 @@ export async function POST(req: Request, { params }: Ctx) {
       tournament: {
         include: {
           ruleset: true,
+        },
+      },
+      // Phase 5 Part C2: rounds and finals detection are STAGE-scoped (a stage's round numbering
+      // restarts at 1), not tournament-scoped.
+      stage: {
+        include: {
           matches: { select: { round: true } },
         },
       },
@@ -208,10 +215,14 @@ export async function POST(req: Request, { params }: Ctx) {
   const player1BuildId = buildId(body.player1BuildId)
   const player2BuildId = buildId(body.player2BuildId)
 
-  // Win threshold: finals (last bracket round) use finalsTargetPoints, earlier rounds
-  // targetPoints — read from the Ruleset, never hardcoded.
-  const maxRound = Math.max(0, ...match.tournament.matches.map((m) => m.round))
-  const target = match.round > 0 && match.round === maxRound ? ruleset.finalsTargetPoints : ruleset.targetPoints
+  // Win threshold: finals (the stage's last round) use finalsTargetPoints, earlier rounds
+  // targetPoints — read from the Ruleset, never hardcoded. Phase 5 Part C2: the round lookup is
+  // scoped to THIS match's STAGE, and a SWISS stage never uses finalsTargetPoints (every Swiss
+  // round is scored at targetPoints; there is no single final match).
+  const maxRound = Math.max(0, ...match.stage.matches.map((m) => m.round))
+  const isFinal =
+    match.stage.format !== 'SWISS' && match.round > 0 && match.round === maxRound
+  const target = isFinal ? ruleset.finalsTargetPoints : ruleset.targetPoints
   const completed = nextScore1 >= target || nextScore2 >= target
   const winnerId = completed ? (nextScore1 > nextScore2 ? match.player1Id : match.player2Id) : null
 
@@ -228,14 +239,32 @@ export async function POST(req: Request, { params }: Ctx) {
     },
   })
 
-  // Advance the winner into the next round's slot (persisted empty at bracket generation).
-  // Idempotent: re-running for the same winner writes the same value.
+  // Advance the result through the stage — format-aware (Phase 5 Part C2):
+  //   SINGLE_ELIMINATION — winner into the next round's slot within this stage (unchanged Part C
+  //     behavior, now stage-scoped).
+  //   DOUBLE_ELIMINATION — winner into the next WB/LB slot or the grand final; the LOSER also
+  //     propagates: a WB match's loser drops into a specific LB slot (lib/doubleElimination.ts's
+  //     drop-in mapping), an LB match's loser is eliminated (StageStanding.eliminated = true, no
+  //     further propagation). Grand-final reset wiring + stuck-bye resolution happen inside.
+  //   SWISS — no bracket slots at all: both players' StageStanding rows are updated
+  //     (wins/losses/opponentIds + buchholz recompute); the next round is re-paired from them.
+  // Idempotent throughout: re-running for the same winner writes the same values.
   if (completed && winnerId) {
-    const slot = match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
-    await prisma.match.updateMany({
-      where: { tournamentId: match.tournamentId, round: match.round + 1, bracketOrder: Math.floor(match.bracketOrder / 2) },
-      data: { [slot]: winnerId },
-    })
+    if (match.stage.format === 'SWISS') {
+      const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
+      await recordSwissResult(match.stageId, winnerId, loserId)
+    } else if (match.stage.format === 'DOUBLE_ELIMINATION') {
+      // The bracket shape depends on slots (nextPow2 of the pool), which the stage's own max
+      // round reveals: maxRound = 3R−1 → R = (maxRound + 1) / 3.
+      const R = (maxRound + 1) / 3
+      await propagateEliminationResult(match, winnerId, 2 ** R)
+    } else {
+      const slot = match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
+      await prisma.match.updateMany({
+        where: { stageId: match.stageId, round: match.round + 1, bracketOrder: Math.floor(match.bracketOrder / 2) },
+        data: { [slot]: winnerId },
+      })
+    }
   }
 
   return Response.json({

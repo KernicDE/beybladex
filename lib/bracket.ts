@@ -64,6 +64,8 @@ export function generateSingleEliminationBracket(participants: Pick<TournamentPa
 
 // One-query bracket loader for the tournament/judge pages: matches and participants in a single
 // findUnique — do not replace this with per-match lookups ([REVIEW-FIX: performance P6]).
+// Phase 5 Part C2: matches live on STAGES (each with its own format + standings), loaded in the
+// same single query.
 export async function loadTournamentBracket(tournamentId: string) {
   return prisma.tournament.findUnique({
     where: { id: tournamentId },
@@ -73,12 +75,21 @@ export async function loadTournamentBracket(tournamentId: string) {
         orderBy: { id: 'asc' },
         include: { user: { select: { id: true, username: true, displayName: true } } },
       },
-      matches: {
-        orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }],
+      stages: {
+        orderBy: { order: 'asc' },
         include: {
-          judge: { select: { id: true, username: true, displayName: true } },
-          player1Build: { include: { blade: true, ratchet: true, bit: true } },
-          player2Build: { include: { blade: true, ratchet: true, bit: true } },
+          matches: {
+            orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }],
+            include: {
+              judge: { select: { id: true, username: true, displayName: true } },
+              player1Build: { include: { blade: true, ratchet: true, bit: true } },
+              player2Build: { include: { blade: true, ratchet: true, bit: true } },
+            },
+          },
+          standings: {
+            orderBy: [{ wins: 'desc' }, { buchholz: 'desc' }, { userId: 'asc' }],
+            include: { user: { select: { id: true, username: true, displayName: true } } },
+          },
         },
       },
     },

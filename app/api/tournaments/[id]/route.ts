@@ -4,7 +4,9 @@
 // modify a tournament; everyone else gets 403 (negative test: tests/integration/tournament-ownership.test.ts).
 // DELETE — same authz rule; participant rows and matches are removed in the same transaction
 // (both FKs to Tournament have no cascade in spec §3, and participants' registrations must not
-// block an organizer from cancelling their own event).
+// block an organizer from cancelling their own event). Stage rows (Phase 5 Part C2) cascade at
+// the DB level (onDelete: Cascade on TournamentStage + StageStanding + Match.stageId) but are
+// also deleted explicitly here to match this route's explicit-cleanup style.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
@@ -71,6 +73,8 @@ export async function DELETE(_req: Request, { params }: Ctx) {
 
   await prisma.$transaction([
     prisma.match.deleteMany({ where: { tournamentId: id } }),
+    prisma.stageStanding.deleteMany({ where: { stage: { tournamentId: id } } }),
+    prisma.tournamentStage.deleteMany({ where: { tournamentId: id } }),
     prisma.tournamentParticipant.deleteMany({ where: { tournamentId: id } }),
     prisma.tournament.delete({ where: { id } }),
   ])

@@ -55,15 +55,18 @@ describe('match score idempotency', () => {
         createdById: organizer.id,
       },
     })
-    const match = await prisma.match.create({
-      data: { tournamentId: tournament.id, judgeId: judge.id, player1Id: p1.id, player2Id: p2.id, round: 1, bracketOrder: 0, status: 'IN_PROGRESS' },
+    // Phase 5 Part C2: both matches belong to one stage. The score route treats "the highest
+    // round present in the STAGE" as the final (stage-scoped since Part C2) — the round-2
+    // placeholder in the same stage is required so this round-1 match is correctly read as a
+    // non-final and uses ruleset.targetPoints (3), not ruleset.finalsTargetPoints (5).
+    const stage = await prisma.tournamentStage.create({
+      data: { tournamentId: tournament.id, order: 1, name: 'Hauptbracket', format: 'SINGLE_ELIMINATION' },
     })
-    // The score route treats "the highest round present in the tournament" as the final
-    // (app/api/matches/[id]/score/route.ts's finalsTargetPoints logic) — a round-2 placeholder
-    // is required so this round-1 match is correctly read as a non-final and uses
-    // ruleset.targetPoints (3), not ruleset.finalsTargetPoints (5).
+    const match = await prisma.match.create({
+      data: { tournamentId: tournament.id, stageId: stage.id, judgeId: judge.id, player1Id: p1.id, player2Id: p2.id, round: 1, bracketOrder: 0, status: 'IN_PROGRESS' },
+    })
     const finalPlaceholder = await prisma.match.create({
-      data: { tournamentId: tournament.id, round: 2, bracketOrder: 0, status: 'PENDING' },
+      data: { tournamentId: tournament.id, stageId: stage.id, round: 2, bracketOrder: 0, status: 'PENDING' },
     })
     const ctx = { params: Promise.resolve({ id: match.id }) }
     mockAuth.mockResolvedValue(asSession({ id: judge.id, name: judge.username }))
@@ -116,6 +119,7 @@ describe('match score idempotency', () => {
 
     await prisma.match.delete({ where: { id: match.id } })
     await prisma.match.delete({ where: { id: finalPlaceholder.id } })
+    await prisma.tournamentStage.delete({ where: { id: stage.id } })
     await prisma.tournament.delete({ where: { id: tournament.id } })
     await prisma.ruleset.delete({ where: { id: ruleset.id } })
     await prisma.user.deleteMany({ where: { id: { in: [organizer.id, judge.id, p1.id, p2.id] } } })

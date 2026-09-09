@@ -49,8 +49,13 @@ describe('match score authorization', () => {
         createdById: owner.id,
       },
     })
+    // Phase 5 Part C2: every Match requires a stage; a lone SINGLE_ELIMINATION stage makes this
+    // match the stage final (same finals-detection semantics as the pre-stage behavior).
+    const stage = await prisma.tournamentStage.create({
+      data: { tournamentId: tournament.id, order: 1, name: 'Hauptbracket', format: 'SINGLE_ELIMINATION' },
+    })
     const match = await prisma.match.create({
-      data: { tournamentId: tournament.id, judgeId: judge.id, player1Id: p1.id, player2Id: p2.id, round: 1, bracketOrder: 0, status: 'IN_PROGRESS' },
+      data: { tournamentId: tournament.id, stageId: stage.id, judgeId: judge.id, player1Id: p1.id, player2Id: p2.id, round: 1, bracketOrder: 0, status: 'IN_PROGRESS' },
     })
     const ctx = { params: Promise.resolve({ id: match.id }) }
 
@@ -87,6 +92,7 @@ describe('match score authorization', () => {
     expect(row).toMatchObject({ scorePlayer1: 2, scorePlayer2: 1 })
 
     await prisma.match.delete({ where: { id: match.id } })
+    await prisma.tournamentStage.delete({ where: { id: stage.id } })
     await prisma.tournament.delete({ where: { id: tournament.id } })
     await prisma.ruleset.delete({ where: { id: ruleset.id } })
     await prisma.user.deleteMany({ where: { id: { in: [owner.id, admin.id, judge.id, otherJudge.id, randomUser.id, p1.id, p2.id] } } })

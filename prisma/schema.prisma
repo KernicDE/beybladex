@@ -84,6 +84,26 @@ enum MatchStatus {
   COMPLETED
 }
 
+// Phase 5 Part C2 — multi-format tournaments: one Tournament runs 1+ ordered stages.
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  SWISS
+}
+
+enum StageStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+}
+
+// Only meaningful when the stage's format = DOUBLE_ELIMINATION.
+enum BracketSide {
+  WINNERS
+  LOSERS
+  GRAND_FINAL
+}
+
 model User {
   id                   String         @id @default(uuid())
   username             String         @unique
@@ -130,6 +150,7 @@ model User {
   organizedTournaments Tournament[]   @relation("TournamentOrganizer")
   ratings              Rating[]
   partRequests         PartRequest[]
+  stageStandings       StageStanding[]
 
   // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
   isMinor                 Boolean        @default(true) // computed at registration from birthDate; safe-by-default
@@ -260,6 +281,8 @@ model Tournament {
 
   participants    TournamentParticipant[]
   matches         Match[]
+  // Phase 5 Part C2 — the tournament's ordered stages (each with its own format/bracket).
+  stages          TournamentStage[]
 }
 
 model TournamentParticipant {
@@ -277,6 +300,51 @@ model TournamentParticipant {
   withdrawn    Boolean    @default(false)
 
   @@unique([tournamentId, userId])
+}
+
+// Phase 5 Part C2 — a tournament stage: one ordered, independently-formatted segment of a
+// tournament (e.g. "Vorrunde" SWISS → "Playoffs" DOUBLE_ELIMINATION). Every Match belongs to
+// exactly one stage; a stage's round numbering restarts at 1.
+model TournamentStage {
+  id              String            @id @default(uuid())
+  tournamentId    String
+  tournament      Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  order           Int               // 1-based sequence within the tournament
+  name            String            // organizer-facing label, e.g. "Vorrunde", "Playoffs"
+  format          TournamentFormat
+  status          StageStatus       @default(PENDING)
+  swissRounds     Int?              // SWISS only: total planned rounds, set at stage creation
+  swissRoundsDone Int               @default(0)
+  qualifyCount    Int?              // how many top participants advance to the NEXT stage; null on the last stage
+  // Populated by the stage-complete route: the previous stage's top `qualifyCount` userIds, read
+  // by the generate route as this stage's participant pool (NOT a new join model, per plan).
+  qualifiedUserIds String[]         @default([])
+
+  matches         Match[]
+  standings       StageStanding[]
+
+  @@unique([tournamentId, order])
+}
+
+// Phase 5 Part C2 — per-stage, per-player record: Swiss wins/losses/buchholz + played-against
+// history (Swiss pairing must not repeat a pairing), double-elimination elimination state.
+model StageStanding {
+  id          String          @id @default(uuid())
+  stageId     String
+  stage       TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wins        Int             @default(0)
+  losses      Int             @default(0)
+  buchholz    Float           @default(0)   // tiebreak: sum of opponents' win counts at time of pairing
+  opponentIds String[]        @default([])  // played-against history — Swiss pairing must not repeat a pairing
+  // Swiss only: how many byes this player has received in this stage — a player never gets two
+  // byes in one stage. (Additive column beyond the plan's literal StageStanding sketch; the plan
+  // REQUIRES bye tracking but its sketch has no field for it — documented deviation.)
+  byes        Int             @default(0)
+  eliminated  Boolean         @default(false) // DOUBLE_ELIMINATION only: true after a 2nd loss
+
+  @@unique([stageId, userId])
 }
 
 // Part (Phase 5 Part A, [REVIEW-FIX: backend-security #5, performance P12]) — the curated parts
@@ -366,6 +434,12 @@ model Match {
   id             String      @id @default(uuid())
   tournamentId   String
   tournament     Tournament  @relation(fields: [tournamentId], references: [id])
+  // Phase 5 Part C2 — every match belongs to exactly one stage (required FK; no production rows
+  // predate stages per the plan's backward-compat note). tournamentId is deliberately KEPT as a
+  // denormalized second FK so all Part C authz/scoring call sites keep reading match.tournament.*
+  // directly instead of a stage→tournament two-hop. Stage deletion cascades to its matches.
+  stageId        String
+  stage          TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
   judgeId        String?
   judge          User?       @relation("JudgeMatches", fields: [judgeId], references: [id])
 
@@ -384,14 +458,20 @@ model Match {
   winnerId       String?
 
   // Phase 5 Part C — bracket/round placement and lifecycle (all additive):
-  round          Int         @default(0) // 1 = first bracket round, counts up to the final
+  round          Int         @default(0) // 1 = first bracket round, counts up to the final; 0/unused for SWISS
   bracketOrder   Int         @default(0) // position within a round; feeds match slot (i+1)/2 in round+1
   status         MatchStatus @default(PENDING)
+  // Phase 5 Part C2 — stage-scoped placement. bracketSide is only set for DOUBLE_ELIMINATION
+  // stages; swissRound only for SWISS stages (distinct from `round`, which stays the
+  // elimination-bracket round number and restarts at 1 per stage).
+  bracketSide    BracketSide?
+  swissRound     Int?
   // Idempotency key for offline-synced scores: one client-generated UUID per judge action, unique
   // DB-wide — a replayed POST with the same clientEventId is a server-side no-op.
   clientEventId  String?     @unique
 
   @@index([tournamentId, round, bracketOrder])
+  @@index([stageId, round, bracketOrder])
 }
 
 model CollectionItem {

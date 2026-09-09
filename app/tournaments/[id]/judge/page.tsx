@@ -11,14 +11,9 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { JudgeScorePad, type PadPlayer, type ScoreEventType } from '@/components/judge/JudgeScorePad'
+import { eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
 
 export const dynamic = 'force-dynamic'
-
-function roundLabel(round: number, totalRounds: number): string {
-  if (round === totalRounds && totalRounds > 1) return 'Finale'
-  if (round === totalRounds - 1 && totalRounds > 2) return 'Halbfinale'
-  return `Runde ${round}`
-}
 
 export default async function JudgePage({
   params,
@@ -36,7 +31,10 @@ export default async function JudgePage({
     where: { id },
     include: {
       ruleset: true,
-      matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] },
+      stages: {
+        orderBy: { order: 'asc' },
+        include: { matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] } },
+      },
       participants: {
         include: {
           user: { select: { username: true, displayName: true } },
@@ -47,11 +45,15 @@ export default async function JudgePage({
   })
   if (!tournament) notFound()
 
+  // Phase 5 Part C2: matches live on stages; the judge pad works on one flattened list.
+  const matches = tournament.stages.flatMap((s) => s.matches)
+  const stageOf = (matchId: string) => tournament.stages.find((s) => s.matches.some((m) => m.id === matchId))
+
   const caller = me ? await prisma.user.findUnique({ where: { id: me }, select: { role: true } }) : null
   const isOwner = me !== undefined && tournament.createdById === me
   const isAdmin = caller?.role === 'ADMIN'
 
-  const accessible = tournament.matches.filter(
+  const accessible = matches.filter(
     (m) => m.judgeId === me || isOwner || isAdmin
   )
   const match =
@@ -77,7 +79,18 @@ export default async function JudgePage({
     )
   }
 
-  const totalRounds = tournament.matches.reduce((max, m) => Math.max(max, m.round), 0)
+  const stage = stageOf(match.id)! // match comes from the flattened stage list — always found
+  const maxRound = Math.max(0, ...stage.matches.map((m) => m.round))
+  const wbRounds =
+    maxRound > 0
+      ? stage.matches.some((m) => m.bracketSide === 'GRAND_FINAL')
+        ? (maxRound + 1) / 3
+        : maxRound
+      : 0
+  const matchRoundLabel =
+    stage.format === 'SWISS'
+      ? `Swiss-Runde ${match.swissRound ?? '?'}`
+      : eliminationRoundLabel(match.round, wbRounds)
   const padPlayer = (userId: string | null): PadPlayer | null => {
     if (userId === null) return null
     const participant = tournament.participants.find((p) => p.userId === userId)
@@ -109,7 +122,7 @@ export default async function JudgePage({
     <JudgeScorePad
       matchId={match.id}
       tournamentId={tournament.id}
-      roundLabel={roundLabel(match.round, totalRounds)}
+      roundLabel={matchRoundLabel}
       player1={padPlayer(match.player1Id)}
       player2={padPlayer(match.player2Id)}
       initial={{

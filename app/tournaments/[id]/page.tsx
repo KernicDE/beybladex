@@ -2,8 +2,10 @@
 // Phase 5 Part C — the competitive/operational surface (Task 13 IA decision): the bracket view
 // is PUBLIC (players, judges, spectators), plus an organizer console visible ONLY to the
 // tournament's createdById or an ADMIN, plus a player-facing "Mein nächstes Match" callout.
-// Live tournament surface → force-dynamic ([REVIEW-FIX: performance P16]). All bracket data
-// comes from ONE findUnique include ([REVIEW-FIX: performance P6], lib/bracket.ts).
+// Phase 5 Part C2: the bracket view is a per-STAGE list (each stage has its own format; a Swiss
+// stage renders standings + pairings instead of a bracket graph). Live tournament surface →
+// force-dynamic ([REVIEW-FIX: performance P16]). All bracket data comes from ONE findUnique
+// include ([REVIEW-FIX: performance P6], lib/bracket.ts).
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
@@ -11,15 +13,19 @@ import { prisma } from '@/lib/db'
 import { loadTournamentBracket } from '@/lib/bracket'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
-import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
+import { JudgeBracketView, eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
 import { OrganizerConsole } from '@/components/tournament/OrganizerConsole'
 
 export const dynamic = 'force-dynamic' // live tournament surface [REVIEW-FIX: performance P16]
 
-function roundLabel(round: number, totalRounds: number): string {
-  if (round === totalRounds && totalRounds > 1) return 'Finale'
-  if (round === totalRounds - 1 && totalRounds > 2) return 'Halbfinale'
-  return `Runde ${round}`
+type LoadedTournament = NonNullable<Awaited<ReturnType<typeof loadTournamentBracket>>>
+
+// Per-stage winners-bracket round count R (double-elimination: maxRound = 3R−1; single-elimination:
+// maxRound = R). Swiss stages return 0 (round numbers unused).
+function stageWinnersRounds(stage: LoadedTournament['stages'][number]): number {
+  const maxRound = Math.max(0, ...stage.matches.map((m) => m.round))
+  if (maxRound === 0) return 0
+  return stage.matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
 }
 
 export default async function TournamentBracketPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,17 +43,23 @@ export default async function TournamentBracketPage({ params }: { params: Promis
   }))
   const nameOf = (userId: string | null) =>
     userId === null ? null : (players.find((p) => p.id === userId)?.name ?? null)
-  const totalRounds = tournament.matches.reduce((max, m) => Math.max(max, m.round), 0)
 
-  // "Mein nächstes Match": the viewer's first open match (player slot may only be resolvable
-  // for round 1 — later rounds fill as predecessors complete).
+  // "Mein nächstes Match": the viewer's first open match across all stages (player slot may only
+  // be resolvable for round 1 — later rounds fill as predecessors complete).
   const myMatch = me
-    ? tournament.matches.find(
+    ? tournament.stages.flatMap((s) => s.matches).find(
         (m) => m.status !== 'COMPLETED' && (m.player1Id === me || m.player2Id === me)
       )
     : undefined
+  const myStage = myMatch ? tournament.stages.find((s) => s.matches.some((m) => m.id === myMatch.id)) : undefined
   const myOpponentId =
     myMatch && me ? (myMatch.player1Id === me ? myMatch.player2Id : myMatch.player1Id) : null
+  const myRoundLabel =
+    myMatch && myStage
+      ? myStage.format === 'SWISS'
+        ? `Runde ${myMatch.swissRound ?? '?'}`
+        : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage))
+      : null
 
   // Judge pool for the assignment dropdown: the JUDGE role list is small by nature (a club/
   // region has a handful of certified judges); bounded at 200 as a sanity cap.
@@ -67,7 +79,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
         <Card className="space-y-1 border-neon-green/40 p-4">
           <CardTitle className="text-base">Mein nächstes Match</CardTitle>
           <p className="text-sm">
-            <span className="text-current/50">{roundLabel(myMatch.round, totalRounds)}: </span>
+            <span className="text-current/50">{myRoundLabel}: </span>
             du vs. {myOpponentId === null ? 'steht noch nicht fest' : (nameOf(myOpponentId) ?? 'Unbekannt')}
           </p>
           {myMatch.judgeId === me && (
@@ -81,29 +93,42 @@ export default async function TournamentBracketPage({ params }: { params: Promis
         </Card>
       )}
 
-      <section aria-labelledby="bracket-heading" className="space-y-3">
-        <h2 id="bracket-heading" className="text-lg font-semibold">
-          Turnierbaum
-        </h2>
-        {tournament.matches.length === 0 ? (
-          <p className="text-sm text-current/60">
-            Der Bracket wird vom Organisator generiert, sobald die Anmeldung geschlossen ist.
-          </p>
-        ) : (
-          <JudgeBracketView
-            matches={tournament.matches.map((m) => ({
-              id: m.id,
-              round: m.round,
-              bracketOrder: m.bracketOrder,
-              player1Id: m.player1Id,
-              player2Id: m.player2Id,
-              winnerId: m.winnerId,
-              status: m.status,
-            }))}
-            players={players}
-          />
-        )}
-      </section>
+      {tournament.stages.length === 0 ? (
+        <p className="text-sm text-current/60">
+          Der Turnierbaum wird vom Organisator generiert, sobald die Anmeldung geschlossen ist.
+        </p>
+      ) : (
+        tournament.stages.map((stage) => (
+          <section key={stage.id} aria-labelledby={`stage-view-${stage.id}`} className="space-y-3">
+            <h2 id={`stage-view-${stage.id}`} className="text-lg font-semibold">
+              {stage.order}. {stage.name}
+              {stage.status === 'COMPLETED' && <Badge tone="green" className="ml-2">Abgeschlossen</Badge>}
+            </h2>
+            <JudgeBracketView
+              matches={stage.matches.map((m) => ({
+                id: m.id,
+                round: m.round,
+                bracketOrder: m.bracketOrder,
+                swissRound: m.swissRound,
+                player1Id: m.player1Id,
+                player2Id: m.player2Id,
+                winnerId: m.winnerId,
+                status: m.status,
+              }))}
+              players={players}
+              format={stage.format}
+              wbRounds={stageWinnersRounds(stage)}
+              standings={stage.standings.map((s) => ({
+                userId: s.userId,
+                name: s.user.displayName ?? s.user.username,
+                wins: s.wins,
+                losses: s.losses,
+                buchholz: s.buchholz,
+              }))}
+            />
+          </section>
+        ))
+      )}
 
       {isOrganizer && (
         <OrganizerConsole
@@ -114,17 +139,40 @@ export default async function TournamentBracketPage({ params }: { params: Promis
             checkedIn: p.checkedIn,
             withdrawn: p.withdrawn,
           }))}
-          matches={tournament.matches.map((m) => ({
-            id: m.id,
-            round: m.round,
-            label: roundLabel(m.round, totalRounds),
-            player1: nameOf(m.player1Id),
-            player2: nameOf(m.player2Id),
-            status: m.status,
-            judgeId: m.judgeId,
-          }))}
+          stages={tournament.stages.map((stage) => {
+            const wbRounds = stageWinnersRounds(stage)
+            return {
+              id: stage.id,
+              order: stage.order,
+              name: stage.name,
+              format: stage.format,
+              status: stage.status,
+              swissRounds: stage.swissRounds,
+              swissRoundsDone: stage.swissRoundsDone,
+              qualifyCount: stage.qualifyCount,
+              matches: stage.matches.map((m) => ({
+                id: m.id,
+                stageId: stage.id,
+                round: m.round,
+                label:
+                  stage.format === 'SWISS'
+                    ? `Runde ${m.swissRound ?? '?'}`
+                    : eliminationRoundLabel(m.round, wbRounds),
+                player1: nameOf(m.player1Id),
+                player2: nameOf(m.player2Id),
+                status: m.status,
+                judgeId: m.judgeId,
+              })),
+              standings: stage.standings.map((s) => ({
+                userId: s.userId,
+                name: s.user.displayName ?? s.user.username,
+                wins: s.wins,
+                losses: s.losses,
+                buchholz: s.buchholz,
+              })),
+            }
+          })}
           judges={judges}
-          bracketGenerated={tournament.matches.length > 0}
           completedAt={tournament.completedAt?.toISOString() ?? null}
         />
       )}
