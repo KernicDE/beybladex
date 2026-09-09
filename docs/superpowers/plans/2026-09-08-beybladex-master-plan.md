@@ -2182,6 +2182,86 @@ Before writing this part's own TDD sub-plan, read `docs/superpowers/plans/review
 
 ---
 
+# Phase 5 Part C2: Multi-Format Tournaments (Swiss, Double Elimination, multi-stage) — added post-Phase-5-Part-C by explicit user request
+
+**Scope:** Part C shipped with `lib/bracket.ts`'s `generateSingleEliminationBracket` as the ONLY tournament format, and no concept of a tournament running more than one bracket. This part adds Swiss-system pairing, double-elimination brackets, and the ability for one `Tournament` to run multiple sequential **stages** with independent formats (e.g. a Swiss group stage feeding a Double-Elimination playoff stage) — decided over single-elimination-only because a real DACH tournament calendar plausibly wants exactly that "Vorrunde Swiss → Finalrunde Double-Elim" shape. This is a genuine architecture change to `Match`, the organizer console, and the score route — not additive sugar — so read this section in full before touching any Part C file.
+
+**Design decision, binding:** a `Tournament` gets 1+ `TournamentStage` rows (`order`-sequenced), each with its own `format` and its own bracket/pairing state. Every `Match` belongs to exactly one stage (`Match.stageId`, required). `Match.tournamentId` is KEPT (not removed) alongside `stageId` — a deliberate denormalization: every existing authz/scoring code path in Part C reads `match.tournament.*` directly, and forcing a `match.stage.tournament.*` two-hop through every one of those call sites would be pure churn with no benefit. `Match.round`/`bracketOrder` become scoped to the STAGE, not the tournament (a stage's round numbering restarts at 1) — this changes the score route's "is this the final round" detection from "max round in the tournament" to "max round in this stage," and that finals-detection only applies to `SINGLE_ELIMINATION`/`DOUBLE_ELIMINATION` stages (a `SWISS` stage never uses `finalsTargetPoints` — every Swiss round is scored at `targetPoints`, there is no single final match).
+
+**Backward compatibility, binding:** Phase 5 Part C's existing `Tournament`/`Match` rows (real or CI-seeded) predate `TournamentStage` entirely. Since — per this repo's now-repeated pattern across every Phase 5 FK-introducing migration — no production rows exist yet at this point in the timeline, `Match.stageId` can be added as a required FK with a genuine (in-practice no-op) migration, same convention as Part A's `Build`→`Part` FK conversion. Do not add it as nullable "to be safe" — that just defers the same problem.
+
+**Files:**
+
+- Modify `prisma/schema.prisma` (additive/restructuring, migration via the standard no-live-DB diff technique):
+  ```prisma
+  enum TournamentFormat { SINGLE_ELIMINATION DOUBLE_ELIMINATION SWISS }
+  enum StageStatus { PENDING ACTIVE COMPLETED }
+  enum BracketSide { WINNERS LOSERS GRAND_FINAL }  // only meaningful when format = DOUBLE_ELIMINATION
+
+  model TournamentStage {
+    id              String            @id @default(uuid())
+    tournamentId    String
+    tournament      Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+    order           Int               // 1-based sequence within the tournament
+    name            String            // organizer-facing label, e.g. "Vorrunde", "Playoffs"
+    format          TournamentFormat
+    status          StageStatus       @default(PENDING)
+    swissRounds     Int?              // SWISS only: total planned rounds, set at stage creation
+    swissRoundsDone Int               @default(0)
+    qualifyCount    Int?              // how many top participants advance to the NEXT stage; null on the tournament's last stage
+    matches         Match[]
+    standings       StageStanding[]
+
+    @@unique([tournamentId, order])
+  }
+
+  model StageStanding {
+    id          String          @id @default(uuid())
+    stageId     String
+    stage       TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+    userId      String
+    user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+    wins        Int             @default(0)
+    losses      Int             @default(0)
+    buchholz    Float           @default(0)   // tiebreak: sum of opponents' win counts at time of pairing
+    opponentIds String[]        @default([])  // played-against history — Swiss pairing must not repeat a pairing
+    eliminated  Boolean         @default(false) // DOUBLE_ELIMINATION only: true after a 2nd loss
+
+    @@unique([stageId, userId])
+  }
+  ```
+  Modify `Match`: add `stageId String` + `stage TournamentStage @relation(...)` (required FK, see backward-compat note above), `bracketSide BracketSide?` (only set for `DOUBLE_ELIMINATION` stages), `swissRound Int?` (only set for `SWISS` stages — distinct from `round`, which stays the elimination-bracket round number and is unused/0 for Swiss matches). Update `@@index([tournamentId, round, bracketOrder])` to also add `@@index([stageId, round, bracketOrder])`.
+
+- Create `lib/doubleElimination.ts`: `generateDoubleEliminationBracket(participants: Pick<TournamentParticipant, 'userId'>[]): { winners: BracketNode[]; losers: BracketNode[]; grandFinal: BracketNode; grandFinalReset: BracketNode }`. Reuse `lib/bracket.ts`'s seeding (ascending `userId`) and bye policy verbatim — do not reinvent seeding. Standard "drop-down" double-elimination topology: the winners bracket is structurally identical to `generateSingleEliminationBracket`'s output; the losers bracket has `2*log2(slots) - 1` rounds, with WB round-`r` losers dropping into a specific LB round per the standard construction (document the exact drop-in round mapping you implement, with a worked example in a code comment — this is the single most error-prone part of the whole feature and needs to be legible to the next person reading it, not just correct). The grand final pits the WB champion against the LB champion; `grandFinalReset` is a second grand-final match, played ONLY if the LB champion wins the first grand final (true double-elimination rule: the WB champion must be beaten twice) — represent it as a `PENDING` node that the score route deletes/no-ops if never needed (document this "conditional match" handling explicitly, since it's the one place a generated bracket node might never be played).
+
+- Create `lib/swiss.ts`: `pairSwissRound(standings: StageStanding[]): { pairings: Array<{ player1Id: string; player2Id: string | null }> }`. Algorithm (documented as "Swiss-lite," not a full Dutch/accelerated system — acceptable given this platform's realistic tournament sizes): sort by `(wins desc, buchholz desc, userId asc)` for determinism; greedily pair adjacent players in that order; if the greedy adjacent pairing would repeat a pairing already in `opponentIds`, look ahead to the next player who hasn't been played yet (swap-based rematch avoidance) — if no rematch-free pairing exists at all (mathematically possible only in small/late-round fields), allow the repeat rather than fail, and document that as the fallback. An odd participant count gives the lowest-ranked not-yet-byed player a bye (`player2Id: null`, an automatic win, tracked so the same player never gets two byes in one stage).
+
+- Modify `app/api/tournaments/[id]/bracket/route.ts` → split into stage-scoped routes:
+  - `app/api/tournaments/[id]/stages/route.ts`: `POST` (owner/ADMIN-only, standing negative-authz-test rule) creates a `TournamentStage` — body `{ name, format, order, swissRounds?, qualifyCount? }`; `GET` lists a tournament's stages.
+  - `app/api/tournaments/[id]/stages/[stageId]/generate/route.ts`: `POST` (owner/ADMIN-only), format-dispatched: `SINGLE_ELIMINATION` → `lib/bracket.ts` as today; `DOUBLE_ELIMINATION` → `lib/doubleElimination.ts`, persisting `bracketSide` per match; `SWISS` → `lib/swiss.ts`'s `pairSwissRound`, persisting `swissRound` (increment `swissRoundsDone`) — refuses (409) if the stage's current round isn't fully `COMPLETED` yet (Swiss can't pair round N+1 before round N's results exist), and refuses (409) once `swissRoundsDone === swissRounds`. The participant pool for a stage: the tournament's stage `order === 1` reads all checked-in, non-withdrawn `TournamentParticipant`s (today's behavior); any later stage reads the QUALIFIERS computed from the previous stage's completion (see below) instead.
+  - `app/api/tournaments/[id]/stages/[stageId]/complete/route.ts`: `POST` (owner/ADMIN-only) — for `SINGLE_ELIMINATION`/`DOUBLE_ELIMINATION`, refuses (409) unless every match in the stage is `COMPLETED`; for `SWISS`, refuses (409) unless `swissRoundsDone === swissRounds`. Computes the stage's final ranking (elimination: bracket placement — grand-final winner first, LB runner-up second, etc.; Swiss: `StageStanding` order) and, if `qualifyCount` is set and a next-`order` stage exists, marks that many top-ranked participants as the next stage's eligible pool (a simple `NextStageQualifier` join isn't a new model — store it as a comma-free `String[]` field `TournamentStage.qualifiedUserIds String[] @default([])`, populated on this route, read by the `generate` route above when `order > 1`). Sets `TournamentStage.status = COMPLETED`.
+  - The score route (`app/api/matches/[id]/score/route.ts`) changes minimally: read `match.stage` (via the new relation) instead of assuming tournament-level rounds; finals-detection (`finalsTargetPoints`) is computed as "max round within `match.stageId`, AND `match.stage.format !== 'SWISS'`"; on a `DOUBLE_ELIMINATION` match completion, the LOSER (not just the winner) must also propagate — into the losers bracket per `bracketSide`'s drop-in mapping from `lib/doubleElimination.ts` (document the exact loser-propagation rule next to the existing winner-propagation code, they are structurally different: a WB match's loser drops into a specific LB slot; an LB match's loser is eliminated, `StageStanding.eliminated = true`, no further propagation). On a `SWISS` match completion, update both players' `StageStanding` (`wins`/`losses`/`opponentIds`/`buchholz` recompute) instead of any bracket-slot propagation.
+
+- Modify `components/tournament/OrganizerConsole.tsx` + `app/tournaments/[id]/page.tsx`: replace the single "Bracket generieren" action with a stage list (create stage → generate/pair current round → complete stage → repeat for the next stage), each stage rendered with its format badge and (for Swiss) a live standings table (`wins`-`losses`, `buchholz`). `components/judge/JudgeBracketView.tsx` gains a `format`-aware render path: elimination formats keep the existing round-column view; a Swiss stage renders as a standings table plus "current round pairings" list (a bracket graph makes no sense for Swiss — do not force one).
+
+- `app/api/tournaments/[id]/noshow/route.ts`: extend the existing no-show handling to also update `StageStanding` for a Swiss stage (a withdrawn player's remaining Swiss matches become byes/opponent-wins, not silently vanish) and to correctly eliminate (not just skip) a double-elimination participant per the format's rules.
+
+**Tests:**
+- `tests/unit/doubleElimination.test.ts`: for 4/8 participants, assert the exact winners/losers/grand-final topology (round counts, drop-in rounds) against a hand-verified expected bracket — this is the "single most error-prone part" the design note above calls out, so the test must check topology, not just node count.
+- `tests/unit/swiss.test.ts`: a 3-round Swiss simulation over 8 seeded players (deterministic scripted results) never repeats a pairing and produces a standings order consistent with recorded wins; an odd-count field gives byes to different players across rounds (no repeat bye).
+- `tests/integration/multi-stage-tournament.test.ts`: an end-to-end journey — create a tournament, add a `SWISS` stage (`swissRounds: 3`, `qualifyCount: 4`) then a `DOUBLE_ELIMINATION` stage (`order: 2`), run the Swiss stage to completion via the score route, complete it, verify the `DOUBLE_ELIMINATION` stage's generated bracket contains exactly the top-4 qualifiers (not all original participants) — this is the acceptance-critical proof that stage-to-stage qualification actually gates the participant pool, not just that two stages can coexist.
+- `tests/integration/stage-authz.test.ts`: non-owner/non-admin gets 403 on stage create/generate/complete (standing negative-authz rule).
+- Regression: re-run `tests/integration/organizer-console.test.ts`, `tests/integration/score-idempotency.test.ts`, `tests/integration/score-authz.test.ts` unmodified in intent but updated for the `stageId`-required schema change (every fixture that creates a bare `Match` today must first create a default `TournamentStage`) — these must still pass; a tournament with exactly one `SINGLE_ELIMINATION` stage must behave identically to Part C's pre-multi-format behavior end-to-end.
+
+**Acceptance criteria:**
+- A tournament can run a Swiss stage followed by a Double-Elimination stage (or any other stage-format sequence), with only the previous stage's top `qualifyCount` finishers entering the next stage's bracket/pairing — verified end-to-end, not just at the schema level.
+- Double-elimination correctly requires two losses to eliminate a participant; the loser of a winners-bracket match is not eliminated, only the loser of a losers-bracket match is.
+- Swiss pairing never repeats a pairing within a stage (except the documented no-alternative-exists fallback) and never gives the same player two byes in one stage.
+- A single-stage `SINGLE_ELIMINATION` tournament (Part C's original shape) continues to work identically — this feature is additive to the existing journey, not a replacement that narrows it.
+- Every new state-changing route (stage create/generate/complete) has a negative-authz test per the standing Global Constraints rule.
+
+---
+
 # Phase 6: GitHub Actions CI/CD Pipeline
 
 **Scope:** spec §2 intro + §4 + §5.6. Build & push the Docker image to GHCR on merge to main; Watchtower on the server picks it up automatically. **Migrations must run as part of this chain — this phase does not merely build/push** `[REVIEW-FIX: backend-security #1]`.
