@@ -42,3 +42,108 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npx tsc --noEmit
       - run: npm run test:all
+
+  # The ONLY place `docker build` ever runs for this project (Global Constraints:
+  # no local Docker on dev machines). Builds the production image and boots it
+  # against this job's own fresh Postgres/Redis service containers, proving the
+  # migrate-then-serve entrypoint works end to end.
+  docker-boot-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: beybladex
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: beybladex_boot
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U beybladex -d beybladex_boot"
+          --health-interval 5s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgresql://beybladex:ci_test_password@localhost:5432/beybladex_boot
+      REDIS_URL: redis://localhost:6379
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-test-secret-not-for-production
+      TOTP_ENCRYPTION_KEY: dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ==
+      WEBAUTHN_RP_ID: localhost
+    steps:
+      - uses: actions/checkout@v4
+      # NETWORKING NOTE: GitHub service containers publish their ports on the
+      # runner host, so a plain `runs-on` step reaches them via localhost. A
+      # `docker run` container does NOT share that localhost — its loopback is
+      # its own. `--network host` puts the app container in the runner's
+      # network namespace, so DATABASE_URL/REDIS_URL keep pointing at
+      # localhost:5432 / localhost:6379 unchanged. (Alternative:
+      # `--add-host host.docker.internal:host-gateway` + rewritten URLs; chosen
+      # host networking because it needs zero URL rewriting.)
+      - name: Build image
+        run: docker build -t beybladex:ci .
+      - name: Boot container (runs `prisma migrate deploy` before serving)
+        run: >-
+          docker run -d --name beybladex-ci --network host
+          -e DATABASE_URL -e REDIS_URL -e NEXTAUTH_URL
+          -e NEXTAUTH_SECRET -e TOTP_ENCRYPTION_KEY -e WEBAUTHN_RP_ID
+          beybladex:ci
+      # The CMD fails fast (container exits) if `prisma migrate deploy` errors,
+      # so a 200 here proves migrate-then-serve succeeded. Retry loop with a
+      # sane timeout — the container needs a moment to start.
+      - name: Wait for /api/health (migrate deploy + server boot)
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/api/health; then
+              echo "health check passed"
+              exit 0
+            fi
+            if ! docker ps --format '{{.Names}}' | grep -q '^beybladex-ci$'; then
+              echo "container exited during boot; logs:"
+              docker logs beybladex-ci
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "health check timed out after 120s; logs:"
+          docker logs beybladex-ci
+          exit 1
+      - name: Verify no pending migrations in the booted container
+        run: docker exec beybladex-ci npx prisma migrate status
+
+  # E2E (Playwright) against the real dev server backed by real Postgres/Redis.
+  # Chromium only — keeping the browser install scoped to what the specs need
+  # keeps CI fast; widen here if a spec ever requires another engine.
+  playwright:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: beybladex
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: beybladex_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U beybladex -d beybladex_test"
+          --health-interval 5s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgresql://beybladex:ci_test_password@localhost:5432/beybladex_test
+      REDIS_URL: redis://localhost:6379
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-test-secret-not-for-production
+      TOTP_ENCRYPTION_KEY: dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ==
+      WEBAUTHN_RP_ID: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx prisma migrate deploy
+      - run: npm run test:e2e
