@@ -44,8 +44,15 @@ services:
     # Pure liveness probe (app/api/health) — so Traefik/Watchtower never route
     # to a half-booted container mid-deploy. The CMD already runs
     # `prisma migrate deploy` before serving; this confirms the server is up.
+    #
+    # NOTE: `test:` as a plain string is equivalent to CMD-SHELL <string> per the
+    # Compose spec — a literal "CMD " prefix here (fixed post-first-deploy, found
+    # when the db healthcheck below failed identically) makes the shell try to
+    # run a nonexistent command literally named "CMD". Never prefix a string-form
+    # test with "CMD " — that prefix only means something in the ["CMD", ...]
+    # array (CMD-EXEC) form, which doesn't support shell operators like `||`.
     healthcheck:
-      test: CMD wget -qO- http://localhost:3000/api/health || exit 1
+      test: wget -qO- http://localhost:3000/api/health || exit 1
       interval: 30s
       timeout: 5s
       retries: 3
@@ -87,7 +94,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: CMD pg_isready -U beybladex_user -d beybladex_db
+      test: pg_isready -U beybladex_user -d beybladex_db
       interval: 10s
       timeout: 5s
       retries: 5
@@ -99,7 +106,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: CMD redis-cli ping
+      test: redis-cli ping
       interval: 10s
       timeout: 5s
       retries: 5
