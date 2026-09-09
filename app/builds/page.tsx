@@ -4,6 +4,7 @@
 // revalidated rather than force-dynamic, per the Cross-Phase Regression Guard's caching rule.
 import Link from 'next/link'
 import { searchBuilds, BUILD_PAGE_SIZE } from '@/lib/buildSearch'
+import { getBuildStats } from '@/lib/metaCache'
 import { BuildCard } from '@/components/beyblade/BuildCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
@@ -14,6 +15,9 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
   const { q, cursor } = await searchParams
   const query = typeof q === 'string' ? q.trim() : ''
   const { builds, nextCursor } = await searchBuilds({ q: query, cursor: typeof cursor === 'string' ? cursor : null })
+  // Auto-Meta badges (Phase 5 Part D): ONE batch mget for the whole page, never per-card
+  // round trips. Whole-cache-empty falls back to a direct DB computation inside getBuildStats.
+  const winRates = await getBuildStats(builds.map((b) => b.id))
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -47,6 +51,7 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
                   ratchet: build.ratchet,
                   bit: build.bit,
                 }}
+                winRate={winRates.get(build.id) ?? null}
               />
             </li>
           ))}

@@ -12,7 +12,9 @@ import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
 import { Input } from '@/components/ui/Input'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import type { BuildCardData } from '@/components/beyblade/BuildCard'
+import type { WinRateStats } from '@/components/beyblade/WinRateBadge'
 import { validateNoDuplicateParts } from '@/lib/deckValidation'
 
 const MAX_BUILDS = 3
@@ -23,6 +25,7 @@ interface SearchResult {
   blade: { id: string; name: string; imageUrl: string | null }
   ratchet: { id: string; name: string }
   bit: { id: string; name: string }
+  winRate: WinRateStats | null
 }
 
 export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: string; initialTitle: string; initialBuilds: BuildCardData[] }) {
@@ -138,6 +141,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
                     <p className="truncate text-sm text-current/60">{build.ratchet.name} · {build.bit.name}</p>
                   </div>
                   <TypeBadge type={build.type} />
+                  <WinRateBadge stats={build.winRate} />
                   <Button size="sm" disabled={inDeck || full} onClick={() => add(build)}>
                     {inDeck ? 'Im Deck' : full ? 'Deck voll' : 'Hinzufügen'}
                   </Button>

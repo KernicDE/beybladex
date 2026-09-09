@@ -12,6 +12,8 @@ import { Card } from '@/components/ui/Card'
 import { RatingForm } from '@/components/beyblade/RatingForm'
 import { RatingList } from '@/components/beyblade/RatingList'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { getBuildStats, getPartStats } from '@/lib/metaCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,6 +50,13 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   const aggregate = await prisma.rating.aggregate({ where: { buildId: id }, _avg: { stars: true }, _count: true })
   const ownRating = viewerUsername ? build.ratings.find((r) => r.user.id === viewerId) : undefined
 
+  // Auto-Meta win rates (Phase 5 Part D) — batch cache reads (single-key for the build,
+  // one mget for its three parts), with direct-compute fallback on an empty cache.
+  const [buildStats, partStats] = await Promise.all([
+    getBuildStats([id]),
+    getPartStats([build.bladeId, build.ratchetId, build.bitId]),
+  ])
+
   const parts = [
     { label: 'Blade', part: build.blade },
     { label: 'Ratchet', part: build.ratchet },
@@ -71,6 +80,9 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
             Ø {aggregate._avg.stars!.toFixed(1)} Sterne aus {aggregate._count} Bewertung{aggregate._count === 1 ? '' : 'en'}
           </p>
         )}
+        <div className="mt-2">
+          <WinRateBadge stats={buildStats.get(id) ?? null} />
+        </div>
       </Card>
 
       <section aria-labelledby="build-parts" className="space-y-3">
@@ -96,6 +108,9 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                 <div className="mt-1 flex justify-center gap-1">
                   <Badge tone="cyan">{part.category}</Badge>
                   {part.beyType && <TypeBadge type={part.beyType} />}
+                </div>
+                <div className="mt-1 flex justify-center">
+                  <WinRateBadge stats={partStats.get(part.id) ?? null} />
                 </div>
                 {part.weightGrams && <p className="mt-1 text-xs text-current/50">{part.weightGrams} g</p>}
               </Card>
