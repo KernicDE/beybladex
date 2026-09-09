@@ -2500,6 +2500,30 @@ This makes every container start — first deploy and every Watchtower restart a
 
 ---
 
+# Phase 13: Club Profile Fields & Join Policies — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+
+**Status: planned, not started.** Same standing note as Phases 7–12: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
+
+**Scope check, verified against current schema first**: `Club.description` **already exists** (Phase 4, `String?`) — only `websiteUrl` and `discordUrl` are genuinely missing. The bigger half of this request — join policies — is a real gap: `POST /api/clubs/[slug]/members` today unconditionally creates an `isAdmin: false` membership for any authenticated caller (see that route's own header comment), with no concept of open/application/invite-only at all.
+
+**1. Club profile fields, additive.** `Club.websiteUrl String?`, `Club.discordUrl String?` — same validation posture as existing optional profile fields (reasonable length cap, no format lock-in beyond "looks like a URL"/"looks like a Discord invite" client-side hint, not a hard server-side allowlist that would reject a legitimate edge case). Rendered on `/clubs/[slug]` alongside the existing description.
+
+**2. Join policy, binding design — reuses the existing Friendship PENDING/ACCEPTED shape rather than inventing a parallel one.** Add `Club.joinPolicy` enum (`OPEN | APPLICATION | INVITE_ONLY`, default `OPEN` — preserves today's behavior for every existing club unless an owner changes it) and `ClubMember.status` enum (`ACTIVE | PENDING_APPLICATION | PENDING_INVITE`, default `ACTIVE` — every existing `ClubMember` row implicitly stays `ACTIVE`, no migration/backfill needed beyond the enum default). Behavior per policy:
+   - **`OPEN`** (today's behavior, unchanged): `POST /members` creates a `status: ACTIVE` row immediately.
+   - **`APPLICATION`**: `POST /members` creates a `status: PENDING_APPLICATION` row. A club admin/owner approves via `PATCH` (→ `ACTIVE`) or rejects via `DELETE` (removes the row) — reuses the existing promote/demote/kick route's authz tier (admin-or-owner), just against a new status transition instead of the `isAdmin` toggle.
+   - **`INVITE_ONLY`**: a self-service `POST /members` is rejected (403 `join_requires_invite`) — only a club admin/owner may create a membership row for someone else, as `status: PENDING_INVITE` (an invite). The invited user accepts via `PATCH` (self only → `ACTIVE`) or declines via `DELETE` (self only, removes the row) — mirrors `Friendship`'s "only the addressee accepts" rule exactly, same shape, different model.
+   - **Notification hook**: an application (admin needs to know) or an invite (invitee needs to know) should notify via the existing `lib/notify.ts` per-user channel — reuse, don't build a second notification path.
+
+**3. Binding regression-risk callout: every existing `ClubMember` query must filter to `status: ACTIVE`.** This is the single most likely place to introduce a real bug when this phase ships — audit and fix every current call site that counts or lists members without a status filter, since a `PENDING_APPLICATION`/`PENDING_INVITE` row must never inflate a "X Mitglieder" count, appear in the public roster, or (most importantly, a real authz risk) satisfy a `ClubMember.isAdmin === true` check used elsewhere in the app (Phase 4's tournament-creation club-admin authz gate, Phase 4's promote/demote/kick authz) — a pending, not-yet-accepted row must never carry real privileges. Known call sites to check at implementation time: the club roster on `/clubs/[slug]`, the `_count: { members: true }` used in `/clubs`' list view, and every `ClubMember.isAdmin` authz check across the codebase (`app/api/tournaments/route.ts`'s club-admin creation gate, the club members route's own promote/demote/kick checks).
+
+**4. UI.** `components/clubs/ClubForm.tsx` gains `websiteUrl`/`discordUrl` fields and a `joinPolicy` selector (owner/admin-only, same tier as other club settings). `components/clubs/ClubActions.tsx`'s join button becomes policy-aware: `OPEN` shows today's immediate "Beitreten"; `APPLICATION` shows "Bewerbung senden" with a pending-state afterward; `INVITE_ONLY` shows no self-service join action at all (a club admin's own UI gains an "Einladen" flow instead, e.g. by username, reusing the search infrastructure from Phase 4). A pending-invites/applications list for admins to act on, likely on the existing club roster area.
+
+**Tests:** `tests/integration/club-join-policies.test.ts` (all three policies' full state machines — OPEN's unchanged immediate-join, APPLICATION's request→approve/reject, INVITE_ONLY's invite→accept/decline, and INVITE_ONLY correctly rejecting a self-service `POST`), `tests/integration/club-member-status-filter.test.ts` (the acceptance-critical regression proof for item 3: a `PENDING_APPLICATION`/`PENDING_INVITE` row does not count toward the member count, does not appear in the roster, and — critically — does not pass an `isAdmin` authz check even if the inviting admin mistakenly set `isAdmin: true` on the invite row before acceptance).
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
 ## Cross-Phase Regression Guard
 
 Every phase's TDD sub-plan must re-run, not just skip:
