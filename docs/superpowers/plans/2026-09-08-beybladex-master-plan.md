@@ -2368,6 +2368,41 @@ This makes every container start — first deploy and every Watchtower restart a
 
 ---
 
+## MVP2 Roadmap — all currently open, non-implemented phases
+
+**Status: planned, not started, as a whole.** Added 2026-09-10 after a research pass into the real Beyblade X tournament ecosystem (WBO's ranked-season/judge-certification model, Challonge's feature set, the community meta-tracking site beywatch.gg) cross-checked against this codebase. Every phase below (7 through 17) is "MVP2" — the next real release after the live Phase 6 deployment — grouped here as one list so the whole scope is visible in one place; each phase keeps its own full file/interface/acceptance-criteria detail in its own section further down, unchanged. **Do not start any of these without the user explicitly picking one** — same standing rule each phase's own "planned, not started" note already carries.
+
+Rough priority order (not binding — the user picks the actual sequence when ready to start):
+
+1. **Phase 14 — Ranked Ladder & Elo Rating System** *(new this pass)* — the single biggest identity/competitive gap found by the research: neither a cross-tournament player ranking nor any rating model exists today. This is the platform's answer to WBO's ranked leaderboard and to Challonge's paid "Seed by Rating" tier — free, DACH-specific, tied to real judge-confirmed matches rather than crowd-sourced self-reports.
+2. **Phase 15 — Rating-Based Seeding** *(new this pass)* — depends on Phase 14; closes the "manual/shuffle/rating seeding" gap versus Challonge (`lib/bracket.ts` currently only sorts by `userId`).
+3. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — real gaps found by using the live site; several items here are cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
+4. **Phase 9 — Location Autofill** — quality-of-life for organizers creating events; Phase 10 item 1's region dropdown depends on this phase's canonical region list (or vice versa — whichever ships first defines it).
+5. **Phase 8 — Markdown Authoring** — unblocks Phase 10 item 3's rules-page depth and Phase 12's chat.
+6. **Phase 16 — Dual-Spin Part Mode Support** *(new this pass)* — a rules-accuracy gap: current-generation Beyblade X CX-series parts include dual-spin layers whose mode must be locked at deck-check per the actual WBO rulebook; today's `Part.spinDirection` is a fixed value with no per-match mode selection at all.
+7. **Phase 11 — Official Beyblade Sets, Part Images & Collection-Linked Availability** — closes a genuinely bigger-than-expected gap: there is currently no UI to create a `Build` at all.
+8. **Phase 7 — QR-Workflows & Zahlungsverfolgung** — closes the remaining Challonge-parity gap (entry-fee/payment tracking), plus event/arena check-in QR flows.
+9. **Phase 12 — Club Chat** and **Phase 13 — Club Profile Fields & Join Policies** — social depth for the existing Club feature.
+10. **Phase 17 — Visual Identity / Branding** *(new this pass)* — the platform's current PWA icons are unstyled placeholders (1–4 KB generic files); a real, distinctive mark is what makes BeybladeX.de recognizable next to WBO's forum and Challonge's generic bracket pages rather than blending in as "another Beyblade tool."
+
+**Explicitly out of MVP2**: 3-vs-3 team competition (WBO's "Masters League" format) — see MVP3 below; it needs a new roster/team concept this codebase doesn't have yet and is a bigger structural change than anything else in this list.
+
+## MVP3 (future, not detailed) — 3-vs-3 Team Format
+
+**Status: not scoped, not started.** Recorded as a placeholder for the next round after MVP2 ships, per explicit user request — do not expand this into a full phase plan until MVP2 is substantially done and the user asks for it.
+
+**Trigger**: WBO's "Masters League" (launching Summer 2026) runs 3-vs-3 team events with registered competitors, using the same base rulebook — a real, currently-missing tournament shape (today's `Deck` model is one 3-build deck per *player*, not a roster of players competing as a unit).
+
+**Open design question the user raised, with a preliminary recommendation**: whether 3-vs-3 rosters reuse the existing `Club` model or need a distinct `Team` concept. **Recommendation: a separate, additive `Team` model, not a repurposed `Club`** — the two solve different problems with different cardinalities and lifecycles:
+- `Club` is a persistent *social* community — chat (Phase 12), join policies (Phase 13), one primary membership per user in the common case, exists independent of any single event.
+- A 3-vs-3 `Team` is a *competitive roster* — exactly 3 players, may be assembled ad hoc for a single event (three bladers from different clubs teaming up) or persist across a season, and a user plausibly belongs to different teams for different events even while having one stable club.
+- Forcing this into `Club` would mean either every club becomes a "team of exactly 3," which breaks the existing social-community use case, or bolting a parallel roster concept onto `Club` that most clubs never use.
+- Sketch (not binding, to be firmed up when this phase is actually scoped): `Team { id, name, clubId String? }` (nullable FK — a team MAY be affiliated with a club, e.g. "Club X Team A," or stand alone), `TeamMember { teamId, userId, role: CAPTAIN|MEMBER }` capped at 3 active members, and a `Tournament.teamMode: Boolean` (or a new `TournamentFormat` value) that changes registration from "one player, one deck" to "one team, three players' decks," with team-level match scoring (best-of-3 player matchups per round) built on top of the existing `Match`/`Ruleset` machinery rather than replacing it.
+
+This section stays a placeholder — the actual schema, routes, and bracket-logic changes need their own research-and-design pass (in particular: how team-vs-team match scoring composes from 3 individual `Match` rows, and how the Elo/ranked ladder from Phase 14 should — or shouldn't — treat team results) before it becomes a real phase with file/interface/acceptance-criteria detail like the ones above.
+
+---
+
 # Phase 7: QR-Workflows & Zahlungsverfolgung — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
 
 **Status: planned, not started.** Recorded here so the requirement isn't lost, but deliberately not dispatched to an implementation track yet — do not begin this phase until the user explicitly asks for it (unlike every other phase in this document, which was worked through sequentially as the default flow). If you are an executor reading this section to start work, confirm with the user first; this status line exists specifically to prevent that assumption.
@@ -2529,6 +2564,127 @@ This makes every container start — first deploy and every Watchtower restart a
 **Tests:** `tests/integration/club-join-policies.test.ts` (all three policies' full state machines — OPEN's unchanged immediate-join, APPLICATION's request→approve/reject, INVITE_ONLY's invite→accept/decline, and INVITE_ONLY correctly rejecting a self-service `POST`), `tests/integration/club-member-status-filter.test.ts` (the acceptance-critical regression proof for item 3: a `PENDING_APPLICATION`/`PENDING_INVITE` row does not count toward the member count, does not appear in the roster, and — critically — does not pass an `isAdmin` authz check even if the inviting admin mistakenly set `isAdmin: true` on the invite row before acceptance).
 
 **When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
+# Phase 14: Ranked Ladder & Elo Rating System — added post-Phase-6, MVP2, by explicit user request
+
+**Status: planned, not started.** Same standing note as every MVP2 phase: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
+
+**Scope, and why it exists**: a 2026-09-10 research pass into the real Beyblade X tournament ecosystem found that neither this platform nor Challonge (outside a paid PRO tier) offers a free, persistent, cross-tournament player rating — while WBO's entire value proposition to competitive bladers IS its ranked leaderboard/season system. This phase builds the DACH equivalent: an Elo-style rating computed from real, judge-confirmed `Match` results (not crowd-sourced self-reports like beywatch.gg), organized into seasons like WBO's.
+
+**1. Schema, additive.**
+```prisma
+enum SeasonStatus { ACTIVE COMPLETED }
+
+model Season {
+  id        String       @id @default(uuid())
+  name      String       // organizer-facing label, e.g. "Season 1 – Frühjahr 2026"
+  startsAt  DateTime
+  endsAt    DateTime
+  status    SeasonStatus @default(ACTIVE)
+  ratings   PlayerRating[]
+
+  @@index([status])
+}
+
+model PlayerRating {
+  id           String   @id @default(uuid())
+  seasonId     String
+  season       Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  elo          Int      @default(1000)
+  peakElo      Int      @default(1000)
+  gamesPlayed  Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([seasonId, userId])
+  @@index([seasonId, elo])
+}
+```
+Add `Tournament.rankedEligible Boolean @default(true)` (additive) — an organizer running a casual/friendly/testing event can opt it out of rating impact; every existing tournament defaults to ranked (matching the common case, and avoiding a silent retroactive change of intent for already-run events — their matches simply start counting once this phase ships, which is the correct behavior since they were run as real competitive tournaments). Register `PlayerRating` in Task 12's erasure/export matrix per the standing Cross-Phase Regression Guard rule (a deleted user's historical rating rows are anonymized/severed, not left dangling — same FK-cascade-vs-anonymize judgment call as every other `User`-owned model; since `PlayerRating` has genuine aggregate/leaderboard value beyond the individual, prefer keeping the row with `userId` severed to a tombstone value over hard-deleting it, mirroring `AuditLog`'s reasoning — decide the exact mechanism at implementation time and document it there).
+
+**2. Elo update, triggered from match completion.** Extend `app/api/matches/[id]/score/route.ts` (Phase 5 Part C): when a `Match` transitions to `COMPLETED` AND its tournament (`match.stage.tournament.rankedEligible`) is ranked-eligible, update both players' `PlayerRating` for the tournament's active `Season` (create a `PlayerRating` row on first appearance, starting at the season default 1000) using the standard Elo formula:
+```
+expectedA = 1 / (1 + 10^((eloB - eloA) / 400))
+newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a loss
+```
+**K-factor, binding decision**: `K = 40` for a player's first 30 rated games in a season (fast placement, matching common Elo-ladder practice — e.g. chess federations use a similar "provisional" period), `K = 20` afterward — avoids a single early upset permanently overweighting a new player's rating while still letting established players' ratings respond to real form changes. Update `gamesPlayed` and `peakElo` (`max(peakElo, newElo)`) in the same transaction as the score route's existing match-completion writes — do not add a second write pass; this is the same "recompute affected aggregates on the write path" pattern Phase 5 Part D's Auto-Meta dirty-set already established, but simple enough here to update synchronously rather than via a dirty-set (exactly two rows change per match, not an unbounded fan-out).
+
+**3. Seasons, binding lifecycle.** One `Season` is `ACTIVE` at a time (enforced at creation — creating a new `Season` requires the previous one to be marked `COMPLETED` first, an admin-only action via `app/api/admin/seasons/route.ts`). **Season rollover, regression-to-mean** (matching common competitive-ladder practice, prevents a rating earned in one season from calcifying into a permanent advantage): a new season's starting `PlayerRating` for a previously-rated player is `round(oldElo * 0.75 + 1000 * 0.25)`, not a hard reset to 1000 and not a full carry-over — implemented as a one-time seed step when a new season is created (an admin action, not an automatic cron — this repo's standing no-scheduler-infra constraint from Phase 3/5's own notes applies here too). A season boundary does **not** retroactively touch `Match` rows or the previous season's now-frozen `PlayerRating` rows — those remain the permanent historical record for that season.
+
+**4. UI.** `app/rangliste/page.tsx` (public, no login required — matches the public-bracket-page precedent from Phase 5 Part C) — a sortable leaderboard for the current `ACTIVE` season, `elo` descending, with `gamesPlayed` and rank shown; **minimum-games gating** mirrors Phase 5 Part D's Auto-Meta threshold pattern: a player's rank is only publicly listed once they've played **5 rated matches this season** (below that, their rating exists and updates internally but doesn't appear on the public board — avoids a 1-0 record showing as a false "#1"). Add an Elo badge + season rank to `app/profile/[username]/page.tsx` (respecting existing profile-visibility rules — this is a new piece of potentially-identifying competitive data about a user, so it must go through the same `resolveVisibleFields`-gated path as everything else on that page, not a hardcoded-always-public exception) and a "Rangliste" entry in `Header`'s primary nav per the standing navigation-surface rule.
+
+**Tests:** `tests/unit/elo.test.ts` (exact before/after Elo values for a scripted result at both K-factor tiers — table-driven against hand-computed expected numbers, not a tolerance-band assertion), `tests/integration/season-rollover.test.ts` (the regression-to-mean formula applied correctly on season creation; the previous season's frozen ratings are unchanged), `tests/integration/ranked-eligibility.test.ts` (a match in a `rankedEligible: false` tournament does not update any `PlayerRating`), `tests/unit/ladder-visibility.test.ts` (a player with 4 rated games is excluded from the public leaderboard; 5 games includes them).
+
+**Acceptance criteria:** a completed match in a ranked-eligible tournament updates both players' current-season Elo correctly and idempotently (re-running the score route's existing `clientEventId` idempotency check, per Phase 5 Part C, must not double-apply an Elo update on a replayed POST); the public ladder reflects only the active season and respects the minimum-games threshold; a season rollover regresses ratings toward the mean without touching historical `Match`/frozen-season data.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
+# Phase 15: Rating-Based Seeding — added post-Phase-6, MVP2, by explicit user request
+
+**Status: planned, not started.** Depends on Phase 14 (a `PlayerRating` to seed by must exist first). Same standing note: confirm before starting.
+
+**Scope**: `lib/bracket.ts` currently seeds every bracket format deterministically by ascending `userId` (documented in its own header comment as "participants carry no seeding data") — this phase gives organizers the three seeding options Challonge offers (manual, shuffle, rating-based), closing that specific parity gap.
+
+**1. Manual seeding.** Add `TournamentParticipant.seed Int?` (additive, nullable — `null` means "use the auto method chosen below"). Organizer console (Phase 5 Part C's `OrganizerConsole.tsx`) gains a pre-bracket-generation participant list with drag-reorder or numeric seed input, owner/`ADMIN`-only per the standing authz rule. A manually-set `seed` always wins over any auto method for that participant — mixed manual+auto is a real, supported case (an organizer seeds the 4 known top players and lets the rest auto-sort).
+
+**2. Rating-based seeding.** A "Nach Elo-Rating setzen" button (organizer console) that, for every participant with no manual `seed` set, sorts by their current-season `PlayerRating.elo` (Phase 14) descending — unranked participants (no `PlayerRating` row this season) are seeded **after** every rated participant, in deterministic `userId` order among themselves (documented fallback, not a silent exclusion — an organizer running a mixed ranked/newcomer field must still get a complete, valid bracket).
+
+**3. Shuffle seeding.** A "Zufällig mischen" button — a genuinely randomized (not `userId`-deterministic) seed assignment for organizers without meaningful rating history yet (a brand-new local group's first-ever event). Uses a cryptographically-fine-but-not-required `Math.random()`-based Fisher-Yates shuffle (no fairness/security property needed here, unlike auth-adjacent randomness elsewhere in the codebase).
+
+**4. `lib/bracket.ts` / `lib/doubleElimination.ts` / `lib/swiss.ts` / `lib/roundRobin.ts` changes**: each format's participant-sorting step changes from "sort by `userId`" to "sort by `TournamentParticipant.seed` ascending" (lower seed number = better bracket position, matching the manual/rating/shuffle assignment above) — `userId` sort becomes the documented tie-break only (two participants with equal or absent seeds), not the primary key. This is a behavior change to every existing format's bracket-generation function; update each one's own header-comment seeding-policy note (they currently all reference the same "no seeding data" documentation this phase makes obsolete) and re-run every existing bracket/tournament integration test (Phase 5 Parts C/C2/C3) to confirm an all-`seed: null` field still produces the exact same bracket as today (the `userId`-ascending tie-break preserves current behavior when no organizer opts into seeding).
+
+**Tests:** `tests/unit/bracket-seeding.test.ts` (manual seeds are honored exactly; rating-based seeding sorts by a fixed set of fake `PlayerRating.elo` values correctly, with an unranked participant correctly placed after all rated ones; shuffle seeding is asserted only for "is a valid permutation," never for a specific order — a flaky exact-order assertion on random data is a test-design bug, not a real check), regression run of every existing bracket-format unit test confirming the no-seed-set case is unchanged.
+
+**Acceptance criteria:** an organizer can seed a bracket manually, by current-season rating, or by shuffle, in any combination (manual overrides always win); every tournament format (single/double-elimination, Swiss, Round Robin) respects the resulting seed order; the zero-seed-set case is byte-for-byte identical to pre-Phase-15 behavior.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
+# Phase 16: Dual-Spin Part Mode Support — added post-Phase-6, MVP2, by explicit user request
+
+**Status: planned, not started.** Same standing note: confirm before starting.
+
+**Scope, and why it's a real gap, not polish**: current-generation Beyblade X CX-series parts include **dual-spin** Layers/Layer-Bases whose spin mode is not fixed — per the actual WBO rulebook, the mode must be selected during the Beyblade-selection/deck-check phase, submitted for judge inspection in that mode, and **cannot be changed for the rest of the match**. This codebase's `Part.spinDirection` (`RIGHT | LEFT`, `prisma/schema.prisma`) models spin as a fixed per-part attribute — there is no way to represent a part whose mode is chosen per-match, which means judging with current-generation retail parts is incomplete today, not just under-featured.
+
+**1. Schema, additive.** `Part.dualSpin Boolean @default(false)` — when `true`, `Part.spinDirection` is read as the part's *default/suggested* mode only, not its actual in-match mode. `Match.player1SpinMode`/`player2SpinMode SpinDirection?` (nullable — only meaningful when the confirmed build for that player, per Phase 5 Part C's per-match build-confirmation step, contains at least one `dualSpin` part). Locked at the same moment `Match.player1BuildId`/`player2BuildId` are confirmed (match start, before the first score is entered) — **immutable after that point**: the score route (`app/api/matches/[id]/score/route.ts`) must reject (409) any request that attempts to change an already-set spin mode once `Match.status` is `IN_PROGRESS` or later, mirroring the existing idempotency/conflict-policy posture for other match-state fields.
+
+**2. Judge UI.** `JudgeScorePad`'s existing pre-match build-confirmation step (Phase 5 Part C) gains a spin-mode picker, shown only when the confirmed build contains a `dualSpin` part — a simple RIGHT/LEFT toggle, defaulting to the part's `spinDirection` suggestion but requiring an explicit judge/player confirmation tap (not silently accepted) before the match can start, matching the WBO rule's "submitted for inspection in that mode" step.
+
+**3. Auto-Meta impact.** `lib/meta.ts`'s combo/part win-rate grouping key must incorporate the selected spin mode for any `dualSpin` part — a RIGHT-mode and LEFT-mode use of the same physical part are meaningfully different competitive combos and must not be silently averaged together (this would produce a misleading win rate for both real configurations). Non-dual-spin parts are unaffected (no grouping-key change for them).
+
+**Tests:** `tests/integration/spin-mode-lock.test.ts` (setting the spin mode at match start succeeds; a second attempt to change it after `IN_PROGRESS` is rejected with 409), `tests/unit/meta-spin-mode-grouping.test.ts` (a dual-spin part's win rate is computed separately per mode; a fixed-spin part's aggregation is unaffected by this change).
+
+**Acceptance criteria:** a judge scoring a match involving a dual-spin part must explicitly confirm its mode before the match starts, that mode cannot be silently or accidentally changed mid-match, and the Meta leaderboard never conflates a dual-spin part's two modes into one misleading number.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
+# Phase 17: Visual Identity / Branding — added post-Phase-6, MVP2, by explicit user request
+
+**Status: planned, not started.** Same standing note: confirm before starting.
+
+**Scope, and why it's needed**: verified this session that `public/icons/icon-192.png` (1 KB), `icon-512.png` (4 KB), and `icon-maskable-512.png` (3 KB) are generic placeholder assets, not a designed mark — and the site otherwise relies solely on the `X-Cyan`/`Neon-Green` color tokens (Phase 1 Task 1) plus the plain text wordmark "BeybladeX.de" for identity. Next to WBO's forum branding and Challonge's generic multi-game bracket UI, an actual distinctive logo/icon is what makes this platform instantly recognizable rather than blending in as "another Beyblade tool" — this closes that gap.
+
+**1. Logo artwork — a genuine prerequisite, not a code task.** This phase's first step is producing or sourcing real logo/mark artwork (an "X"-motif or Beyblade-X-stadium-inspired mark rendered in the existing `X-Cyan`/`Neon-Green`/`Base-Dark` palette is the natural direction, matching the "X" in both the game's and the domain's name) — decide the exact concept with the user before any code changes; do not let an executor invent brand artwork unilaterally.
+
+**2. Icon set, generated from the final artwork.** Replace the three placeholder PWA icons (`app/manifest.ts`'s existing `192`/`512`/maskable-`512` entries, unchanged shape) with real exports at the same sizes; add a proper `app/favicon.ico` (browser tab icon, currently Next.js's default) and `apple-touch-icon` if not already covered by the existing manifest icons at implementation time.
+
+**3. Social share image.** Add `app/opengraph-image.tsx` (Next.js's built-in OG-image convention — generated server-side, no external image-generation API, consistent with the zero-external-CDN policy) so links to `beybladex.de` shared in Discord/WhatsApp/etc. show a real branded preview card instead of nothing/a generic fallback.
+
+**4. Header wordmark.** `components/layout/Header.tsx`'s current plain-text "BeybladeX.de" gains the new icon/mark alongside it (or replacing it, decide with the final artwork) — this is a small, mechanical change once the artwork exists.
+
+**5. Tagline.** A short German tagline surfaced in `app/layout.tsx`'s `metadata.description` (currently "Die DACH-Community für Beyblade X — Turniere, Regeln, Decks, Sammlung und Clubs.", already reasonable — revisit only if the final branding direction suggests a punchier line) and on the landing page hero (`app/page.tsx`'s guest view).
+
+**Tests:** re-run `tests/unit/no-external-resources.test.ts` (the new OG-image generation and any new fonts/icons stay vendored/self-hosted per the standing zero-CDN guard) — no new automated tests beyond the existing regression guard; this phase is primarily asset/design work, not new application logic.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. **Step 1 (artwork direction) should happen in conversation with the user before any file is touched.**
 
 ---
 
