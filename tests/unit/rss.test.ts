@@ -27,6 +27,7 @@ function makeTournament(overrides: Partial<Tournament>): Tournament {
     rulesetId: 'r-1',
     clubId: null,
     createdById: 'u-1',
+    completedAt: null,
     ...overrides,
   }
 }
