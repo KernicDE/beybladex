@@ -182,11 +182,14 @@ describe('Auto-Meta dirty-set recompute', () => {
     expect(smallStats).toMatchObject({ id: buildSmall.id, wins: 1, losses: 1, appearances: 2, winRate: null })
 
     // Part-level: bladeA is used by buildMain only → same 12/3 record; the transitively
-    // dirty-marked ratchet/bit follow. bitB sits on buildOpp: 3 wins / 12 losses → 0.2.
+    // dirty-marked ratchet/bit follow. bitB sits on buildOpp, which is ALSO player2Build in
+    // the two buildSmall matches above (not just the 14 main matches + the live one) — so its
+    // true record is 17 appearances: 3 wins/11 losses vs. buildMain, 1 win/1 loss vs.
+    // buildSmall, 0 wins/1 loss in the live match = 4 wins / 13 losses / 17 appearances.
     const bladeStats = JSON.parse((await redis.get(partCacheKey(bladeA.id)))!)
     expect(bladeStats).toMatchObject({ id: bladeA.id, wins: 12, losses: 3, appearances: 15, winRate: 0.8 })
     const bitBStats = JSON.parse((await redis.get(partCacheKey(bitB.id)))!)
-    expect(bitBStats).toMatchObject({ id: bitB.id, wins: 3, losses: 12, appearances: 15, winRate: 0.2 })
+    expect(bitBStats).toMatchObject({ id: bitB.id, wins: 4, losses: 13, appearances: 17, winRate: 0.235 })
 
     // A build with NO completed matches but a dirty entry caches explicit zeros (not absence).
     const buildIdle = await prisma.build.create({ data: { bladeId: bladeS.id, ratchetId: ratchetS.id, bitId: bitS.id, type: 'STAMINA' } })
