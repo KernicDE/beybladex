@@ -80,8 +80,9 @@ describe('match score idempotency', () => {
     row = await prisma.match.findUnique({ where: { id: match.id } })
     expect(row).toMatchObject({ scorePlayer1: 1, scorePlayer2: 1 })
 
-    // 4. One more SPIN for player 1 reaches targetPoints=3 → COMPLETED, winner = player1
-    const r3 = await SCORE(req({ clientEventId: `evt-${suffix}-3`, event: { type: 'SPIN', player: 1 }, scorePlayer1: 3, scorePlayer2: 1 }), ctx)
+    // 4. A Burst for player 1 (worth 2, 1 + 2 = 3) reaches targetPoints=3 → COMPLETED, winner = player1.
+    // (Not another SPIN: SPIN is worth 1, and player 1 is at 1 — a second SPIN would only reach 2.)
+    const r3 = await SCORE(req({ clientEventId: `evt-${suffix}-3`, event: { type: 'BURST', player: 1 }, scorePlayer1: 3, scorePlayer2: 1 }), ctx)
     expect(r3.status).toBe(200)
     expect(await r3.json()).toMatchObject({ status: 'COMPLETED', winnerId: p1.id, targetPoints: 3 })
     row = await prisma.match.findUnique({ where: { id: match.id } })

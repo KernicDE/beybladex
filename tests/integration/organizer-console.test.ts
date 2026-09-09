@@ -51,7 +51,7 @@ describe('organizer console', () => {
       },
     })
     // 4 players, all checked in (3 would be enough to prove byes, 4 keeps the math obvious).
-    const players = []
+    const players: Awaited<ReturnType<typeof prisma.user.create>>[] = []
     for (let i = 1; i <= 4; i++) {
       players.push(await prisma.user.create({ data: { username: `oc_p${i}_${suffix}`, passwordHash: 'x' } }))
       await prisma.tournamentParticipant.create({
@@ -122,11 +122,14 @@ describe('organizer console', () => {
     })
     expect(withdrawn!.withdrawn).toBe(true)
 
-    const semi2 = r1Matches[1]
+    // Bracket seeding (lib/bracket.ts) sorts by ascending userId, not by the players[] creation
+    // order, so which round-1 match holds players[3] is not knowable in advance — look it up.
+    const semi2 = r1Matches.find((m) => m.player1Id === players[3].id || m.player2Id === players[3].id)!
+    const opponentId = semi2.player1Id === players[3].id ? semi2.player2Id : semi2.player1Id
     const afterNoShow = await prisma.match.findUnique({ where: { id: semi2.id } })
-    expect(afterNoShow).toMatchObject({ status: 'COMPLETED', winnerId: players[2].id })
+    expect(afterNoShow).toMatchObject({ status: 'COMPLETED', winnerId: opponentId })
     const final = await prisma.match.findFirst({ where: { tournamentId: tournament.id, round: 2 } })
-    expect(final).toMatchObject({ player2Id: players[2].id })
+    expect(final?.player1Id === opponentId || final?.player2Id === opponentId).toBe(true)
 
     // — Complete the tournament.
     const done = await COMPLETE(req('POST', `${base}/complete`), ctx)
