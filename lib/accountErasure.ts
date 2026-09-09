@@ -42,9 +42,15 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // reserved system user rather than leaving a dangling createdById.
     const systemUser = await tx.user.upsert({ where: { username: 'geloeschte-nutzer' }, create: { username: 'geloeschte-nutzer', role: 'USER' }, update: {} })
     await tx.ruleset.updateMany({ where: { createdById: userId }, data: { createdById: systemUser.id } })
+    // Tournaments a user organized stay as well — participants have a legitimate interest in the
+    // event record (Art. 17(3)) — so ownership is reassigned to the same reserved system user
+    // (the createdBy FK has no cascade; without this the user delete would fail on Restrict).
+    await tx.tournament.updateMany({ where: { createdById: userId }, data: { createdById: systemUser.id } })
     // Match/TournamentParticipant/judged-Match references: personal link severed by the User row's
     // own anonymization above (player1Id/player2Id/judgeId still point at the now-anonymized row —
     // spec §3 has no cascade there and none is needed; the row itself carries no PII anymore).
+    // TournamentParticipant rows are kept for the same Art. 17(3) reason: a tournament's
+    // participant history legitimately outlives one participant's account.
   })
   // Session/token invalidation: KNOWN GAP — the plan calls for bumping a `tokenVersion` field so
   // existing 30-day JWTs stop authenticating immediately after erasure. That field is additive to
