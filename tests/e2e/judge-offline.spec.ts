@@ -124,8 +124,26 @@ test('judge scores offline; score syncs exactly once on reconnect; offline reloa
   await context.setOffline(true)
 
   // Score a Spin for player 1 while offline — the pad updates locally and queues the write.
-  await page.getByRole('button', { name: `Spin für ${ids!.p1Name}` }).click()
-  await expect(page.getByLabel('Spielstand')).toContainText('1')
+  //
+  // THE CLICK IS RETRIED AS A UNIT WITH ITS OBSERVABLE EFFECT, for two reasons:
+  // 1. Hydration race: everything checked so far (Wertung/name visible) is satisfied by the
+  //    SERVER-RENDERED markup, but the button's onClick only exists after React hydrates — and
+  //    in dev, Turbopack compiles the judge route's client chunks lazily, so on a cold CI
+  //    runner hydration can lag the SSR paint by seconds. Playwright's click actionability
+  //    checks (visible/stable/enabled) all pass on the unhydrated button, so a single click
+  //    can land on dead markup and silently do nothing (observed in CI: score stayed 0:0,
+  //    badge stayed "Sync OK"). Retrying click+assert means a pre-hydration click just re-tries.
+  // 2. The score assertion must NOT be a bare '1': the seeded usernames are 'e2e_p1_…', which
+  //    contain the digit 1 and render inside the Spielstand section — toContainText('1') passes
+  //    against an unchanged 0:0 pad and proves nothing. The sr-only live region's full text
+  //    "Spielstand 1 zu 0" cannot false-match.
+  // A landed click always leaves the score at exactly 1:0 (the assert runs immediately after
+  // the click and toPass stops the loop on success), so the retry can never double-count.
+  const spinP1 = page.getByRole('button', { name: `Spin für ${ids!.p1Name}` })
+  await expect(async () => {
+    await spinP1.click()
+    await expect(page.getByLabel('Spielstand')).toContainText('Spielstand 1 zu 0', { timeout: 3_000 })
+  }).toPass({ timeout: 60_000 })
   await expect(page.getByText(/warten auf Sync/)).toBeVisible()
 
   // RELOAD WHILE STILL OFFLINE: the SW serves the cached document; the pad hydrates the
@@ -134,8 +152,8 @@ test('judge scores offline; score syncs exactly once on reconnect; offline reloa
   await expect(page.getByLabel('Wertung')).toBeVisible()
   await expect(page.getByText(/warten auf Sync/)).toBeVisible()
   await expect
-    .poll(async () => page.getByLabel('Spielstand').innerText())
-    .toContain('1')
+    .poll(async () => page.getByLabel('Spielstand').textContent())
+    .toContain('Spielstand 1 zu 0')
 
   // Reconnect: the `online` trigger flushes the queue; the score lands in Postgres EXACTLY ONCE.
   await context.setOffline(false)
