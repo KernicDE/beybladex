@@ -2262,6 +2262,40 @@ Before writing this part's own TDD sub-plan, read `docs/superpowers/plans/review
 
 ---
 
+# Phase 5 Part C3: Round Robin — added post-Part-C2 by explicit user request
+
+**Scope:** Part C2 shipped `SINGLE_ELIMINATION`, `DOUBLE_ELIMINATION`, `SWISS` as `TournamentFormat` values. Cross-checked against Challonge's published format list (https://kb.challonge.com/en/article/learn-about-challonge-competition-formats-1f8j1cf/) at the user's request — Round Robin ("every participant plays every other participant, optionally 2x/3x, ranked by record") is the one remaining format that fits this platform's existing 1-vs-1 `Match` model without a structural change (unlike Free-For-All's N-player matches, explicitly descoped — see Part C2's format-survey discussion). This part is deliberately small: Round Robin reuses `StageStanding` (wins/losses/buchholz) exactly as `SWISS` does for ranking, and its match generation is a one-shot fixture list — architecturally closer to `SINGLE_ELIMINATION`'s "generate once, then play" lifecycle than to `SWISS`'s "pair one round at a time" lifecycle. Do not build a round-by-round pairing flow for this format — that's Swiss's job, not Round Robin's.
+
+**Files:**
+
+- Modify `prisma/schema.prisma`: add `ROUND_ROBIN` to `TournamentFormat`. Add `TournamentStage.roundRobinRepeats Int?` (1, 2, or 3 — how many times each pair meets; `null`/omitted defaults to 1 at the route layer, do not force a DB default that hides the organizer's actual choice). No other schema changes — `Match.swissRound` is reused to record which round-robin "round" (a batch of non-overlapping pairs, from the circle-method scheduling below) a match belongs to, purely for display grouping; it gates nothing for this format (unlike Swiss, where it gates round-by-round pairing).
+
+- Create `lib/roundRobin.ts`: `generateRoundRobinPairings(participants: Pick<TournamentParticipant, 'userId'>[], repeats: number): { round: number; player1Id: string; player2Id: string }[]`. Use the standard **circle method** for round-robin scheduling (fix one participant, rotate the rest) — for `n` participants this produces `n-1` rounds (or `n` rounds with a bye each, for odd `n`) of `floor(n/2)` non-overlapping pairs each, guaranteeing every pair meets exactly once per repeat pass. For `repeats > 1`, append additional passes (alternate home/away — i.e. swap `player1Id`/`player2Id` — on even-numbered passes, since which nominal "player1" a match assigns has no gameplay meaning here but alternating avoids one player mechanically always being `player1Id` across every meeting, which the plan flags as worth avoiding on principle even though this codebase's scoring is symmetric). An odd participant count's bye round produces no match for the byed player in that round (not a `StageStanding.byes` increment — Round Robin byes are a scheduling artifact, not a ranking event, unlike Swiss's; do not reuse the Swiss bye-counting logic here). Pure function, no DB — unit-testable.
+
+- Modify `app/api/tournaments/[id]/stages/[stageId]/generate/route.ts`: add the `ROUND_ROBIN` branch to the existing format dispatch (alongside `SINGLE_ELIMINATION`/`DOUBLE_ELIMINATION`/`SWISS`) — creates one `StageStanding` row per pool participant (same as the `SWISS` branch already does) and persists `generateRoundRobinPairings`'s full output as `Match` rows in one shot (`round`/`bracketOrder` from the pairing's round/index, `bracketSide: null`, `status: PENDING`). Unlike `SWISS`, a second `generate` call for an already-generated `ROUND_ROBIN` stage is a 409 (`bracket_exists`, same as elimination formats) — there is no "next round" to pair, the whole fixture list exists from the start.
+
+- Modify `app/api/matches/[id]/score/route.ts`: the existing Swiss-only branch that calls `lib/stageFlow.ts`'s `recordSwissResult` on match completion (updating `StageStanding.wins`/`losses`/`opponentIds`/`buchholz`, no bracket-slot propagation) must also fire for `ROUND_ROBIN` — rename the condition from "format === SWISS" to "format has standings-based ranking, not bracket propagation" (i.e. `SWISS` or `ROUND_ROBIN`) wherever that check currently lives (the score route and, if it independently duplicates the check, the no-show route). Finals-detection (`finalsTargetPoints`) must also exclude `ROUND_ROBIN` exactly as it already excludes `SWISS` — every Round Robin match uses `targetPoints`, there is no "final" round.
+
+- Modify `app/api/tournaments/[id]/stages/[stageId]/complete/route.ts`: add the completion gate for `ROUND_ROBIN` — same "every match in the stage is `COMPLETED`" rule as the elimination formats use (not Swiss's `swissRoundsDone === swissRounds` counter, which doesn't apply here since there's no `swissRounds` field driving this format). Ranking on completion: `StageStanding` order (wins desc, buchholz desc, userId asc) — identical to Swiss's ranking rule, reuse it rather than reimplementing.
+
+- Modify `app/api/tournaments/[id]/stages/route.ts`: the stage-create body's `format` validation must accept `ROUND_ROBIN`; accept the optional `roundRobinRepeats` field (validate it's `1`, `2`, or `3` if present — reject anything else 400).
+
+- Modify `components/tournament/OrganizerConsole.tsx`: the create-stage form's format `Select` gains the `ROUND_ROBIN` option; when selected, show a `roundRobinRepeats` field (1/2/3, default 1) analogous to how `swissRounds` already appears conditionally for `SWISS`. The per-stage action button for a `ROUND_ROBIN` stage reads "Spielplan erstellen" (not "Bracket generieren" or "Runde pairen" — distinct copy per format, the plan's standing German-copy convention) and, once generated, there is no repeatable "next round" action — just "Stage abschließen" once all matches are done.
+
+- Modify `components/judge/JudgeBracketView.tsx`: `ROUND_ROBIN` reuses the exact render path already built for `SWISS` in Part C2 (standings table + matches grouped by round label "Runde N") — do not build a separate view; route `format === 'ROUND_ROBIN'` into the same branch that currently checks `format === 'SWISS'` for the standings-table rendering (a bracket graph makes no sense for Round Robin either).
+
+**Tests:**
+- `tests/unit/roundRobin.test.ts`: for 5 and 6 participants (odd and even), assert every pair meets exactly once across the generated rounds (no pair repeated, no pair missing), each round has no participant appearing twice, and the odd-count case correctly gives exactly one bye per round with no participant byed twice before every other participant has had one. For `repeats: 2`, assert every pair meets exactly twice with `player1Id`/`player2Id` swapped between the two meetings.
+- `tests/integration/round-robin-stage.test.ts`: create a `ROUND_ROBIN` stage for 5 participants, generate (assert match count = C(5,2) = 10), score every match via the score route, complete the stage, and assert the `StageStanding`-based ranking matches the scripted win/loss record — plus a negative: generating twice is 409, completing before every match is `COMPLETED` is 409.
+- Regression: existing `tests/unit/swiss.test.ts`/`tests/integration/multi-stage-tournament.test.ts` must still pass unmodified — Round Robin is additive to the format dispatch, not a rework of Swiss's own path.
+
+**Acceptance criteria:**
+- A `ROUND_ROBIN` stage's generated fixture list has every participant pair meeting exactly `roundRobinRepeats` times (default 1), with no pair missing and no pair duplicated beyond that count.
+- `ROUND_ROBIN` stage completion produces a ranking usable by a following stage's `qualifyCount` gate, exactly like `SWISS` (a Round-Robin-then-Single-Elimination tournament works end-to-end, mirroring Part C2's Swiss-then-Double-Elimination acceptance proof).
+- Every score posted in a `ROUND_ROBIN` match uses `targetPoints`, never `finalsTargetPoints`.
+
+---
+
 # Phase 6: GitHub Actions CI/CD Pipeline
 
 **Scope:** spec §2 intro + §4 + §5.6. Build & push the Docker image to GHCR on merge to main; Watchtower on the server picks it up automatically. **Migrations must run as part of this chain — this phase does not merely build/push** `[REVIEW-FIX: backend-security #1]`.
