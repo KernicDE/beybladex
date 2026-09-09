@@ -81,6 +81,7 @@ describe('GET /api/account/export (Art. 20)', () => {
         latitude: 51.34,
         longitude: 12.37,
         rulesetId: ruleset.id,
+        createdById: userA.id,
       },
     })
     ids.tournaments.push(tournament.id)

@@ -96,6 +96,7 @@ model User {
 
   ownedClubs           Club[]         @relation("ClubOwner")
   clubMemberships      ClubMember[]
+  organizedTournaments Tournament[]   @relation("TournamentOrganizer")
 
   // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
   isMinor                 Boolean        @default(true) // computed at registration from birthDate; safe-by-default
@@ -218,6 +219,9 @@ model Tournament {
   clubId          String?
   club            Club?                   @relation(fields: [clubId], references: [id])
 
+  createdById     String
+  createdBy       User                    @relation("TournamentOrganizer", fields: [createdById], references: [id])
+
   participants    TournamentParticipant[]
   matches         Match[]
 }
@@ -231,6 +235,8 @@ model TournamentParticipant {
   deckId       String?
   deck         Deck?      @relation(fields: [deckId], references: [id])
   checkedIn    Boolean    @default(false)
+
+  @@unique([tournamentId, userId])
 }
 
 model Build {
