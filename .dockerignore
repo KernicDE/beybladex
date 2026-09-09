@@ -1,0 +1,30 @@
+# .dockerignore (Phase 6) — keep build context small and secret-free.
+
+# Dependencies and build output (rebuilt inside the image)
+node_modules
+.next
+
+# VCS / local metadata
+.git
+.gitignore
+.worktrees
+
+# Secrets — never ship .env files into the image (compose.yml reads them at
+# container start on the deploy server, not at build time). .env.example stays
+# as documentation.
+.env
+.env.*
+!.env.example
+
+# Tests, docs, CI — not needed to build or run the image
+tests
+docs
+.github
+*.md
+
+# Local tooling caches / OS noise
+.cache
+.DS_Store
+coverage
+playwright-report
+test-results
