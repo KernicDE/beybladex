@@ -34,6 +34,7 @@
 // a scored event; a COMPLETED match may not be re-opened by a non-ADMIN caller).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { markMetaDirty } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
 import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
 
@@ -238,6 +239,30 @@ export async function POST(req: Request, { params }: Ctx) {
       ...(player2BuildId ? { player2BuildId } : {}),
     },
   })
+
+  // Phase 5 Part D — Auto-Meta dirty marking: the match just transitioned to COMPLETED, so its
+  // two confirmed builds (and transitively their three parts each) are stale in the win-rate
+  // cache. Mark them dirty in Redis; the periodic recompute pass
+  // (POST /api/internal/recompute-meta, same external scheduler as cleanup-notifications)
+  // recomputes exactly those ids. ADDITIVE side effect on the completion path only — replay
+  // and 409-conflict requests returned above never reach this, so idempotency is preserved.
+  // Best-effort: a Redis failure here must not fail an already-persisted score (the miss only
+  // delays the aggregate until the next completion touches these ids).
+  if (completed) {
+    try {
+      const completedBuildIds = [updated.player1BuildId, updated.player2BuildId].filter((v): v is string => Boolean(v))
+      if (completedBuildIds.length > 0) {
+        const builds = await prisma.build.findMany({
+          where: { id: { in: completedBuildIds } },
+          select: { bladeId: true, ratchetId: true, bitId: true },
+        })
+        const partIds = [...new Set(builds.flatMap((b) => [b.bladeId, b.ratchetId, b.bitId]))]
+        await markMetaDirty(completedBuildIds, partIds)
+      }
+    } catch {
+      // documented degradation — see comment above
+    }
+  }
 
   // Advance the result through the stage — format-aware (Phase 5 Part C2):
   //   SINGLE_ELIMINATION — winner into the next round's slot within this stage (unchanged Part C

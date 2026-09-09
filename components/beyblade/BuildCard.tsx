@@ -6,6 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { WinRateBadge, type WinRateStats } from '@/components/beyblade/WinRateBadge'
 
 export interface BuildCardData {
   id: string
@@ -15,7 +16,7 @@ export interface BuildCardData {
   bit: { id: string; name: string }
 }
 
-export function BuildCard({ build }: { build: BuildCardData }) {
+export function BuildCard({ build, winRate }: { build: BuildCardData; winRate?: WinRateStats | null }) {
   return (
     <Card className="p-4">
       <Link href={`/builds/${build.id}`} className="flex items-center gap-4">
@@ -37,6 +38,9 @@ export function BuildCard({ build }: { build: BuildCardData }) {
             {build.ratchet.name} · {build.bit.name}
           </p>
         </div>
+        {/* Auto-Meta win-rate badge (Phase 5 Part D) — optional so existing callers keep
+            working; list surfaces batch-read the cache and pass it in. */}
+        <WinRateBadge stats={winRate ?? null} />
         <TypeBadge type={build.type} />
       </Link>
     </Card>

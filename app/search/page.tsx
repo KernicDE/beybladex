@@ -11,8 +11,10 @@ import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { searchUsers } from '@/lib/userSearch'
 import { searchParts } from '@/lib/buildSearch'
+import { getPartStats } from '@/lib/metaCache'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { PartRequestCTA } from '@/components/beyblade/PartRequestCTA'
 
 const SECTIONS = [
@@ -30,6 +32,8 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
   const viewerId = session?.user?.id ?? null
   const userResults = query ? await searchUsers({ viewerId, q: query, cursor: typeof cursor === 'string' ? cursor : null }) : null
   const partResults = query ? await searchParts({ q: query }) : null
+  // Auto-Meta part win-rate badges (Phase 5 Part D): one batch mget for the result list.
+  const partStats = partResults ? await getPartStats(partResults.parts.map((p) => p.id)) : null
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -111,6 +115,7 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
                     <span className="block text-sm text-current/60">{part.category} · {part.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}</span>
                   </span>
                   {part.beyType && <TypeBadge type={part.beyType} />}
+                  <WinRateBadge stats={partStats?.get(part.id) ?? null} />
                 </Link>
               </li>
             ))}
