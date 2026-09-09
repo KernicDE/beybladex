@@ -103,6 +103,7 @@ async function seedRichUser(suffix: string) {
       latitude: 51.05,
       longitude: 13.74,
       rulesetId: ruleset.id,
+      createdById: owner.id,
     },
   })
   ids.tournaments.push(tournament.id)
