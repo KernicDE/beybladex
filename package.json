@@ -14,7 +14,7 @@
     "test:integration": "vitest run tests/integration",
     "test:all": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:offline": "npm run build && playwright test -c playwright.offline.config.ts"
+    "test:e2e:offline": "npm run build && node scripts/prepare-standalone.js && playwright test -c playwright.offline.config.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

@@ -54,6 +54,19 @@ export async function authorize(credentials: Partial<Record<'username' | 'passwo
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // CRITICAL, previously missing: NextAuth v5 refuses every request in a NODE_ENV=production
+  // process unless trustHost is explicitly true — it rejects with "UntrustedHost" rather than
+  // trusting the Host header by default (a CSRF/host-header-injection guard). Discovered when
+  // playwright.offline.config.ts's `next start` (which always sets NODE_ENV=production) logged
+  // `[auth][error] UntrustedHost` on every /api/auth/session request — login appeared to
+  // "succeed" client-side (signIn's redirect still fired) but no session was ever actually
+  // issued. Since this repo's ONLY production runtime is Docker's `node server.js`
+  // (NODE_ENV=production unconditionally), this bug would have made login impossible on the
+  // real deployment too — the standing no-local-Docker CI-only-testing policy meant nothing
+  // had ever actually exercised a production-mode login until this E2E run. Setting `trustHost:
+  // true` is the correct, standard fix for any deployment sitting behind a reverse proxy
+  // (Traefik here) that this app already trusts to route only genuine traffic to it.
+  trustHost: true,
   session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 }, // 30 days; see Task 6 for tokenVersion revocation
   cookies: {
     sessionToken: {
