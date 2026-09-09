@@ -61,7 +61,11 @@ services:
     # test with "CMD " — that prefix only means something in the ["CMD", ...]
     # array (CMD-EXEC) form, which doesn't support shell operators like `||`.
     healthcheck:
-      test: wget -qO- http://localhost:3000/api/health || exit 1
+      # 127.0.0.1, not "localhost": found on the real deploy that wget resolved "localhost" to
+      # the ::1 (IPv6) /etc/hosts entry first, which HOSTNAME=0.0.0.0 (IPv4-only bind) never
+      # answers on — a working server still failed this healthcheck. 127.0.0.1 confirmed working
+      # via `docker exec beybladex_app wget -qO- http://127.0.0.1:3000/api/health`.
+      test: wget -qO- http://127.0.0.1:3000/api/health || exit 1
       interval: 30s
       timeout: 5s
       retries: 3
