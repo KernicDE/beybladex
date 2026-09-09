@@ -1,15 +1,14 @@
 # compose.yml (Phase 6) — deploy-server stack: Next.js app + Postgres + Redis
 # behind Traefik, with the Watchtower auto-deploy label.
 #
-# BEST-EFFORT DEFAULTS NOTICE: the original spec §4 text is not available in
-# this repo, so service names/images/ports/networks/labels/container names are
-# sensible defaults for a single-container Next.js+Postgres+Redis deploy behind
-# an existing Traefik instance (per Global Constraints: domains beybladex.de /
-# www.beybladex.de, router `beybladex`, image ghcr.io/kernicde/beybladex:latest,
-# working dir /opt/docker/beybladex/baybladex). Whoever runs the real server
-# must adjust the Traefik network (likely `external: true` pointing at the
-# network Traefik already runs on) and the certresolver name to match their
-# existing setup.
+# Traefik network/label shape cross-checked against the server's actual existing
+# stack (/opt/docker/dlivr-it/flarum-dlivr-it/compose.yml on nicolas@kernic.net):
+# Traefik listens on the external network named `proxy` (not a per-app network),
+# certresolver `letsencrypt`, and every router needs an explicit
+# `traefik.docker.network=proxy` label since this service also joins the
+# app-internal network — without it Traefik can't tell which network to route
+# through. The www-redirect and http->https-redirect middleware pattern below
+# is copied verbatim from that same working config.
 #
 # Every secret-bearing value is ${VAR} interpolation backed by a server-side
 # .env next to this file (NEVER committed — see .env.example for the key list).
@@ -40,7 +39,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       INTERNAL_CRON_SECRET: ${INTERNAL_CRON_SECRET}
     networks:
-      - web
+      - proxy
       - internal
     # Pure liveness probe (app/api/health) — so Traefik/Watchtower never route
     # to a half-booted container mid-deploy. The CMD already runs
@@ -53,11 +52,24 @@ services:
       start_period: 60s
     labels:
       - traefik.enable=true
+      - traefik.docker.network=proxy
       - traefik.http.routers.beybladex.rule=Host(`beybladex.de`) || Host(`www.beybladex.de`)
       - traefik.http.routers.beybladex.entrypoints=websecure
       - traefik.http.routers.beybladex.tls.certresolver=letsencrypt
       - traefik.http.routers.beybladex.service=beybladex
       - traefik.http.services.beybladex.loadbalancer.server.port=3000
+      # www -> apex redirect (permanent), matching the dlivr-it pattern.
+      - traefik.http.routers.beybladex-www-redirect.rule=Host(`www.beybladex.de`)
+      - traefik.http.routers.beybladex-www-redirect.entrypoints=web
+      - traefik.http.routers.beybladex-www-redirect.middlewares=beybladex-redirect
+      - traefik.http.middlewares.beybladex-redirect.redirectregex.regex=^https?://www\.(.*)
+      - traefik.http.middlewares.beybladex-redirect.redirectregex.replacement=https://$${1}
+      - traefik.http.middlewares.beybladex-redirect.redirectregex.permanent=true
+      # HTTP -> HTTPS redirect.
+      - traefik.http.routers.beybladex-http.rule=Host(`beybladex.de`) || Host(`www.beybladex.de`)
+      - traefik.http.routers.beybladex-http.entrypoints=web
+      - traefik.http.routers.beybladex-http.middlewares=beybladex-https
+      - traefik.http.middlewares.beybladex-https.redirectscheme.scheme=https
       # Watchtower (running in its own compose stack outside this repo) picks
       # up new :latest images on merge to main and recreates this container.
       - com.centurylinklabs.watchtower.enable=true
@@ -96,11 +108,10 @@ volumes:
   postgres_data:
 
 networks:
-  # Traefik-facing network. If Traefik runs in its own compose project, make
-  # this `external: true` with the name of Traefik's network so the router can
-  # reach this container.
-  web:
-    name: beybladex_web
+  # Traefik's own network on this server — external, not created by this
+  # compose file (matches dlivr-it's working config).
+  proxy:
+    external: true
   # App <-> db/redis only; never exposed to Traefik.
   internal:
     name: beybladex_internal
