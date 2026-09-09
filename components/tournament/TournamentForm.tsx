@@ -1,7 +1,9 @@
 // components/tournament/TournamentForm.tsx
 // Create form for a Tournament — every Tournament column is covered, no invented fields.
-// clubId is deliberately absent: club-event creation needs Phase 4's Club membership model (the
-// API ignores clubId until then). Posts /api/tournaments and redirects to /events/<id>.
+// Club attachment (Phase 4): an optional clubId dropdown, populated by the page with the
+// session user's ADMINISTERED clubs only (owner/isAdmin memberships) — the API independently
+// verifies ClubMember.isAdmin, so the dropdown is a convenience, not the authorization.
+// Posts /api/tournaments and redirects to /events/<id>.
 'use client'
 
 import { useState } from 'react'
@@ -16,6 +18,11 @@ import { errorMessage } from '@/lib/errorCopy'
 export interface RulesetOption {
   id: string
   title: string
+}
+
+export interface ClubOption {
+  id: string
+  name: string
 }
 
 export interface TournamentFormValues {
@@ -36,6 +43,7 @@ export interface TournamentFormValues {
   isRecurring: boolean
   recurringDays: string
   rulesetId: string
+  clubId: string
 }
 
 export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
@@ -56,6 +64,7 @@ export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
   isRecurring: false,
   recurringDays: '',
   rulesetId: '',
+  clubId: '',
 }
 
 const COUNTRIES = [
@@ -72,11 +81,14 @@ const CURRENCIES = [
 
 const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'] as const
 
-export function TournamentForm({ rulesets }: { rulesets: RulesetOption[] }) {
+export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { rulesets: RulesetOption[]; clubs?: ClubOption[]; initialClubId?: string }) {
   const router = useRouter()
   const [values, setValues] = useState<TournamentFormValues>({
     ...DEFAULT_TOURNAMENT_VALUES,
     rulesetId: rulesets[0]?.id ?? '',
+    // Pre-selection (e.g. from a club page's "Neues Club-Event" button) only honors clubs the
+    // user actually administers — unknown ids fall back to "no club".
+    clubId: clubs.some((c) => c.id === initialClubId) ? initialClubId : '',
   })
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -106,6 +118,7 @@ export function TournamentForm({ rulesets }: { rulesets: RulesetOption[] }) {
       isRecurring: values.isRecurring,
       recurringDays: values.recurringDays === '' ? null : Number(values.recurringDays),
       rulesetId: values.rulesetId,
+      clubId: values.clubId || null,
     }
     const res = await fetch('/api/tournaments', {
       method: 'POST',
@@ -230,6 +243,21 @@ export function TournamentForm({ rulesets }: { rulesets: RulesetOption[] }) {
           ))}
         </Select>
       </FormField>
+
+      {/* Club attachment: only rendered when the session user administers at least one club
+          (the page populates `clubs` accordingly). Empty option = a non-club event. */}
+      {clubs.length > 0 && (
+        <FormField label="Club (optional)">
+          <Select value={values.clubId} onChange={setText('clubId')}>
+            <option value="">Kein Club</option>
+            {clubs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+      )}
 
       <div className="flex items-start gap-3">
         <input

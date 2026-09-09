@@ -308,3 +308,21 @@ model Rating {
   stars   Int
   comment String?
 }
+
+// AuditLog (Phase 4, [REVIEW-FIX: privacy-dsgvo #8]) — append-only record of privileged
+// mutations (role changes, club-member kicks, account deletions, later judge-score overrides).
+// Rows are never updated or deleted. actorId/targetId are plain strings, NOT foreign keys:
+// an audit trail must outlive the rows it references (account erasure anonymizes the user row
+// in place, and hard-delete cleanup paths must never be blocked by the log).
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String
+  summary    String
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@index([actorId, createdAt])
+}

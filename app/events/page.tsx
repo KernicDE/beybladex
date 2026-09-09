@@ -3,8 +3,8 @@
 // search over title/city via ?q=). Radius-from-postal-code search needs the geo track's
 // lib/geocodePostalCode — until it lands, the API's lat/lng/radiusKm params are the only radius
 // entry point and this page links none of them TODO(geo track): postal-code radius UI.
-// EmptyState renders a "Turnier erstellen" CTA for ORGANIZER/ADMIN sessions — club-admin-only
-// sessions get the CTA once Phase 4's Club membership UI lands (see TODO below).
+// EmptyState renders a "Turnier erstellen" CTA for ORGANIZER/ADMIN sessions AND for users who
+// administer at least one club (Phase 4's Club membership path — the same rule the API enforces).
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -50,9 +50,12 @@ export default async function EventsPage({
   const caller = session?.user?.id
     ? await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
     : null
-  // TODO(Phase 4): also offer the CTA to users who administer at least one club (ClubMember.isAdmin)
-  // even without the global ORGANIZER/ADMIN role — needs the Phase 4 club membership surfaces.
-  const canCreate = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN'
+  // Same rule as POST /api/tournaments: global organizer/admin role OR administration of at
+  // least one club (owner or isAdmin member).
+  const adminClubCount = session?.user?.id
+    ? await prisma.clubMember.count({ where: { userId: session.user.id, isAdmin: true } })
+    : 0
+  const canCreate = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN' || adminClubCount > 0
 
   const rows = await prisma.tournament.findMany({
     where: {

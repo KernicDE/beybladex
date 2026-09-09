@@ -3,14 +3,14 @@
 // The radius filter is a bounding-box prefilter in SQL plus an exact haversine pass in JS. This
 // inline haversine is a deliberate stopgap: once the parallel geo track's lib/geo.ts lands it can
 // be swapped for a shared import — don't duplicate it a third time.
-// POST — create a Tournament. AUTHZ RULE (standing Global-Constraints requirement): a session with
-// role ORGANIZER or ADMIN is required (401 unauthenticated, 403 otherwise) and createdById is
-// ALWAYS taken from the session — the body can never nominate an owner/club. Rate-limited per user.
-// TODO(Phase 4): also allow ClubMember.isAdmin for their own club (the master plan's corrected
-// authz rule); that path needs Club membership wired up, which is Phase 4's job — until then a
-// club admin without the global ORGANIZER role gets 403 here.
+// POST — create a Tournament. AUTHZ RULE (standing Global-Constraints requirement): succeeds
+// if EITHER the session has the ORGANIZER/ADMIN role, OR the body carries a clubId the session
+// user administers (ClubMember.isAdmin === true for THAT club — verified by query, never
+// trusted from the client; Phase 4). createdById is ALWAYS taken from the session — the body
+// can never nominate an owner. Rate-limited per user. Radius notifications fire post-create.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { notifyUsersInRadius } from '@/lib/notify'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
 
@@ -117,12 +117,6 @@ export async function POST(req: Request) {
   const { allowed } = await rateLimit(`tournaments:create:${session.user.id}`, 20, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
-  // TODO(Phase 4): also allow ClubMember.isAdmin for their own club (see header comment).
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (!caller || (caller.role !== 'ORGANIZER' && caller.role !== 'ADMIN')) {
-    return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
-
   let body: unknown
   try {
     body = await req.json()
@@ -133,6 +127,25 @@ export async function POST(req: Request) {
   const { data, errors } = parseTournamentInput(body, false)
   if (errors.length > 0) return Response.json({ error: errors[0], errors }, { status: 400 })
 
+  // Club authorization happens BEFORE any other validation so a 403 never leaks whether
+  // the club itself exists; a well-formed clubId that doesn't exist is a 400 either way.
+  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+  const hasGlobalRole = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN'
+  if (data.clubId) {
+    if (!hasGlobalRole) {
+      // Club-admins may create events for THEIR club only — verified by query, not by the body.
+      const membership = await prisma.clubMember.findUnique({
+        where: { clubId_userId: { clubId: data.clubId, userId: session.user.id } },
+        select: { isAdmin: true },
+      })
+      if (!membership?.isAdmin) return Response.json({ error: 'forbidden' }, { status: 403 })
+    }
+    const club = await prisma.club.findUnique({ where: { id: data.clubId }, select: { id: true } })
+    if (!club) return Response.json({ error: 'invalid_club' }, { status: 400 })
+  } else if (!hasGlobalRole) {
+    return Response.json({ error: 'forbidden' }, { status: 403 })
+  }
+
   if (data.endDate && data.endDate < data.startDate) {
     return Response.json({ error: 'end_before_start' }, { status: 400 })
   }
@@ -140,12 +153,18 @@ export async function POST(req: Request) {
   if (!ruleset) return Response.json({ error: 'invalid_ruleset' }, { status: 400 })
 
   const tournament = await prisma.tournament.create({
-    // clubId stays null — club-event creation arrives with Phase 4's Club membership model.
     // description is a required (non-null) column; an absent/JSON-null description means "".
-    data: { ...data, description: data.description ?? '', clubId: null, createdById: session.user.id },
+    data: { ...data, description: data.description ?? '', createdById: session.user.id },
     select: { id: true, title: true, startDate: true, city: true },
   })
 
-  // TODO(Phase 3 notify track): call notifyUsersInRadius(tournament) once lib/notify.ts lands.
+  // Radius blast (Phase 3's lib/notify.ts): creation must succeed even if notifying fails.
+  try {
+    const full = await prisma.tournament.findUnique({ where: { id: tournament.id } })
+    if (full) await notifyUsersInRadius(full)
+  } catch {
+    // Notification delivery is best-effort — the tournament itself was created.
+  }
+
   return Response.json(tournament, { status: 201 })
 }

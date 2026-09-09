@@ -1,8 +1,9 @@
 // lib/tournamentValidation.ts
 // Whitelisted-field validation shared by POST /api/tournaments and PATCH /api/tournaments/[id].
 // Every accepted field maps 1:1 to a Tournament column — no invented fields, no mass assignment:
-// anything not listed here is ignored. `clubId` is deliberately NOT accepted yet: creating events
-// on behalf of a club needs Phase 4's Club membership authz path (see the TODO in the POST route).
+// anything not listed here is ignored. `clubId` is accepted on POST as a validated string
+// (null = no club); whether the caller may actually attach THAT club is the route's authz job
+// (owner/admin ClubMember.isAdmin or a global ORGANIZER/ADMIN role).
 import type { Country } from '@prisma/client'
 
 const TITLE_MAX = 100
@@ -36,6 +37,7 @@ export type TournamentInputData = {
   isRecurring?: boolean
   recurringDays?: number | null
   rulesetId?: string
+  clubId?: string | null
 }
 
 export type TournamentInput = {
@@ -52,6 +54,10 @@ function parseDate(value: unknown): Date | null {
 // `partial = true` is PATCH semantics: every field optional, but a recognized field with a
 // wrong type is an error (not silently dropped). `partial = false` is POST: the required
 // columns must be present. Mirrors lib/rulesetValidation.ts.
+//
+// clubId (Phase 4): accepted on POST only when the caller may administer that club — the
+// ROUTE verifies ClubMember.isAdmin (or an ORGANIZER/ADMIN role); this parser only validates
+// the shape, never the authorization.
 export function parseTournamentInput(body: unknown, partial: false): TournamentInput & { data: TournamentInputData & { title: string; startDate: Date; locationName: string; postalCode: string; city: string; state: string; latitude: number; longitude: number; rulesetId: string } }
 export function parseTournamentInput(body: unknown, partial: true): TournamentInput
 export function parseTournamentInput(body: unknown, partial: boolean): TournamentInput {
@@ -214,6 +220,17 @@ export function parseTournamentInput(body: unknown, partial: boolean): Tournamen
       result.errors.push('invalid_ruleset')
     } else {
       result.data.rulesetId = rulesetId
+    }
+  }
+
+  // clubId is POST-only (a tournament's club never changes after creation — the PATCH route
+  // never reads it). null means "no club"; a string must be non-empty.
+  if (!partial && fields.clubId !== undefined) {
+    const clubId = fields.clubId
+    if (clubId !== null && (typeof clubId !== 'string' || clubId.length === 0)) {
+      result.errors.push('invalid_club')
+    } else {
+      result.data.clubId = clubId
     }
   }
 

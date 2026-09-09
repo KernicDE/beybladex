@@ -71,7 +71,7 @@ describe('tournament ownership', () => {
     expect(res.status).toBe(401)
   })
 
-  it('POST as a plain USER role is 403 — only ORGANIZER/ADMIN may create (TODO Phase 4: club admins)', async () => {
+  it('POST as a plain USER role without a clubId is 403 — club admins may only create WITH their own clubId (Phase 4)', async () => {
     const suffix = Date.now().toString(36)
     const user = await seedUser(suffix, 'tpuser')
     const ruleset = await prisma.ruleset.create({ data: { title: `RS ${suffix}`, slug: `rs-${suffix}`, createdById: user.id } })
