@@ -1,0 +1,106 @@
+# compose.yml (Phase 6) — deploy-server stack: Next.js app + Postgres + Redis
+# behind Traefik, with the Watchtower auto-deploy label.
+#
+# BEST-EFFORT DEFAULTS NOTICE: the original spec §4 text is not available in
+# this repo, so service names/images/ports/networks/labels/container names are
+# sensible defaults for a single-container Next.js+Postgres+Redis deploy behind
+# an existing Traefik instance (per Global Constraints: domains beybladex.de /
+# www.beybladex.de, router `beybladex`, image ghcr.io/kernicde/beybladex:latest,
+# working dir /opt/docker/beybladex/baybladex). Whoever runs the real server
+# must adjust the Traefik network (likely `external: true` pointing at the
+# network Traefik already runs on) and the certresolver name to match their
+# existing setup.
+#
+# Every secret-bearing value is ${VAR} interpolation backed by a server-side
+# .env next to this file (NEVER committed — see .env.example for the key list).
+# This is the one permitted deviation from spec §4's literal form per the
+# Global Constraints amendment.
+#
+# Local development does NOT use this file (standing no-local-Docker policy) —
+# it exists only for the deploy server.
+
+services:
+  app:
+    image: ghcr.io/kernicde/beybladex:latest
+    container_name: beybladex_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://beybladex_user:${DB_PASSWORD}@db:5432/beybladex_db
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: https://beybladex.de
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      INTERNAL_CRON_SECRET: ${INTERNAL_CRON_SECRET}
+    networks:
+      - web
+      - internal
+    # Pure liveness probe (app/api/health) — so Traefik/Watchtower never route
+    # to a half-booted container mid-deploy. The CMD already runs
+    # `prisma migrate deploy` before serving; this confirms the server is up.
+    healthcheck:
+      test: CMD wget -qO- http://localhost:3000/api/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.beybladex.rule=Host(`beybladex.de`) || Host(`www.beybladex.de`)
+      - traefik.http.routers.beybladex.entrypoints=websecure
+      - traefik.http.routers.beybladex.tls.certresolver=letsencrypt
+      - traefik.http.routers.beybladex.service=beybladex
+      - traefik.http.services.beybladex.loadbalancer.server.port=3000
+      # Watchtower (running in its own compose stack outside this repo) picks
+      # up new :latest images on merge to main and recreates this container.
+      - com.centurylinklabs.watchtower.enable=true
+
+  db:
+    image: postgres:16-alpine
+    container_name: beybladex_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beybladex_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: beybladex_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: CMD pg_isready -U beybladex_user -d beybladex_db
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: beybladex_redis
+    restart: unless-stopped
+    networks:
+      - internal
+    healthcheck:
+      test: CMD redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  # Traefik-facing network. If Traefik runs in its own compose project, make
+  # this `external: true` with the name of Traefik's network so the router can
+  # reach this container.
+  web:
+    name: beybladex_web
+  # App <-> db/redis only; never exposed to Traefik.
+  internal:
+    name: beybladex_internal
