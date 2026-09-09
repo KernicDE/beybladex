@@ -23,6 +23,7 @@ type Ids = {
   users: string[]; clubs: string[]; rulesets: string[]; tournaments: string[]
   decks: string[]; builds: string[]; matches: string[]; participants: string[]
   friendships: string[]; collectionItems: string[]; notifications: string[]; passkeys: string[]
+  parts: string[]
 }
 
 async function cleanup(ids: Ids) {
@@ -37,6 +38,8 @@ async function cleanup(ids: Ids) {
     await prisma.deck.delete({ where: { id: deckId } }).catch(() => {})
   }
   for (const id of ids.builds) await prisma.build.delete({ where: { id } }).catch(() => {})
+  // Parts are Build_bladeId_fkey/etc's onDelete: Restrict target — must be deleted after builds.
+  for (const id of ids.parts) await prisma.part.delete({ where: { id } }).catch(() => {})
   for (const id of ids.tournaments) await prisma.tournament.delete({ where: { id } }).catch(() => {})
   for (const id of ids.clubs) await prisma.club.delete({ where: { id } }).catch(() => {})
   for (const id of ids.rulesets) await prisma.ruleset.delete({ where: { id } }).catch(() => {})
@@ -69,6 +72,7 @@ async function seedRichUser(suffix: string) {
     users: [owner.id, admin.id, opponent.id],
     clubs: [], rulesets: [], tournaments: [], decks: [], builds: [], matches: [],
     participants: [], friendships: [], collectionItems: [], notifications: [], passkeys: [],
+    parts: [],
   }
 
   // club with another admin member (must be reassigned, not dissolved)
@@ -107,7 +111,14 @@ async function seedRichUser(suffix: string) {
     },
   })
   ids.tournaments.push(tournament.id)
-  const build = await prisma.build.create({ data: { bladeId: 'blade-x', ratchetId: 'ratchet-x', bitId: 'bit-x' } })
+  // Build.bladeId/ratchetId/bitId are real FKs to Part.id (Phase 5 Part A) — seed real Part rows.
+  const [blade, ratchet, bit] = await Promise.all([
+    prisma.part.create({ data: { name: `Del Blade ${suffix}`, manufacturer: 'TT', category: 'BLADE', spinDirection: 'RIGHT' } }),
+    prisma.part.create({ data: { name: `Del Ratchet ${suffix}`, manufacturer: 'TT', category: 'RATCHET', spinDirection: 'RIGHT' } }),
+    prisma.part.create({ data: { name: `Del Bit ${suffix}`, manufacturer: 'TT', category: 'BIT', spinDirection: 'RIGHT' } }),
+  ])
+  ids.parts.push(blade.id, ratchet.id, bit.id)
+  const build = await prisma.build.create({ data: { bladeId: blade.id, ratchetId: ratchet.id, bitId: bit.id } })
   ids.builds.push(build.id)
   const deck = await prisma.deck.create({ data: { title: 'Del-Deck', userId: owner.id } })
   ids.decks.push(deck.id)
@@ -131,7 +142,8 @@ async function seedRichUser(suffix: string) {
   ids.matches.push(match.id)
   const friendship = await prisma.friendship.create({ data: { requesterId: owner.id, addresseeId: admin.id, status: 'ACCEPTED' } })
   ids.friendships.push(friendship.id)
-  const item = await prisma.collectionItem.create({ data: { userId: owner.id, partOrBeyId: 'part-del' } })
+  // CollectionItem.partOrBeyId is a real FK to Part.id (Phase 5 Part A) — reuse `blade` above.
+  const item = await prisma.collectionItem.create({ data: { userId: owner.id, partOrBeyId: blade.id } })
   ids.collectionItems.push(item.id)
   const notification = await prisma.notification.create({ data: { userId: owner.id, title: 'Bye', message: 'Löschung' } })
   ids.notifications.push(notification.id)
@@ -235,6 +247,7 @@ describe('account deletion (Art. 17)', () => {
     const ids: Ids = {
       users: [user.id], clubs: [], rulesets: [], tournaments: [], decks: [], builds: [],
       matches: [], participants: [], friendships: [], collectionItems: [], notifications: [], passkeys: [],
+      parts: [],
     }
     mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
 
@@ -258,6 +271,7 @@ describe('account deletion (Art. 17)', () => {
     const ids: Ids = {
       users: [user.id], clubs: [], rulesets: [], tournaments: [], decks: [], builds: [],
       matches: [], participants: [], friendships: [], collectionItems: [], notifications: [], passkeys: [],
+      parts: [],
     }
 
     await eraseOrAnonymizeUser(user.id)

@@ -20,10 +20,11 @@ describe('GET /api/account/export (Art. 20)', () => {
   const ids: {
     users: string[]; clubs: string[]; rulesets: string[]; tournaments: string[]
     decks: string[]; builds: string[]; notifications: string[]; friendships: string[]
-    collectionItems: string[]; clubMembers: string[]; participants: string[]
+    collectionItems: string[]; clubMembers: string[]; participants: string[]; parts: string[]
   } = {
     users: [], clubs: [], rulesets: [], tournaments: [], decks: [], builds: [],
     notifications: [], friendships: [], collectionItems: [], clubMembers: [], participants: [],
+    parts: [],
   }
 
   afterEach(async () => {
@@ -39,6 +40,8 @@ describe('GET /api/account/export (Art. 20)', () => {
       await prisma.deck.delete({ where: { id: deckId } }).catch(() => {})
     }
     for (const id of ids.builds) await prisma.build.delete({ where: { id } }).catch(() => {})
+    // Parts are Build_bladeId_fkey/etc's onDelete: Restrict target — must be deleted after builds.
+    for (const id of ids.parts) await prisma.part.delete({ where: { id } }).catch(() => {})
     for (const id of ids.tournaments) await prisma.tournament.delete({ where: { id } }).catch(() => {})
     for (const id of ids.clubs) await prisma.club.delete({ where: { id } }).catch(() => {})
     for (const id of ids.rulesets) await prisma.ruleset.delete({ where: { id } }).catch(() => {})
@@ -85,13 +88,23 @@ describe('GET /api/account/export (Art. 20)', () => {
       },
     })
     ids.tournaments.push(tournament.id)
-    const build = await prisma.build.create({ data: { bladeId: 'blade-1', ratchetId: 'ratchet-1', bitId: 'bit-1' } })
+    // Build.bladeId/ratchetId/bitId and CollectionItem.partOrBeyId are real FKs to Part.id
+    // (Phase 5 Part A) — seed real Part rows rather than arbitrary strings.
+    const [blade, ratchet, bit, partA, partB] = await Promise.all([
+      prisma.part.create({ data: { name: `Export Blade ${suffix}`, manufacturer: 'TT', category: 'BLADE', spinDirection: 'RIGHT' } }),
+      prisma.part.create({ data: { name: `Export Ratchet ${suffix}`, manufacturer: 'TT', category: 'RATCHET', spinDirection: 'RIGHT' } }),
+      prisma.part.create({ data: { name: `Export Bit ${suffix}`, manufacturer: 'TT', category: 'BIT', spinDirection: 'RIGHT' } }),
+      prisma.part.create({ data: { name: `Export PartA ${suffix}`, manufacturer: 'TT', category: 'BLADE', spinDirection: 'RIGHT' } }),
+      prisma.part.create({ data: { name: `Export PartB ${suffix}`, manufacturer: 'TT', category: 'BLADE', spinDirection: 'RIGHT' } }),
+    ])
+    ids.parts.push(blade.id, ratchet.id, bit.id, partA.id, partB.id)
+    const build = await prisma.build.create({ data: { bladeId: blade.id, ratchetId: ratchet.id, bitId: bit.id } })
     ids.builds.push(build.id)
     const deck = await prisma.deck.create({ data: { title: 'Export-Deck', userId: userA.id } })
     ids.decks.push(deck.id)
     await prisma.deckBuild.create({ data: { deckId: deck.id, buildId: build.id, position: 1 } })
-    const itemA = await prisma.collectionItem.create({ data: { userId: userA.id, partOrBeyId: 'part-1', purchasePrice: 12.99 } })
-    const itemB = await prisma.collectionItem.create({ data: { userId: userB.id, partOrBeyId: 'part-2', purchasePrice: 99.99 } })
+    const itemA = await prisma.collectionItem.create({ data: { userId: userA.id, partOrBeyId: partA.id, purchasePrice: 12.99 } })
+    const itemB = await prisma.collectionItem.create({ data: { userId: userB.id, partOrBeyId: partB.id, purchasePrice: 99.99 } })
     ids.collectionItems.push(itemA.id, itemB.id)
     const friendship = await prisma.friendship.create({ data: { requesterId: userA.id, addresseeId: userB.id, status: 'ACCEPTED' } })
     ids.friendships.push(friendship.id)
@@ -130,8 +143,8 @@ describe('GET /api/account/export (Art. 20)', () => {
 
     // per-category rows belong to the owner only — nothing of user B leaks
     expect(body.collection).toHaveLength(1)
-    expect(body.collection[0].partOrBeyId).toBe('part-1')
-    expect(JSON.stringify(body)).not.toContain('part-2')
+    expect(body.collection[0].partOrBeyId).toBe(partA.id)
+    expect(JSON.stringify(body)).not.toContain(partB.id)
     expect(body.decks).toHaveLength(1)
     expect(body.decks[0].title).toBe('Export-Deck')
     expect(body.decks[0].builds).toHaveLength(1)
