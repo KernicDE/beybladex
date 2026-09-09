@@ -58,6 +58,13 @@ describe('match score idempotency', () => {
     const match = await prisma.match.create({
       data: { tournamentId: tournament.id, judgeId: judge.id, player1Id: p1.id, player2Id: p2.id, round: 1, bracketOrder: 0, status: 'IN_PROGRESS' },
     })
+    // The score route treats "the highest round present in the tournament" as the final
+    // (app/api/matches/[id]/score/route.ts's finalsTargetPoints logic) — a round-2 placeholder
+    // is required so this round-1 match is correctly read as a non-final and uses
+    // ruleset.targetPoints (3), not ruleset.finalsTargetPoints (5).
+    const finalPlaceholder = await prisma.match.create({
+      data: { tournamentId: tournament.id, round: 2, bracketOrder: 0, status: 'PENDING' },
+    })
     const ctx = { params: Promise.resolve({ id: match.id }) }
     mockAuth.mockResolvedValue(asSession({ id: judge.id, name: judge.username }))
 
@@ -108,6 +115,7 @@ describe('match score idempotency', () => {
     expect(row!.scorePlayer1).toBe(3)
 
     await prisma.match.delete({ where: { id: match.id } })
+    await prisma.match.delete({ where: { id: finalPlaceholder.id } })
     await prisma.tournament.delete({ where: { id: tournament.id } })
     await prisma.ruleset.delete({ where: { id: ruleset.id } })
     await prisma.user.deleteMany({ where: { id: { in: [organizer.id, judge.id, p1.id, p2.id] } } })
