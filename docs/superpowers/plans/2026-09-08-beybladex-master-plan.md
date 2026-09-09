@@ -2390,6 +2390,34 @@ This makes every container start — first deploy and every Watchtower restart a
 
 ---
 
+# Phase 8: Markdown Authoring — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+
+**Status: planned, not started.** Same standing note as Phase 7: recorded here so the requirement isn't lost, but not to be picked up by an executor without the user explicitly asking. Confirm before starting.
+
+**Scope:** allow Markdown in every free-text field across the platform, parse it safely on render, and build one shared WYSIWYG editor component used everywhere such a field is edited — two distinct deliverables (authoring format + editing UX), both requested together.
+
+**Full inventory of affected fields (all existing free-text columns, cross-checked against the current schema — no field missed):**
+| Model.field | Current cap | Rendered on |
+|---|---|---|
+| `User.bio` | Phase 1 Task 12/13's bio cap | `/profile/[username]` |
+| `Club.description` | 1000 (Phase 4) | `/clubs/[slug]` |
+| `Ruleset.description` | 1000 (`lib/rulesetValidation.ts`) | `/rules/[slug]` |
+| `Tournament.description` | Phase 3's tournament validation cap | `/events/[id]` |
+| `PartRequest.notes` | Phase 5 Part A | `/settings/admin/parts` (admin-only view) |
+| `Rating.comment` | bio-convention cap (Phase 5 Part A) | `/builds/[id]` |
+
+**1. Safe rendering, binding library/security decision:** use an npm-bundled Markdown renderer — `react-markdown` plus `remark-gfm` (tables, strikethrough, task lists) is the recommended default, consistent with the standing zero-external-CDN policy (`tests/unit/no-external-resources.test.ts` must keep passing — a markdown/editor library that lazy-loads assets from a CDN is disqualified regardless of feature fit). **Critical, non-negotiable security rule**: never enable raw HTML pass-through (`rehype-raw` or equivalent) on any of these fields — every one of them is attacker-reachable free text from an authenticated (and in some cases effectively any-registered-user, e.g. `Rating.comment`) source, so allowing embedded HTML would reopen exactly the stored-XSS class of bug the platform has otherwise avoided by never doing this. `react-markdown`'s default behavior (parse Markdown syntax, treat embedded `<...>` as literal text, not HTML) is itself the safe posture — do not "upgrade" it later without a fresh security review. Links inside rendered Markdown get `rel="noopener noreferrer nofollow"` (a shared `components/ui/MarkdownContent.tsx` renderer component's link override, used everywhere so this isn't reimplemented per call site — and reused by the WYSIWYG editor's own live-preview pane in item 2, not a second parallel renderer).
+
+**2. WYSIWYG editor, binding decision:** one shared `components/ui/MarkdownEditor.tsx` component (textarea-with-toolbar-and-live-preview, or a true contenteditable-based WYSIWYG that serializes to Markdown — evaluate `@uiw/react-md-editor` vs. a `tiptap`-based build at implementation time against actual React 19/Next 16 compatibility, bundle size, and the zero-CDN constraint before picking; do not assume either works without verifying against this repo's exact dependency versions first) replaces the plain `<Textarea>` currently used by every form editing one of the six fields above (`components/settings/ProfileForm.tsx`, `components/clubs/ClubForm.tsx`, `components/rules/RulesetForm.tsx`, `components/tournament/TournamentForm.tsx`, the part-request form, `components/beyblade/RatingForm.tsx`). The editor enforces the SAME character cap as the underlying field server-side already does (client-side count against the Markdown source length, not the rendered/visual length) — the server-side validation in each route remains the authoritative limit regardless of what the client shows, per the platform's standing "never trust client validation alone" pattern.
+
+**3. Backward compatibility, binding:** every one of these fields already contains plain, unformatted text from Phases 1–6 (real production data as of Phase 6's live deploy — the `kernic` admin user, `BeybladeX.de` club, and both rulesets created this session are already live examples). Plain text IS valid Markdown (no special syntax = renders as-is), so **no data migration is needed** — existing content renders correctly the moment `MarkdownContent` replaces a raw `{description}` string interpolation. Do not write a backfill/migration script for this; if one seems necessary, that's a sign the renderer isn't actually backward-compatible and the approach needs revisiting.
+
+**4. Tests:** `tests/unit/markdown-render.test.ts` (a comment containing `<script>alert(1)</script>` renders as inert literal text, never executes or appears as a real `<script>` tag in the output — the core security proof this feature needs before shipping; a comment with `**bold**`/`[link](url)`/a table renders the expected safe HTML), a component test asserting `MarkdownEditor`'s character-count enforcement matches each field's actual server-side cap (six field caps, six assertions, table-driven).
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
 ## Cross-Phase Regression Guard
 
 Every phase's TDD sub-plan must re-run, not just skip:
