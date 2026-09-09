@@ -90,10 +90,13 @@ jobs:
           beybladex:ci
       # The CMD fails fast (container exits) if `prisma migrate deploy` errors,
       # so a 200 here proves migrate-then-serve succeeded. Retry loop with a
-      # sane timeout — the container needs a moment to start.
+      # generous timeout: the first real run showed a genuinely cold `npx prisma
+      # migrate deploy` (no cached engine, no warm OS page cache, --network host)
+      # taking close to 120s on its own before `node server.js` even starts — 90
+      # attempts @ 3s gives 270s of headroom for that one-time cold-boot cost.
       - name: Wait for /api/health (migrate deploy + server boot)
         run: |
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             if curl -fsS http://localhost:3000/api/health; then
               echo "health check passed"
               exit 0
@@ -103,9 +106,9 @@ jobs:
               docker logs beybladex-ci
               exit 1
             fi
-            sleep 2
+            sleep 3
           done
-          echo "health check timed out after 120s; logs:"
+          echo "health check timed out after 270s; logs:"
           docker logs beybladex-ci
           exit 1
       - name: Verify no pending migrations in the booted container

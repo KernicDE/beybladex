@@ -66,4 +66,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       authorize,
     }),
   ],
+  // CRITICAL, previously missing: NextAuth's DEFAULT jwt/session callbacks do NOT propagate a
+  // custom `id` field from authorize()'s return value into `session.user.id` — only well-known
+  // fields (name/email/picture) survive by default. Every route/page in this app reads
+  // `session.user.id` (hundreds of call sites since Phase 1), and every test that exercises
+  // this exclusively mocks `auth()` directly (`vi.mock('@/lib/auth')`), bypassing NextAuth's
+  // real jwt/session serialization entirely — so a REAL browser session had `session.user.id
+  // === undefined` on every authenticated request, undetected until the first genuine,
+  // non-mocked E2E test (tests/e2e/judge-offline.spec.ts) exercised a real login. Without this
+  // block, every authenticated feature is broken in actual production use despite the full
+  // green CI suite. `token.id`/`token.name` are set once at sign-in (the `user` param is only
+  // present on that first call) and persist across the token's lifetime; every subsequent
+  // `auth()` call copies them onto `session.user`.
+  callbacks: {
+    jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+        token.name = user.name
+      }
+      return token
+    },
+    session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string
+        session.user.name = token.name as string
+      }
+      return session
+    },
+  },
 })
