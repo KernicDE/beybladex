@@ -56,7 +56,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
     myMatch && me ? (myMatch.player1Id === me ? myMatch.player2Id : myMatch.player1Id) : null
   const myRoundLabel =
     myMatch && myStage
-      ? myStage.format === 'SWISS'
+      ? myStage.format === 'SWISS' || myStage.format === 'ROUND_ROBIN'
         ? `Runde ${myMatch.swissRound ?? '?'}`
         : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage))
       : null
@@ -155,7 +155,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
                 stageId: stage.id,
                 round: m.round,
                 label:
-                  stage.format === 'SWISS'
+                  stage.format === 'SWISS' || stage.format === 'ROUND_ROBIN'
                     ? `Runde ${m.swissRound ?? '?'}`
                     : eliminationRoundLabel(m.round, wbRounds),
                 player1: nameOf(m.player1Id),
