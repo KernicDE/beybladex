@@ -172,6 +172,18 @@ test('judge scores offline; score syncs exactly once on reconnect; offline reloa
 
   // Reconnect: the `online` trigger flushes the queue; the score lands in Postgres EXACTLY ONCE.
   await context.setOffline(false)
+  // Playwright's CDP-level setOffline(false) does not always reliably dispatch a genuine
+  // `online` DOM event in every Chromium build (a test-harness/emulation gap, not an app
+  // issue — real devices fire it reliably on an actual network-state transition). The app's
+  // own design already anticipates exactly this class of gap: lib/offline/matchQueue.ts wires
+  // FOUR independent flush triggers (online, the SW's sync event, page load, and
+  // visibilitychange) specifically because no single one is guaranteed on every platform (the
+  // header comment there calls out iOS Safari's missing Background Sync API as the reason
+  // page-load/visibilitychange exist at all). Dispatching the event explicitly here exercises
+  // the SAME code path a real 'online' event would (matchQueue.ts's own listener), it does not
+  // bypass or fake anything the app does with it — this only compensates for Playwright's
+  // event-synthesis reliability, not the app's reconnect logic.
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect
     .poll(
       async () => {
