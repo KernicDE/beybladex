@@ -33,6 +33,8 @@ function notificationContent(t: Tournament): { title: string; message: string; l
 export async function notifyUsersInRadius(tournament: Tournament): Promise<void> {
   const candidates = await prisma.user.findMany({
     where: {
+      // The organizer is not a candidate for their own tournament's radius blast.
+      id: { not: tournament.createdById },
       latitude: { not: null },
       longitude: { not: null },
       notifyRadiusKm: { not: null },
