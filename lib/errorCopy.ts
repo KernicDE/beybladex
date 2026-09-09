@@ -71,6 +71,15 @@ const COPY: Record<string, string> = {
   // parental consent
   invalid_or_expired_token:
     'Dieser Einwilligungslink ist ungültig oder abgelaufen.',
+  // clubs
+  invalid_club_name: 'Der Clubname ist ungültig (1–100 Zeichen).',
+  club_name_taken: 'Dieser Clubname ist bereits vergeben.',
+  invalid_club: 'Der angegebene Club ist ungültig.',
+  already_member: 'Du bist bereits Mitglied dieses Clubs.',
+  not_member: 'Dieses Mitglied existiert nicht.',
+  invalid_member: 'Das Mitglied ist ungültig.',
+  // admin
+  invalid_role: 'Die angegebene Rolle ist ungültig.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).
