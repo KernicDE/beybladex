@@ -116,7 +116,12 @@ export async function propagateEliminationResult(
 
   const wp = winnerPropagation(match, participantsForMapping)
   if (wp.type === 'slot') await writeSlot(match.stageId, wp.target.round, wp.target.bracketOrder, wp.target.slot, winnerId)
-  else if (wp.type === 'grand-final') await writeSlot(match.stageId, match.round, 0, wp.slot, winnerId)
+  else if (wp.type === 'grand-final') {
+    // WB-final and LB-final winners advance into the GRAND FINAL (round 3R−1, order 0) — not
+    // into a round relative to the match just completed.
+    const R = winnersRounds(participantsForMapping)
+    await writeSlot(match.stageId, 3 * R - 1, 0, wp.slot, winnerId)
+  }
 
   const lp = loserPropagation(match, participantsForMapping)
   if (lp.type === 'slot') {
