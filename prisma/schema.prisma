@@ -77,6 +77,13 @@ enum PartRequestStatus {
   REJECTED
 }
 
+// Phase 5 Part C — tournament match lifecycle for bracket/judge flow.
+enum MatchStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
 model User {
   id                   String         @id @default(uuid())
   username             String         @unique
@@ -248,6 +255,9 @@ model Tournament {
   createdById     String
   createdBy       User                    @relation("TournamentOrganizer", fields: [createdById], references: [id])
 
+  // Phase 5 Part C — "Turnier abschließen" from the organizer console; null while running.
+  completedAt     DateTime?
+
   participants    TournamentParticipant[]
   matches         Match[]
 }
@@ -261,6 +271,10 @@ model TournamentParticipant {
   deckId       String?
   deck         Deck?      @relation(fields: [deckId], references: [id])
   checkedIn    Boolean    @default(false)
+  // Phase 5 Part C — no-show handling from the organizer console: a withdrawn participant is
+  // skipped by bracket generation and, if their match already exists, the opponent is
+  // auto-advanced.
+  withdrawn    Boolean    @default(false)
 
   @@unique([tournamentId, userId])
 }
@@ -349,22 +363,35 @@ model DeckBuild {
 }
 
 model Match {
-  id             String     @id @default(uuid())
+  id             String      @id @default(uuid())
   tournamentId   String
-  tournament     Tournament @relation(fields: [tournamentId], references: [id])
+  tournament     Tournament  @relation(fields: [tournamentId], references: [id])
   judgeId        String?
-  judge          User?      @relation("JudgeMatches", fields: [judgeId], references: [id])
+  judge          User?       @relation("JudgeMatches", fields: [judgeId], references: [id])
 
-  player1Id      String
-  player2Id      String
+  // Phase 5 Part C — nullable (documented additive deviation from spec §3's required form):
+  // empty future-round bracket slots are persisted at generation time and filled when the
+  // predecessor match completes (score route propagates the winner) or via no-show auto-advance.
+  player1Id      String?
+  player2Id      String?
   player1BuildId String?
-  player1Build   Build?     @relation("Player1Build", fields: [player1BuildId], references: [id])
+  player1Build   Build?      @relation("Player1Build", fields: [player1BuildId], references: [id])
   player2BuildId String?
-  player2Build   Build?     @relation("Player2Build", fields: [player2BuildId], references: [id])
+  player2Build   Build?      @relation("Player2Build", fields: [player2BuildId], references: [id])
 
-  scorePlayer1   Int        @default(0)
-  scorePlayer2   Int        @default(0)
+  scorePlayer1   Int         @default(0)
+  scorePlayer2   Int         @default(0)
   winnerId       String?
+
+  // Phase 5 Part C — bracket/round placement and lifecycle (all additive):
+  round          Int         @default(0) // 1 = first bracket round, counts up to the final
+  bracketOrder   Int         @default(0) // position within a round; feeds match slot (i+1)/2 in round+1
+  status         MatchStatus @default(PENDING)
+  // Idempotency key for offline-synced scores: one client-generated UUID per judge action, unique
+  // DB-wide — a replayed POST with the same clientEventId is a server-side no-op.
+  clientEventId  String?     @unique
+
+  @@index([tournamentId, round, bracketOrder])
 }
 
 model CollectionItem {
