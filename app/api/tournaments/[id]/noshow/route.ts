@@ -8,9 +8,9 @@
 // to be re-seeded rather than inventing a winner.
 //
 // Phase 5 Part C2 additions, per format:
-//   SWISS — the withdrawn player's remaining Swiss matches become OPPONENT WINS (completed with
-//     the opponent as winner, recorded on both players' StageStanding rows) instead of silently
-//     vanishing; future pairings already exclude withdrawn players.
+//   SWISS / ROUND_ROBIN — the withdrawn player's remaining matches become OPPONENT WINS
+//     (completed with the opponent as winner, recorded on both players' StageStanding rows)
+//     instead of silently vanishing; future Swiss pairings already exclude withdrawn players.
 //   DOUBLE_ELIMINATION — the withdrawn participant is ELIMINATED (StageStanding.eliminated = true,
 //     not merely skipped). Their opponent's win propagates per the bracket mapping; the withdrawn
 //     player's own loser-drop does NOT happen (they are out, not dropped into the losers bracket),
@@ -101,9 +101,10 @@ export async function POST(req: Request, { params }: Ctx) {
         where: { id: m.id },
         data: { winnerId: opponent, status: 'COMPLETED', [isP1 ? 'player1Id' : 'player2Id']: opponent },
       })
-      if (stage?.format === 'SWISS') {
-        // The opponent wins on the standings; the withdrawn player takes the loss + opponent
-        // history, so their record reflects the matches they missed.
+      if (stage?.format === 'SWISS' || stage?.format === 'ROUND_ROBIN') {
+        // The opponent wins on the standings (recordSwissResult is the shared standings-ranked
+        // formats' helper — Swiss pairing and Round Robin both); the withdrawn player takes the
+        // loss + opponent history, so their record reflects the matches they missed.
         await recordSwissResult(m.stageId, opponent, userId)
       } else if (stage?.format === 'DOUBLE_ELIMINATION') {
         // Opponent advances per the bracket mapping; the withdrawn player's own loser-drop is

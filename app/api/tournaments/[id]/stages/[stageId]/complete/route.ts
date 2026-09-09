@@ -5,7 +5,9 @@
 //
 // Refuses (409) unless: every match in the stage is COMPLETED, AND (SWISS) swissRoundsDone ==
 // swissRounds. Then computes the stage's FINAL RANKING:
-//   • SWISS — the StageStanding order (wins desc, buchholz desc, userId asc).
+//   • SWISS / ROUND_ROBIN — the StageStanding order (wins desc, buchholz desc, userId asc);
+//     ROUND_ROBIN (Phase 5 Part C3) reuses this rule exactly (its completion gate is the
+//     elimination formats' all-matches-COMPLETED rule, not Swiss's round counter).
 //   • SINGLE_ELIMINATION / DOUBLE_ELIMINATION — bracket placement: the champion first (winner of
 //     the highest-(round, order) COMPLETED match — the grand-final reset when played, else the
 //     grand final / final), then every other participant by the round of the match they LAST
@@ -49,7 +51,7 @@ export async function POST(_req: Request, { params }: Ctx) {
     : ((await prisma.tournamentStage.findUnique({ where: { tournamentId_order: { tournamentId: id, order: stage.order - 1 } } }))?.qualifiedUserIds ?? [])
 
   let ranking: string[]
-  if (stage.format === 'SWISS') {
+  if (stage.format === 'SWISS' || stage.format === 'ROUND_ROBIN') {
     const standings = await prisma.stageStanding.findMany({ where: { stageId } })
     ranking = sortSwiss(standings).map((s) => s.userId)
   } else {

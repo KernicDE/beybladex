@@ -155,9 +155,11 @@ export async function markEliminated(stageId: string, userId: string): Promise<v
 }
 
 /**
- * Record a completed SWISS match on the stage standings: wins/losses + opponent history for both
- * players, then a buchholz recompute for the whole stage (sum of opponents' current win counts).
- * No bracket-slot propagation exists in Swiss — the next round is re-paired from the standings.
+ * Record a completed match on the stage standings for the STANDINGS-RANKED formats (SWISS and
+ * ROUND_ROBIN — Phase 5 Part C3 reuses this exactly, there is no bracket propagation in either):
+ * wins/losses + opponent history for both players, then a buchholz recompute for the whole stage
+ * (sum of opponents' current win counts). Swiss re-pairs its next round from these; Round Robin
+ * has no next round — the fixture list was generated in one shot.
  */
 export async function recordSwissResult(
   stageId: string,

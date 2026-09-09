@@ -217,11 +217,11 @@ export async function POST(req: Request, { params }: Ctx) {
 
   // Win threshold: finals (the stage's last round) use finalsTargetPoints, earlier rounds
   // targetPoints — read from the Ruleset, never hardcoded. Phase 5 Part C2: the round lookup is
-  // scoped to THIS match's STAGE, and a SWISS stage never uses finalsTargetPoints (every Swiss
-  // round is scored at targetPoints; there is no single final match).
+  // scoped to THIS match's STAGE, and a SWISS or ROUND_ROBIN stage never uses finalsTargetPoints
+  // (every round is scored at targetPoints; there is no single final match).
   const maxRound = Math.max(0, ...match.stage.matches.map((m) => m.round))
   const isFinal =
-    match.stage.format !== 'SWISS' && match.round > 0 && match.round === maxRound
+    match.stage.format !== 'SWISS' && match.stage.format !== 'ROUND_ROBIN' && match.round > 0 && match.round === maxRound
   const target = isFinal ? ruleset.finalsTargetPoints : ruleset.targetPoints
   const completed = nextScore1 >= target || nextScore2 >= target
   const winnerId = completed ? (nextScore1 > nextScore2 ? match.player1Id : match.player2Id) : null
@@ -246,11 +246,13 @@ export async function POST(req: Request, { params }: Ctx) {
   //     propagates: a WB match's loser drops into a specific LB slot (lib/doubleElimination.ts's
   //     drop-in mapping), an LB match's loser is eliminated (StageStanding.eliminated = true, no
   //     further propagation). Grand-final reset wiring + stuck-bye resolution happen inside.
-  //   SWISS — no bracket slots at all: both players' StageStanding rows are updated
-  //     (wins/losses/opponentIds + buchholz recompute); the next round is re-paired from them.
+  //   SWISS / ROUND_ROBIN — no bracket slots at all (standings-based ranking, not bracket
+  //     propagation): both players' StageStanding rows are updated (wins/losses/opponentIds +
+  //     buchholz recompute). Swiss re-pairs its next round from them; Round Robin has no next
+  //     round — the fixture list was generated in one shot.
   // Idempotent throughout: re-running for the same winner writes the same values.
   if (completed && winnerId) {
-    if (match.stage.format === 'SWISS') {
+    if (match.stage.format === 'SWISS' || match.stage.format === 'ROUND_ROBIN') {
       const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
       await recordSwissResult(match.stageId, winnerId, loserId)
     } else if (match.stage.format === 'DOUBLE_ELIMINATION') {
