@@ -66,9 +66,14 @@ test.beforeAll(async () => {
   for (const userId of [p1.id, p2.id]) {
     await prisma.tournamentParticipant.create({ data: { tournamentId: tournament.id, userId, checkedIn: true } })
   }
+  // Phase 5 Part C2: every Match requires a stage.
+  const stage = await prisma.tournamentStage.create({
+    data: { tournamentId: tournament.id, order: 1, name: 'Hauptbracket', format: 'SINGLE_ELIMINATION' },
+  })
   const match = await prisma.match.create({
     data: {
       tournamentId: tournament.id,
+      stageId: stage.id,
       judgeId: judge.id,
       player1Id: p1.id,
       player2Id: p2.id,
@@ -92,6 +97,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!ids) return
   await prisma.match.deleteMany({ where: { tournamentId: ids.tournamentId } })
+  await prisma.tournamentStage.deleteMany({ where: { tournamentId: ids.tournamentId } })
   await prisma.tournamentParticipant.deleteMany({ where: { tournamentId: ids.tournamentId } })
   await prisma.tournament.delete({ where: { id: ids.tournamentId } })
   await prisma.ruleset.delete({ where: { id: ids.rulesetId } })

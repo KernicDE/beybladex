@@ -76,7 +76,7 @@ describe('pairSwissRound', () => {
     // Round 2: s2 and s4 win, s5 got the bye-win; all three are 1-0. s3 (0-1, byes 0) is the
     // lowest-ranked not-yet-byed player → s3 gets the bye, NOT s5 again.
     const round2 = pairSwissRound([
-      player('s1', { losses: 0, opponentIds: ['s2'] }),
+      player('s1', { opponentIds: ['s2'] }),
       player('s2', { wins: 1, opponentIds: ['s1'] }),
       player('s3', { opponentIds: ['s4'] }),
       player('s4', { wins: 1, opponentIds: ['s3'] }),

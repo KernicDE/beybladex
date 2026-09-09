@@ -74,7 +74,7 @@ export type SlotTarget = { round: number; bracketOrder: number; slot: 'player1Id
 
 export type WinnerPropagation =
   | { type: 'slot'; target: SlotTarget }
-  | { type: 'grand-final'; slot: 'player1Id' } // WB champion → grand final player1
+  | { type: 'grand-final'; slot: 'player1Id' | 'player2Id' } // WB champion → GF player1, LB champion → GF player2
   | { type: 'none' } // grand final / reset: no slot to advance into
 
 export type LoserPropagation =

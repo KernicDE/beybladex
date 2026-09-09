@@ -1,22 +1,33 @@
 // app/api/tournaments/[id]/noshow/route.ts
-// Phase 5 Part C — no-show handling from the organizer console. AUTHZ RULE (standing
-// Global-Constraints requirement): only the tournament's creator or an ADMIN may mark a
-// participant withdrawn; anyone else gets 403. Effects: the participant is excluded from
-// future bracket generation (withdrawn=true); if the bracket already exists, every pending or
-// in-progress Match slot they occupy is resolved in favour of the opponent (auto-advance) —
-// the opponent's win is propagated into the next round's slot exactly like a played match, and
-// chains of withdrawn players leave an empty (null) slot to be re-seeded rather than inventing
-// a winner.
+// Phase 5 Part C — no-show handling from the organizer console; Phase 5 Part C2 — format-aware.
+// AUTHZ RULE (standing Global-Constraints requirement): only the tournament's creator or an
+// ADMIN may mark a participant withdrawn; anyone else gets 403. Effects: the participant is
+// excluded from future bracket/pairing generation (withdrawn=true); every pending or in-progress
+// Match slot they occupy is resolved in favour of the opponent (auto-advance), and the win is
+// propagated exactly like a played match. Chains of withdrawn players leave an empty (null) slot
+// to be re-seeded rather than inventing a winner.
+//
+// Phase 5 Part C2 additions, per format:
+//   SWISS — the withdrawn player's remaining Swiss matches become OPPONENT WINS (completed with
+//     the opponent as winner, recorded on both players' StageStanding rows) instead of silently
+//     vanishing; future pairings already exclude withdrawn players.
+//   DOUBLE_ELIMINATION — the withdrawn participant is ELIMINATED (StageStanding.eliminated = true,
+//     not merely skipped). Their opponent's win propagates per the bracket mapping; the withdrawn
+//     player's own loser-drop does NOT happen (they are out, not dropped into the losers bracket),
+//     and the now-unfillable LB slots downstream resolve via the stuck-bye rule (lib/stageFlow.ts).
+//   SINGLE_ELIMINATION — unchanged Part C behavior, now stage-scoped.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { winnerPropagation } from '@/lib/doubleElimination'
+import { markEliminated, recordSwissResult, resolveStuckByes } from '@/lib/stageFlow'
 
 type Ctx = { params: Promise<{ id: string }> }
 
-async function propagateWinner(tournamentId: string, round: number, bracketOrder: number, winnerId: string | null) {
+async function propagateWinner(stageId: string, round: number, bracketOrder: number, winnerId: string | null) {
   if (round < 1 || winnerId === null) return
   const slot = bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
   await prisma.match.updateMany({
-    where: { tournamentId, round: round + 1, bracketOrder: Math.floor(bracketOrder / 2) },
+    where: { stageId, round: round + 1, bracketOrder: Math.floor(bracketOrder / 2) },
     data: { [slot]: winnerId },
   })
 }
@@ -50,6 +61,22 @@ export async function POST(req: Request, { params }: Ctx) {
 
   await prisma.tournamentParticipant.update({ where: { id: participant.id }, data: { withdrawn: true } })
 
+  // Stage formats/R values for every stage that has open matches (a no-show resolves per stage).
+  const stages = await prisma.tournamentStage.findMany({
+    where: { tournamentId: id },
+    include: { matches: { select: { round: true } } },
+  })
+  const stageById = new Map(stages.map((s) => [s.id, s]))
+  const rFor = (stageId: string): number => {
+    const s = stageById.get(stageId)
+    if (!s || s.format !== 'DOUBLE_ELIMINATION') return 0
+    return (Math.max(0, ...s.matches.map((m) => m.round)) + 1) / 3
+  }
+  // Double-elimination: a withdrawn player is OUT of the stage entirely.
+  for (const s of stages) {
+    if (s.format === 'DOUBLE_ELIMINATION') await markEliminated(s.id, userId)
+  }
+
   // Auto-advance: resolve every open match slot the withdrawn player occupies.
   const open = await prisma.match.findMany({
     where: {
@@ -60,6 +87,7 @@ export async function POST(req: Request, { params }: Ctx) {
   })
   const advanced: string[] = []
   for (const m of open) {
+    const stage = stageById.get(m.stageId)
     const isP1 = m.player1Id === userId
     const opponent = isP1 ? m.player2Id : m.player1Id
     const opponentWithdrawn = opponent
@@ -73,7 +101,30 @@ export async function POST(req: Request, { params }: Ctx) {
         where: { id: m.id },
         data: { winnerId: opponent, status: 'COMPLETED', [isP1 ? 'player1Id' : 'player2Id']: opponent },
       })
-      await propagateWinner(id, m.round, m.bracketOrder, opponent)
+      if (stage?.format === 'SWISS') {
+        // The opponent wins on the standings; the withdrawn player takes the loss + opponent
+        // history, so their record reflects the matches they missed.
+        await recordSwissResult(m.stageId, opponent, userId)
+      } else if (stage?.format === 'DOUBLE_ELIMINATION') {
+        // Opponent advances per the bracket mapping; the withdrawn player's own loser-drop is
+        // skipped (they are eliminated, not dropped). The stuck-bye rule then resolves any LB
+        // match left unplayable by the missing drop-in.
+        const wp = winnerPropagation(m, 2 ** rFor(m.stageId))
+        if (wp.type === 'slot') {
+          await prisma.match.updateMany({
+            where: { stageId: m.stageId, round: wp.target.round, bracketOrder: wp.target.bracketOrder },
+            data: { [wp.target.slot]: opponent },
+          })
+        } else if (wp.type === 'grand-final') {
+          await prisma.match.updateMany({
+            where: { stageId: m.stageId, round: Math.max(0, ...((stage?.matches.map((x) => x.round)) ?? [0])), bracketOrder: 0 },
+            data: { [wp.slot]: opponent },
+          })
+        }
+        await resolveStuckByes(m.stageId, 2 ** rFor(m.stageId))
+      } else {
+        await propagateWinner(m.stageId, m.round, m.bracketOrder, opponent)
+      }
       advanced.push(m.id)
     } else {
       // No live opponent (bye-slot or withdrawn opponent): clear the dead slot, no winner.
