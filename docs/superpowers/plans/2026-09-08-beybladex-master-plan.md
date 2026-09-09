@@ -2478,6 +2478,28 @@ This makes every container start — first deploy and every Watchtower restart a
 
 ---
 
+# Phase 12: Club Chat — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+
+**Status: planned, not started.** Same standing note as Phases 7–11: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
+
+**Scope:** a lightweight comment/chat stream per `Club`, capped at 50 messages — older messages are deleted, not archived, per the user's explicit sizing (this is a casual live-chat feature, not a permanent record; no export/erasure-matrix entry is needed for message BODIES beyond the standing account-deletion severance rule below, since nothing survives past 50 messages anyway).
+
+**1. Model, additive.** `ClubMessage`: `id`, `clubId` (FK to `Club`, `onDelete: Cascade` — messages die with the club), `authorId` (plain `String`, NOT a FK — same reasoning as `AuditLog`'s `actorId`/`targetId` in Phase 4: a message must survive the author's account being erased under Art. 17, showing an anonymized "gelöschte-nutzer"-equivalent attribution rather than breaking; register this in `lib/accountErasure.ts` as "sever the FK-equivalent, keep the row" — do NOT cascade-delete a user's messages on account deletion, since that would let a user retroactively erase chat history other members already read), `body String` (length-capped like every other free-text field — reuse the bio-convention cap; consider whether Phase 8's Markdown applies here too, see note below), `createdAt`.
+
+**2. The 50-message cap, binding mechanism decision.** Unlike Phase 3's notification retention (time-based, needs a periodic external-cron-triggered cleanup per the no-scheduler-infra constraint) or Phase 5 Part D's meta recompute (dirty-set + periodic trigger), this cap is **count-based and small enough to enforce synchronously, in the same transaction as every insert** — no periodic job needed at all. `POST /api/clubs/[slug]/messages`: insert the new message, then in the SAME transaction delete any messages for that club beyond the 50 most recent (`ORDER BY createdAt DESC OFFSET 50`, or equivalently keep the 50 highest `id`/`createdAt` and delete the rest) — simpler and more reliable than an external-cron path, and correctness doesn't depend on any scheduler ever actually being wired up on the deploy server (a real, repeatedly-hit gap in this project — see Phase 3's notification cleanup and Phase 5 Part D's meta recompute, both of which are correct in design but silently do nothing until an operator manually sets up the external trigger neither of those phases could set up themselves).
+
+**3. Authz.** Standing negative-authz-test rule: only current `ClubMember`s (any role) may read or post; a non-member gets 403 reading messages and posting, 404 for a nonexistent/mistyped club slug (existence-leak policy, matching every other club route). Club admins (`ClubMember.isAdmin`) or the club owner may delete any message (moderation — reuse the `Rating` moderation pattern from Phase 5 Part A: an admin-initiated delete writes an `AuditLog` row via Phase 4's model; a self-delete of your own message does not). Rate-limited per user per club via `lib/rateLimit.ts` (standing abuse-prone-endpoint rule) — a sensible small window (e.g. 10 messages/minute) to prevent flooding a 50-message buffer into uselessness.
+
+**4. Real-time delivery.** Reuse the existing notification SSE architecture (`lib/notify.ts`'s per-user Redis pub/sub channel pattern, `redisSubscriber` never `redis` for the subscribe side — standing Global Constraints rule) rather than inventing a second real-time mechanism: a per-club channel (`club-chat:{clubId}`), an SSE route at `app/api/clubs/[slug]/messages/stream/route.ts` mirroring `app/api/notifications/stream/route.ts`'s shape (session check, 25s heartbeat, bounded `?since=` backfill on connect — here bounded by the 50-message cap itself, so backfill is simply "send the current up-to-50 messages," not a timestamp-bounded query).
+
+**5. UI.** A `components/clubs/ClubChat.tsx` client component on `app/clubs/[slug]/page.tsx` (the existing club page from Phase 4) — message list (oldest to newest, auto-scrolling to newest on new-message events) plus a send box, using `components/ui/*` primitives per the standing rule. **Open question, decide at implementation time**: whether message bodies go through Phase 8's Markdown renderer (`MarkdownContent`) once that phase exists, or stay plain text permanently — a chat feature arguably wants at least links/emphasis, but also wants to feel fast/lightweight; if Phase 8 hasn't shipped yet when this phase starts, ship plain text now and revisit rather than blocking Phase 12 on Phase 8.
+
+**Tests:** `tests/integration/club-chat-flow.test.ts` (post as a member succeeds, non-member gets 403, posting a 51st message leaves exactly 50 rows and the oldest is gone — this is the acceptance-critical proof of item 2, not just a unit check on the delete query), `tests/integration/club-chat-moderation.test.ts` (admin/owner can delete any message and it writes an `AuditLog` row; a regular member cannot delete another member's message), `tests/integration/club-chat-authz.test.ts` (401/403/404 negatives per the standing rule).
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
 ## Cross-Phase Regression Guard
 
 Every phase's TDD sub-plan must re-run, not just skip:
