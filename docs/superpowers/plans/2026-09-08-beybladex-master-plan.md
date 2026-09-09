@@ -2368,28 +2368,37 @@ This makes every container start — first deploy and every Watchtower restart a
 
 ---
 
-## MVP2 Roadmap — all currently open, non-implemented phases
+## Release Grouping: MVP1, MVP2, MVP3
 
-**Status: planned, not started, as a whole.** Added 2026-09-10 after a research pass into the real Beyblade X tournament ecosystem (WBO's ranked-season/judge-certification model, Challonge's feature set, the community meta-tracking site beywatch.gg) cross-checked against this codebase. Every phase below (7 through 17) is "MVP2" — the next real release after the live Phase 6 deployment — grouped here as one list so the whole scope is visible in one place; each phase keeps its own full file/interface/acceptance-criteria detail in its own section further down, unchanged. **Do not start any of these without the user explicitly picking one** — same standing rule each phase's own "planned, not started" note already carries.
+**Status: planned, not started, for everything in this section.** Added 2026-09-10, revised same day after user feedback on the grouping itself. Phases 1–6 are the already-live initial release (deployed to `beybladex.de`, see the Phase 6 section). Everything found and requested since — via real usage of that live site — splits into two waves:
 
-Rough priority order (not binding — the user picks the actual sequence when ready to start):
+- **MVP1 (Phases 7–13)**: closing out gaps and rough edges in the release that's already live — things the original spec/Phase 1–6 build should arguably already have, found by the user actually using the site (a 404 on a promised route, a form asking for data it could look up itself, a page with no way to create the thing it's meant to browse, a schema field with no UI ever reaching it). None of these change the platform's competitive positioning — they round out what's already there.
+- **MVP2 (Phases 14–17)**: the new strategic/competitive-identity capabilities that came out of the 2026-09-10 research pass into the real Beyblade X tournament ecosystem (WBO's ranked-season model, Challonge's feature set, the community meta-tracking site beywatch.gg) — a ranked ladder, rating-based seeding, dual-spin rules accuracy, and real visual branding. These are genuinely new product surface, not gap-closing, which is why they're a separate wave rather than folded into MVP1.
+- **MVP3 (not yet scoped)**: 3-vs-3 team competition, described below as a placeholder only.
 
-1. **Phase 14 — Ranked Ladder & Elo Rating System** *(new this pass)* — the single biggest identity/competitive gap found by the research: neither a cross-tournament player ranking nor any rating model exists today. This is the platform's answer to WBO's ranked leaderboard and to Challonge's paid "Seed by Rating" tier — free, DACH-specific, tied to real judge-confirmed matches rather than crowd-sourced self-reports.
-2. **Phase 15 — Rating-Based Seeding** *(new this pass)* — depends on Phase 14; closes the "manual/shuffle/rating seeding" gap versus Challonge (`lib/bracket.ts` currently only sorts by `userId`).
-3. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — real gaps found by using the live site; several items here are cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
-4. **Phase 9 — Location Autofill** — quality-of-life for organizers creating events; Phase 10 item 1's region dropdown depends on this phase's canonical region list (or vice versa — whichever ships first defines it).
-5. **Phase 8 — Markdown Authoring** — unblocks Phase 10 item 3's rules-page depth and Phase 12's chat.
-6. **Phase 16 — Dual-Spin Part Mode Support** *(new this pass)* — a rules-accuracy gap: current-generation Beyblade X CX-series parts include dual-spin layers whose mode must be locked at deck-check per the actual WBO rulebook; today's `Part.spinDirection` is a fixed value with no per-match mode selection at all.
-7. **Phase 11 — Official Beyblade Sets, Part Images & Collection-Linked Availability** — closes a genuinely bigger-than-expected gap: there is currently no UI to create a `Build` at all.
-8. **Phase 7 — QR-Workflows & Zahlungsverfolgung** — closes the remaining Challonge-parity gap (entry-fee/payment tracking), plus event/arena check-in QR flows.
-9. **Phase 12 — Club Chat** and **Phase 13 — Club Profile Fields & Join Policies** — social depth for the existing Club feature.
-10. **Phase 17 — Visual Identity / Branding** *(new this pass)* — the platform's current PWA icons are unstyled placeholders (1–4 KB generic files); a real, distinctive mark is what makes BeybladeX.de recognizable next to WBO's forum and Challonge's generic bracket pages rather than blending in as "another Beyblade tool."
+Each phase below keeps its own full file/interface/acceptance-criteria detail in its own section further down, unchanged by this grouping — this section only sequences and labels them. **Do not start any phase without the user explicitly picking one** — same standing rule each phase's own "planned, not started" note already carries.
 
-**Explicitly out of MVP2**: 3-vs-3 team competition (WBO's "Masters League" format) — see MVP3 below; it needs a new roster/team concept this codebase doesn't have yet and is a bigger structural change than anything else in this list.
+### MVP1 — closing out the initial release (rough priority, not binding)
+
+1. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — real gaps found by using the live site; several items here are cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
+2. **Phase 9 — Location Autofill** — quality-of-life for organizers creating events; Phase 10 item 1's region dropdown depends on this phase's canonical region list (or vice versa — whichever ships first defines it).
+3. **Phase 8 — Markdown Authoring** — unblocks Phase 10 item 3's rules-page depth and Phase 12's chat.
+4. **Phase 11 — Official Beyblade Sets, Part Images & Collection-Linked Availability** — closes a genuinely bigger-than-expected gap: there is currently no UI to create a `Build` at all, a core piece of the original spec's deck-builder promise.
+5. **Phase 7 — QR-Workflows & Zahlungsverfolgung** — completes the entry-fee/payment tracking the schema (`Tournament.entryFeeCent`) has carried since Phase 1 with no UI ever reaching it, plus event/arena check-in QR flows.
+6. **Phase 12 — Club Chat** and **Phase 13 — Club Profile Fields & Join Policies** — social depth for the existing Club feature.
+
+### MVP2 — competitive identity & ranking (rough priority, not binding)
+
+1. **Phase 14 — Ranked Ladder & Elo Rating System** — the single biggest identity/competitive gap found by the research: neither a cross-tournament player ranking nor any rating model exists today. This is the platform's answer to WBO's ranked leaderboard and to Challonge's paid "Seed by Rating" tier — free, DACH-specific, tied to real judge-confirmed matches rather than crowd-sourced self-reports.
+2. **Phase 15 — Rating-Based Seeding** — depends on Phase 14; closes the "manual/shuffle/rating seeding" gap versus Challonge (`lib/bracket.ts` currently only sorts by `userId`).
+3. **Phase 16 — Dual-Spin Part Mode Support** — a rules-accuracy gap: current-generation Beyblade X CX-series parts include dual-spin layers whose mode must be locked at deck-check per the actual WBO rulebook; today's `Part.spinDirection` is a fixed value with no per-match mode selection at all.
+4. **Phase 17 — Visual Identity / Branding** — the platform's current PWA icons are unstyled placeholders (1–4 KB generic files); a real, distinctive mark is what makes BeybladeX.de recognizable next to WBO's forum and Challonge's generic bracket pages rather than blending in as "another Beyblade tool."
+
+**Explicitly out of MVP1 and MVP2**: 3-vs-3 team competition (WBO's "Masters League" format) — see MVP3 below; it needs a new roster/team concept this codebase doesn't have yet and is a bigger structural change than anything else in either list.
 
 ## MVP3 (future, not detailed) — 3-vs-3 Team Format
 
-**Status: not scoped, not started.** Recorded as a placeholder for the next round after MVP2 ships, per explicit user request — do not expand this into a full phase plan until MVP2 is substantially done and the user asks for it.
+**Status: not scoped, not started.** Recorded as a placeholder for the round after MVP1 and MVP2 ship, per explicit user request — do not expand this into a full phase plan until both are substantially done and the user asks for it.
 
 **Trigger**: WBO's "Masters League" (launching Summer 2026) runs 3-vs-3 team events with registered competitors, using the same base rulebook — a real, currently-missing tournament shape (today's `Deck` model is one 3-build deck per *player*, not a roster of players competing as a unit).
 
@@ -2403,7 +2412,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 7: QR-Workflows & Zahlungsverfolgung — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 7: QR-Workflows & Zahlungsverfolgung — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Recorded here so the requirement isn't lost, but deliberately not dispatched to an implementation track yet — do not begin this phase until the user explicitly asks for it (unlike every other phase in this document, which was worked through sequentially as the default flow). If you are an executor reading this section to start work, confirm with the user first; this status line exists specifically to prevent that assumption.
 
@@ -2425,7 +2434,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 8: Markdown Authoring — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 8: Markdown Authoring — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Same standing note as Phase 7: recorded here so the requirement isn't lost, but not to be picked up by an executor without the user explicitly asking. Confirm before starting.
 
@@ -2453,7 +2462,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 9: Location Autofill — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 9: Location Autofill — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Same standing note as Phase 7/8: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2473,7 +2482,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 10: Profile/Tournament/Rules Depth & Missing UI Surfaces — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 10: Profile/Tournament/Rules Depth & Missing UI Surfaces — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Same standing note as Phases 7–9: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting. This phase is a grab-bag of real gaps found by the user actually using the live site (https://beybladex.de) post-Phase-6 — each item below was verified against the current code, not assumed.
 
@@ -2497,7 +2506,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 11: Official Beyblade Sets, Part Images & Collection-Linked Availability — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 11: Official Beyblade Sets, Part Images & Collection-Linked Availability — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Same standing note as Phases 7–10: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2521,7 +2530,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 12: Club Chat — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 12: Club Chat — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Same standing note as Phases 7–11: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2543,7 +2552,7 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 13: Club Profile Fields & Join Policies — added post-Phase-6 by explicit user request, NOT YET SCHEDULED
+# Phase 13: Club Profile Fields & Join Policies — added post-Phase-6 by explicit user request, MVP1, NOT YET SCHEDULED
 
 **Status: planned, not started.** Same standing note as Phases 7–12: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
