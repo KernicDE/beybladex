@@ -57,7 +57,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 }, // 30 days; see Task 6 for tokenVersion revocation
   cookies: {
     sessionToken: {
-      options: { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production' },
+      // `secure` must track whether the app is actually served over HTTPS, not NODE_ENV: `next
+      // start` sets NODE_ENV=production unconditionally, including for a plain-HTTP production
+      // BUILD run locally or in CI (e.g. playwright.offline.config.ts's `next start -p 3100`,
+      // used because dev-mode hydration can't survive a simulated-offline reload — see that
+      // file's header). A `Secure` cookie is never sent by the browser over plain HTTP, so
+      // login there would silently "succeed" (redirect happens) while the session cookie never
+      // actually attaches to the next request — every subsequent page renders logged out. The
+      // real production deployment's NEXTAUTH_URL is always `https://beybladex.de` (compose.yml),
+      // so keying off it gives the identical `secure: true` behavior in actual production while
+      // correctly relaxing it for any plain-HTTP run (dev, this offline E2E config, etc.).
+      options: { httpOnly: true, sameSite: 'strict', secure: process.env.NEXTAUTH_URL?.startsWith('https://') ?? false },
     },
   },
   providers: [
