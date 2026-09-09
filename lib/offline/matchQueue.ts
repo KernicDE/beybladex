@@ -265,6 +265,23 @@ export function flushQueue(deps: { store?: QueueStore; post?: PostFn; now?: () =
   activeFlush = doFlush(store, post, now()).finally(() => {
     activeFlush = null
   })
+  // AUTO-RETRY, previously missing: the queue is otherwise purely event-driven (online/SW-sync/
+  // page-load/visibilitychange) with NO periodic re-check, so a backed-off item (markRetry's
+  // nextAttemptAt) only gets retried if ANOTHER trigger happens to fire after that window
+  // elapses — and if none does (e.g. a judge reconnects but doesn't touch the tab again), it
+  // stays queued indefinitely despite the device being online. Proven from a real CI trace: the
+  // `online` event fired, flushQueue() ran, but the just-failed entry's backoff hadn't elapsed
+  // yet, so listDue() correctly found nothing due — and with no further trigger, ZERO retry
+  // requests were ever made afterward, even though a 15s window passed and the item's backoff
+  // was only ~1-2s. Self-chain a short recheck whenever this pass left something backed off: a
+  // no-op (single cheap IndexedDB read via listDue) if still not due, a real retry once it is.
+  // Guarded by `navigator.onLine` so this doesn't spin while genuinely offline (harmless either
+  // way — listDue/single-flight already bound the actual cost — but pointless there).
+  void activeFlush.then((summary) => {
+    if (summary.retried > 0 && (typeof navigator === 'undefined' || navigator.onLine)) {
+      setTimeout(() => void flushQueue(deps), BACKOFF_BASE_MS)
+    }
+  })
   return activeFlush
 }
 
