@@ -31,7 +31,7 @@ export type ConsoleStage = {
   id: string
   order: number
   name: string
-  format: 'SINGLE_ELIMINATION' | 'DOUBLE_ELIMINATION' | 'SWISS'
+  format: 'SINGLE_ELIMINATION' | 'DOUBLE_ELIMINATION' | 'SWISS' | 'ROUND_ROBIN'
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED'
   swissRounds: number | null
   swissRoundsDone: number
@@ -45,6 +45,7 @@ const FORMAT_LABEL: Record<ConsoleStage['format'], string> = {
   SINGLE_ELIMINATION: 'Single Elimination',
   DOUBLE_ELIMINATION: 'Double Elimination',
   SWISS: 'Swiss',
+  ROUND_ROBIN: 'Round Robin',
 }
 
 export function OrganizerConsole({
@@ -67,6 +68,7 @@ export function OrganizerConsole({
   const [stageName, setStageName] = useState('')
   const [stageFormat, setStageFormat] = useState<ConsoleStage['format']>('SINGLE_ELIMINATION')
   const [stageSwissRounds, setStageSwissRounds] = useState(3)
+  const [stageRoundRobinRepeats, setStageRoundRobinRepeats] = useState(1)
   const [stageQualifyCount, setStageQualifyCount] = useState('')
 
   const base = `/api/tournaments/${tournamentId}`
@@ -104,6 +106,7 @@ export function OrganizerConsole({
             name: stageName,
             format: stageFormat,
             ...(stageFormat === 'SWISS' ? { swissRounds: stageSwissRounds } : {}),
+            ...(stageFormat === 'ROUND_ROBIN' ? { roundRobinRepeats: stageRoundRobinRepeats } : {}),
             ...(stageQualifyCount !== '' ? { qualifyCount: Number(stageQualifyCount) } : {}),
           }),
         }),
@@ -137,6 +140,7 @@ export function OrganizerConsole({
                 <option value="SINGLE_ELIMINATION">Single Elimination</option>
                 <option value="DOUBLE_ELIMINATION">Double Elimination</option>
                 <option value="SWISS">Swiss</option>
+                <option value="ROUND_ROBIN">Round Robin</option>
               </Select>
             </label>
             {stageFormat === 'SWISS' && (
@@ -148,6 +152,19 @@ export function OrganizerConsole({
                   max={12}
                   value={stageSwissRounds}
                   onChange={(e) => setStageSwissRounds(Number(e.target.value))}
+                  className="mt-1 block w-20 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
+                />
+              </label>
+            )}
+            {stageFormat === 'ROUND_ROBIN' && (
+              <label className="text-xs text-current/60">
+                Wiederholungen
+                <input
+                  type="number"
+                  min={1}
+                  max={3}
+                  value={stageRoundRobinRepeats}
+                  onChange={(e) => setStageRoundRobinRepeats(Number(e.target.value))}
                   className="mt-1 block w-20 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
                 />
               </label>
@@ -203,7 +220,9 @@ export function OrganizerConsole({
                   disabled={busy || checkedIn.length < minPlayers}
                   onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }), 'ok')}
                 >
-                  Bracket generieren
+                  {/* Distinct copy per format (plan convention): Round Robin generates the whole
+                      fixture list in one shot — "Spielplan", not "Bracket". */}
+                  {stage.format === 'ROUND_ROBIN' ? 'Spielplan erstellen' : 'Bracket generieren'}
                 </Button>
                 {checkedIn.length < minPlayers && (
                   <p className="text-xs text-current/50">Mindestens {minPlayers} eingecheckte Teilnehmer nötig.</p>
@@ -237,7 +256,7 @@ export function OrganizerConsole({
               </Button>
             )}
 
-            {stage.format === 'SWISS' && stage.standings.length > 0 && (
+            {(stage.format === 'SWISS' || stage.format === 'ROUND_ROBIN') && stage.standings.length > 0 && (
               <table className="w-full text-sm">
                 <caption className="sr-only">Tabelle {stage.name}</caption>
                 <thead>

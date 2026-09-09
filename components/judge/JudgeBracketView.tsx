@@ -2,7 +2,9 @@
 // Phase 5 Part C — bracket rendering for everyone (players, judges, spectators); Phase 5 Part C2
 // — format-aware render path. Elimination formats (single/double) keep the round-column view;
 // a SWISS stage renders as a STANDINGS TABLE + current-round pairings list — a bracket graph
-// makes no sense for Swiss (plan decision, not an oversight).
+// makes no sense for Swiss (plan decision, not an oversight). Phase 5 Part C3: ROUND_ROBIN reuses
+// that exact Swiss render branch (standings-ranked formats, rounds grouped by the swissRound
+// display field — Round Robin populates it at generation for exactly this purpose).
 // Mobile-first per [REVIEW-FIX: frontend-pwa I5]: on small screens the CURRENT round renders
 // expanded and fully, earlier/later rounds collapse into <details> sections below it — not a
 // full bracket graph squeezed into phone width. On sm+ screens all rounds render as columns.
@@ -23,7 +25,7 @@ export type BracketPlayer = { id: string; name: string }
 
 export type SwissStandingRow = { userId: string; name: string; wins: number; losses: number; buchholz: number }
 
-export type BracketFormat = 'SINGLE_ELIMINATION' | 'DOUBLE_ELIMINATION' | 'SWISS'
+export type BracketFormat = 'SINGLE_ELIMINATION' | 'DOUBLE_ELIMINATION' | 'SWISS' | 'ROUND_ROBIN'
 
 // Elimination round label. `wbRounds` is the winners-bracket round count R: for double-elimination
 // rounds R+1..3R−2 are losers-bracket rounds and 3R−1 is the grand final. For single-elimination
@@ -140,7 +142,7 @@ export function JudgeBracketView({
   wbRounds?: number
   standings?: SwissStandingRow[]
 }) {
-  if (format === 'SWISS') {
+  if (format === 'SWISS' || format === 'ROUND_ROBIN') {
     if (matches.length === 0 && standings.length === 0) return null
     return <SwissView matches={matches} players={players} standings={standings} />
   }

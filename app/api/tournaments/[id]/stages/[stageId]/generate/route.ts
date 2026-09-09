@@ -14,6 +14,11 @@
 //     current round isn't fully COMPLETED yet, and 409 (swiss_complete) once swissRoundsDone ==
 //     swissRounds. Byes are persisted as COMPLETED matches (player2Id null, winnerId = recipient)
 //     and an automatic standing win, so pairing/scoring/completion stay uniform.
+//   ROUND_ROBIN (Phase 5 Part C3) → lib/roundRobin.ts's full fixture list in ONE shot (circle
+//     method; swissRound reused for display grouping, it gates nothing here). Refuses 409
+//     (bracket_exists) on a second call — there is no "next round" to pair. Odd-count byes are a
+//     scheduling artifact: NO match row is created for the byed player (unlike Swiss, this is not
+//     a standing event).
 //
 // PARTICIPANT POOL: stage order === 1 reads all checked-in, non-withdrawn TournamentParticipants
 // (Phase 5 Part C behavior); any later stage reads the previous stage's qualifiedUserIds, which
@@ -23,6 +28,7 @@ import { prisma } from '@/lib/db'
 import { generateSingleEliminationBracket } from '@/lib/bracket'
 import { generateDoubleEliminationBracket } from '@/lib/doubleElimination'
 import { pairSwissRound, computeBuchholz, type SwissPlayer } from '@/lib/swiss'
+import { generateRoundRobinPairings } from '@/lib/roundRobin'
 import type { Prisma } from '@prisma/client'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
@@ -63,6 +69,36 @@ export async function POST(_req: Request, { params }: Ctx) {
   if (stage.format !== 'SWISS') {
     const existing = await prisma.match.count({ where: { stageId } })
     if (existing > 0) return Response.json({ error: 'bracket_exists' }, { status: 409 })
+
+    // ROUND_ROBIN — one-shot fixture list (Phase 5 Part C3): the whole circle-method schedule is
+    // persisted at once; a second generate is the bracket_exists 409 above.
+    if (stage.format === 'ROUND_ROBIN') {
+      if (pool.length < 2) {
+        return Response.json({ error: 'not_enough_participants', checkedIn: pool.length }, { status: 422 })
+      }
+      const repeats = stage.roundRobinRepeats ?? 1
+      const pairings = generateRoundRobinPairings(pool.map((userId) => ({ userId })), repeats)
+      const perRoundCount = new Map<number, number>()
+      const rows: Prisma.MatchCreateManyInput[] = pairings.map((p) => {
+        const orderInRound = perRoundCount.get(p.round) ?? 0
+        perRoundCount.set(p.round, orderInRound + 1)
+        return {
+          tournamentId: id,
+          stageId,
+          round: p.round,
+          swissRound: p.round, // display grouping only (the SwissView render branch reads it)
+          bracketOrder: orderInRound,
+          player1Id: p.player1Id,
+          player2Id: p.player2Id,
+          status: 'PENDING',
+        }
+      })
+      await prisma.match.createMany({ data: rows })
+      await prisma.stageStanding.createMany({ data: pool.map((userId) => ({ stageId, userId })) })
+      await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
+      return Response.json({ created: rows.length }, { status: 201 })
+    }
+
     if (stage.format === 'SINGLE_ELIMINATION' && pool.length < 2) {
       return Response.json({ error: 'not_enough_participants', checkedIn: pool.length }, { status: 422 })
     }

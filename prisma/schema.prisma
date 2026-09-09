@@ -89,6 +89,7 @@ enum TournamentFormat {
   SINGLE_ELIMINATION
   DOUBLE_ELIMINATION
   SWISS
+  ROUND_ROBIN // Phase 5 Part C3: every participant meets every other participant (1–3×)
 }
 
 enum StageStatus {
@@ -315,6 +316,9 @@ model TournamentStage {
   status          StageStatus       @default(PENDING)
   swissRounds     Int?              // SWISS only: total planned rounds, set at stage creation
   swissRoundsDone Int               @default(0)
+  // Phase 5 Part C3 — ROUND_ROBIN only: how many times each pair meets (1, 2, or 3; null/omitted
+  // defaults to 1 at the route layer, no DB default so the organizer's actual choice is recorded).
+  roundRobinRepeats Int?
   qualifyCount    Int?              // how many top participants advance to the NEXT stage; null on the last stage
   // Populated by the stage-complete route: the previous stage's top `qualifyCount` userIds, read
   // by the generate route as this stage's participant pool (NOT a new join model, per plan).
