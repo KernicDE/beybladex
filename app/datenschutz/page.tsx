@@ -62,6 +62,18 @@ export default function DatenschutzPage() {
           nach Art. 28 DSGVO; dokumentieren, dass Kartenkacheln serverseitig über einen eigenen
           Proxy bezogen werden und der Browser keine Daten an Dritte sendet.]
         </p>
+        {/* Phase 5 Part B [REVIEW-FIX: privacy-dsgvo #6]: the currency conversion fetches the
+            ECB euro reference rates server-side, only on cache miss. The request originates
+            from our server, carries no user-identifying data, and responses are cached in
+            our own Redis for 12 hours — so no user data leaves our infrastructure and no
+            third party receives anything attributable to a user. */}
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Währungsumrechnung in der Sammlungsverwaltung: Zur Anzeige umgerechneter Preishinweise
+          ruft unser Server die amtlichen Euro-Referenzkurse der Europäischen Zentralbank
+          (www.ecb.europa.eu) serverseitig ab — etwa alle 12 Stunden, bei Cache-Treffern gar
+          nicht. Diese Anfrage enthält keine personenbezogenen Daten; es findet keine
+          Übermittlung von Nutzerdaten an die EZB oder Dritte statt.
+        </p>
       </section>
 
       <section aria-labelledby="ds-storage" className="space-y-2">

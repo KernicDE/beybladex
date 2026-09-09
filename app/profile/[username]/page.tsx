@@ -67,7 +67,13 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
           </div>
         )}
       </dl>
-      {view.collectionVisible && <p>Sammlung ist sichtbar.</p>}
+      {view.collectionVisible && (
+        <p>
+          <Link href={`/collection/${subject.username}`} className="underline underline-offset-2">
+            Sammlung ansehen
+          </Link>
+        </p>
+      )}
       {view.decksVisible && <p>Decks sind sichtbar.</p>}
       {isOwner && (
         <p>

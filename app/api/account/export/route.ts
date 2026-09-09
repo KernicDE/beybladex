@@ -14,7 +14,7 @@ export async function GET() {
   const [user, collection, decks, ratings, partRequests, friendships, clubMemberships, tournamentParticipations] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
-      prisma.collectionItem.findMany({ where: { userId } }),
+      prisma.collectionItem.findMany({ where: { userId }, include: { pricePoints: true } }),
       prisma.deck.findMany({ where: { userId }, include: { builds: true } }),
       prisma.rating.findMany({ where: { userId } }),
       prisma.partRequest.findMany({ where: { requestedById: userId } }),

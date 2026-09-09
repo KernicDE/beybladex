@@ -378,7 +378,25 @@ model CollectionItem {
   merchant      String?
   boughtAt      DateTime?
 
+  pricePoints   PricePoint[]
+
   @@index([partOrBeyId])
+}
+
+// PricePoint (Phase 5 Part B, [REVIEW-FIX: ux-product §3d, spec §5 Phase 5 "Preisverlauf"]) —
+// additional price observations for an owned CollectionItem over time (insurance/resale
+// tracking). Cascade: dies with its CollectionItem at the DB level; the account-erasure matrix
+// ALSO deletes it explicitly before the parent, self-documenting per the Cross-Phase
+// Regression Guard's standing erasure rule.
+model PricePoint {
+  id               String         @id @default(uuid())
+  collectionItemId String
+  collectionItem   CollectionItem @relation(fields: [collectionItemId], references: [id], onDelete: Cascade)
+  price            Float
+  currency         String         @default("EUR")
+  recordedAt       DateTime       @default(now())
+
+  @@index([collectionItemId, recordedAt])
 }
 
 // Rating (Phase 5 Part A fix, [REVIEW-FIX: backend-security #1 "Rating has no userId"]) —
