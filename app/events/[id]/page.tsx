@@ -134,6 +134,12 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         />
       )}
 
+      <p className="text-sm">
+        <Link href={`/tournaments/${tournament.id}`} className="text-x-cyan-text hover:underline">
+          Turnierbaum & Judge-Bereich →
+        </Link>
+      </p>
+
       <section aria-labelledby="participants-heading" className="space-y-3">
         <h2 id="participants-heading" className="text-lg font-semibold">
           Teilnehmer ({tournament.participants.length})
