@@ -4,7 +4,13 @@
 // tests/integration/tournament-join-flow.test.ts):
 // - POST: any authenticated user joins themselves; the optional body.deckId must belong to the
 //   joining user (403 otherwise). The @@unique([tournamentId, userId]) constraint turns a double
-//   join into a 409, proving the constraint is load-bearing.
+//   join into a 409, proving the constraint is load-bearing. REGISTRATION WINDOW (previously
+//   missing — this route had NO time gate at all, unlike PATCH/DELETE below): registration
+//   closes at the EARLIER of (a) Tournament.startDate, or (b) any stage's bracket/pairing
+//   already being generated for this tournament (Match rows exist) — once a bracket exists the
+//   participant pool is structurally fixed (arenas/seeding/pairings already computed), so a
+//   late joiner could never actually be scheduled into a match even before the event's stated
+//   start time.
 // - PATCH: only the participant themselves; edits their deckId up until Tournament.startDate
 //   (409 afterwards — editable-until-start decision from the master plan).
 // - DELETE: only the participant themselves; withdraws up until Tournament.startDate (409 after).
@@ -25,8 +31,15 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { id: true } })
+  const tournament = await prisma.tournament.findUnique({
+    where: { id },
+    select: { startDate: true, stages: { select: { _count: { select: { matches: true } } } } },
+  })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
+  const bracketGenerated = tournament.stages.some((s) => s._count.matches > 0)
+  if (new Date() > tournament.startDate || bracketGenerated) {
+    return Response.json({ error: 'registration_closed' }, { status: 409 })
+  }
 
   let body: unknown = {}
   try {

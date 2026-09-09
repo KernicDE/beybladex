@@ -132,6 +132,67 @@ describe('tournament join flow', () => {
     await prisma.user.deleteMany({ where: { id: { in: [organizer.id, player.id, player2.id, stranger.id] } } })
   })
 
+  it('registration closes at the earlier of startDate or an already-generated bracket', async () => {
+    const suffix = Date.now().toString(36)
+    const organizer = await prisma.user.create({ data: { username: `jf_org2_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const late = await prisma.user.create({ data: { username: `jf_late_${suffix}`, passwordHash: 'x' } })
+    const ruleset = await prisma.ruleset.create({ data: { title: `RS2 ${suffix}`, slug: `rs2-${suffix}`, createdById: organizer.id } })
+
+    // Case A: startDate already passed → 409, even with no bracket at all.
+    const started = await prisma.tournament.create({
+      data: {
+        title: `Started ${suffix}`,
+        description: '',
+        startDate: new Date(Date.now() - 3600_000),
+        locationName: 'Bey-Arena',
+        postalCode: '10115',
+        city: 'Berlin',
+        state: 'Berlin',
+        latitude: 52.52,
+        longitude: 13.405,
+        rulesetId: ruleset.id,
+        createdById: organizer.id,
+      },
+    })
+    mockAuth.mockResolvedValue(asSession({ id: late.id, name: late.username }))
+    const afterStart = await JOIN(req('POST', `http://localhost/api/tournaments/${started.id}/join`, {}), { params: Promise.resolve({ id: started.id }) })
+    expect(afterStart.status).toBe(409)
+    expect((await afterStart.json()).error).toBe('registration_closed')
+    expect(await prisma.tournamentParticipant.findUnique({ where: { tournamentId_userId: { tournamentId: started.id, userId: late.id } } })).toBeNull()
+
+    // Case B: startDate is still a week out, but a stage's bracket already has matches →
+    // registration must close anyway (the participant pool is already structurally fixed).
+    const upcoming = await prisma.tournament.create({
+      data: {
+        title: `Upcoming ${suffix}`,
+        description: '',
+        startDate: new Date(Date.now() + 7 * 86400_000),
+        locationName: 'Bey-Arena',
+        postalCode: '10115',
+        city: 'Berlin',
+        state: 'Berlin',
+        latitude: 52.52,
+        longitude: 13.405,
+        rulesetId: ruleset.id,
+        createdById: organizer.id,
+      },
+    })
+    const stage = await prisma.tournamentStage.create({
+      data: { tournamentId: upcoming.id, order: 1, name: 'Hauptbracket', format: 'SINGLE_ELIMINATION' },
+    })
+    const match = await prisma.match.create({ data: { tournamentId: upcoming.id, stageId: stage.id, round: 1, bracketOrder: 0 } })
+    const afterBracket = await JOIN(req('POST', `http://localhost/api/tournaments/${upcoming.id}/join`, {}), { params: Promise.resolve({ id: upcoming.id }) })
+    expect(afterBracket.status).toBe(409)
+    expect((await afterBracket.json()).error).toBe('registration_closed')
+
+    await prisma.match.delete({ where: { id: match.id } })
+    await prisma.tournamentStage.delete({ where: { id: stage.id } })
+    await prisma.tournament.delete({ where: { id: upcoming.id } })
+    await prisma.tournament.delete({ where: { id: started.id } })
+    await prisma.ruleset.delete({ where: { id: ruleset.id } })
+    await prisma.user.deleteMany({ where: { id: { in: [organizer.id, late.id] } } })
+  })
+
   it('unauthenticated join and check-in are 401', async () => {
     const suffix = Date.now().toString(36)
     const organizer = await prisma.user.create({ data: { username: `jf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
