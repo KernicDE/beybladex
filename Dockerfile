@@ -54,6 +54,16 @@ RUN npm prune --omit=dev
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# Defensive default for anyone running this image directly (`docker run`, no compose):
+# Next's standalone server.js binds to process.env.HOSTNAME, and Docker auto-injects
+# HOSTNAME=<container-id> for every container — left unset here, the server ends up bound
+# to the container's internal bridge IP instead of every interface, unreachable via
+# localhost/127.0.0.1 (found on the real first deploy: db/redis healthy, app's own /api/health
+# unreachable from inside its own container despite the server logging "Ready"). compose.yml's
+# `environment: HOSTNAME: "0.0.0.0"` is the actually-verified fix for the real deploy; this ENV
+# is a fallback for the plain-`docker run` case, since Docker's own HOSTNAME auto-injection can
+# still take precedence depending on the Docker version/mode.
+ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

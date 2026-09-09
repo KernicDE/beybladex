@@ -27,6 +27,15 @@ services:
       db:
         condition: service_healthy
     environment:
+      # Docker auto-injects HOSTNAME=<container-id> for every container. Next's standalone
+      # server.js reads process.env.HOSTNAME as its BIND address (not just a display string) —
+      # left at Docker's default, the server binds to the container's internal bridge IP
+      # instead of every interface, so `localhost`/127.0.0.1 (what the healthcheck below uses)
+      # can never reach it. Found on the actual first deploy: db/redis came up healthy, but
+      # `docker exec beybladex_app wget localhost:3000/...` got connection refused despite the
+      # app's own logs showing "Ready". Explicitly overriding HOSTNAME here is the documented
+      # fix for this well-known Next.js-standalone-in-Docker gotcha.
+      HOSTNAME: "0.0.0.0"
       DATABASE_URL: postgresql://beybladex_user:${DB_PASSWORD}@db:5432/beybladex_db
       REDIS_URL: redis://redis:6379
       NEXTAUTH_URL: https://beybladex.de
