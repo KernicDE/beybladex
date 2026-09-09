@@ -17,6 +17,7 @@ import { UserMenu } from '@/components/layout/UserMenu'
 const NAV_LINKS = [
   { href: '/events', label: 'Turniere & Events' },
   { href: '/decks', label: 'Decks' },
+  { href: '/builds', label: 'Builds' },
   { href: '/collection', label: 'Sammlung' },
   { href: '/clubs', label: 'Clubs' },
   { href: '/rules', label: 'Regeln' },

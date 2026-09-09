@@ -1,18 +1,23 @@
 // app/search/page.tsx
 // Typed-sections search page (Task 13 shell). The shared page and the SearchInput
 // entry point live here; the RESULT BACKENDS are phased — Phase 3 wired the Events
-// section, Phase 4 (this file's Nutzer section) the user search, Phase 5 the Teile section.
-// The Clubs section is wired by the parallel clubs/admin track — its EmptyState below is
-// that track's integration point; do not remove it here.
+// section, Phase 4 (this file's Nutzer section) the user search, Phase 5 Part A (this
+// file's Teile section) the parts-catalog search (server-side prefix + category filter,
+// a hard prerequisite for the deck builder's part-picker). The Clubs section is wired
+// by the parallel clubs/admin track — its EmptyState below is that track's integration
+// point; do not remove it here.
 import Link from 'next/link'
+import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { searchUsers } from '@/lib/userSearch'
+import { searchParts } from '@/lib/buildSearch'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { PartRequestCTA } from '@/components/beyblade/PartRequestCTA'
 
 const SECTIONS = [
   { id: 'events', title: 'Events' },
   { id: 'clubs', title: 'Clubs' },
-  { id: 'parts', title: 'Teile' },
 ] as const
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +29,7 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
   const session = await auth()
   const viewerId = session?.user?.id ?? null
   const userResults = query ? await searchUsers({ viewerId, q: query, cursor: typeof cursor === 'string' ? cursor : null }) : null
+  const partResults = query ? await searchParts({ q: query }) : null
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -74,6 +80,44 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
           <p className="text-sm text-current/60">
             Als Gast siehst du nur öffentliche Profile. Melde dich an, um Freunde zu finden.
           </p>
+        )}
+      </section>
+      <section aria-labelledby="search-parts" className="space-y-3">
+        <h2 id="search-parts" className="text-lg font-semibold">
+          Teile
+        </h2>
+        {!query ? (
+          <EmptyState
+            title="Gib einen Teilnamen ein"
+            description="Die Teilesuche durchsucht den Katalog nach Blades, Ratchets und Bits."
+          />
+        ) : partResults!.parts.length === 0 ? (
+          <EmptyState
+            title="Keine Teile gefunden"
+            description="Dieses Teil ist noch nicht im Katalog. Du kannst es unten anfragen."
+          />
+        ) : (
+          <ul className="divide-y rounded-xl border">
+            {partResults!.parts.map((part) => (
+              <li key={part.id}>
+                <Link href={`/builds?q=${encodeURIComponent(part.name)}`} className="flex items-center gap-3 px-4 py-3 hover:bg-current/5">
+                  {part.imageUrl ? (
+                    <Image src={part.imageUrl} alt="" width={40} height={40} sizes="40px" className="h-10 w-10 rounded object-contain" />
+                  ) : (
+                    <span aria-hidden="true" className="h-10 w-10 rounded bg-x-cyan/10" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{part.name}</span>
+                    <span className="block text-sm text-current/60">{part.category} · {part.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}</span>
+                  </span>
+                  {part.beyType && <TypeBadge type={part.beyType} />}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        {query && partResults!.parts.length === 0 && (
+          <PartRequestCTA defaultName={query} loggedIn={viewerId !== null} />
         )}
       </section>
       {SECTIONS.map(({ id, title }) => (

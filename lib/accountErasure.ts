@@ -12,10 +12,12 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } })
     await tx.clubMember.deleteMany({ where: { userId } })
     await tx.collectionItem.deleteMany({ where: { userId } })
-    // NOTE: no Rating cleanup here — Rating.userId does not exist yet at Phase 1 (spec §3's Rating
-    // is anonymous). Phase 5 Part A adds Rating.userId and, per the Cross-Phase Regression Guard's
-    // standing rule, MUST add `await tx.rating.deleteMany({ where: { userId } })` to this function
-    // as part of that phase's own delivery — do not add it here, it would not compile yet.
+    // Phase 5 Part A: ratings and part requests are personal and die with the account
+    // (Rating.userId arrived with this phase; the onDelete: Cascade is the backstop — the
+    // explicit deleteMany keeps the erasure matrix self-documenting, per the Cross-Phase
+    // Regression Guard's standing rule that a new User-owned model ships with its entry).
+    await tx.rating.deleteMany({ where: { userId } })
+    await tx.partRequest.deleteMany({ where: { requestedById: userId } })
     // Decks/builds a user made: delete the deck join rows and the deck itself (builds are shared
     // catalog-adjacent rows referenced by other decks/matches too — never delete Build itself here).
     const decks = await tx.deck.findMany({ where: { userId }, select: { id: true } })

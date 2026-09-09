@@ -53,6 +53,30 @@ enum AccountStatus {
   PENDING_PARENTAL_CONSENT
 }
 
+// Phase 5 Part A — parts catalog. BeyType above (Phase 1) is reused for Part.beyType.
+enum Manufacturer {
+  TT
+  HASBRO
+}
+
+enum PartCategory {
+  BLADE
+  RATCHET
+  BIT
+  ACCESSORY
+}
+
+enum SpinDirection {
+  RIGHT
+  LEFT
+}
+
+enum PartRequestStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
 model User {
   id                   String         @id @default(uuid())
   username             String         @unique
@@ -97,6 +121,8 @@ model User {
   ownedClubs           Club[]         @relation("ClubOwner")
   clubMemberships      ClubMember[]
   organizedTournaments Tournament[]   @relation("TournamentOrganizer")
+  ratings              Rating[]
+  partRequests         PartRequest[]
 
   // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
   isMinor                 Boolean        @default(true) // computed at registration from birthDate; safe-by-default
@@ -239,17 +265,64 @@ model TournamentParticipant {
   @@unique([tournamentId, userId])
 }
 
+// Part (Phase 5 Part A, [REVIEW-FIX: backend-security #5, performance P12]) — the curated parts
+// catalog. imageUrl points at a file under /public/parts/ (admin/TRUSTED-curated, a few hundred
+// files; no upload pipeline at this scale) and is always rendered via next/image with explicit
+// sizes/width/height.
+model Part {
+  id            String          @id @default(uuid())
+  name          String
+  manufacturer  Manufacturer
+  category      PartCategory
+  beyType       BeyType?
+  spinDirection SpinDirection
+  weightGrams   Float?
+  imageUrl      String?
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  buildsBlade   Build[]         @relation("BuildBlade")
+  buildsRatchet Build[]         @relation("BuildRatchet")
+  buildsBit     Build[]         @relation("BuildBit")
+  collectionItems CollectionItem[]
+
+  @@index([category, name])
+}
+
+// PartRequest (Phase 5 Part A) — "request missing part" flow: any logged-in user can ask for a
+// part the catalog doesn't have yet; it lands in an admin/TRUSTED queue.
+model PartRequest {
+  id                String            @id @default(uuid())
+  requestedById     String
+  requestedBy       User              @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  name              String
+  manufacturerGuess Manufacturer?
+  notes             String?
+  status            PartRequestStatus @default(PENDING)
+  createdAt         DateTime          @default(now())
+
+  @@index([status, createdAt])
+}
+
 model Build {
-  id          String  @id @default(uuid())
+  id          String   @id @default(uuid())
   bladeId     String
+  blade       Part     @relation("BuildBlade", fields: [bladeId], references: [id], onDelete: Restrict)
   ratchetId   String
+  ratchet     Part     @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
   bitId       String
-  type        BeyType @default(ATTACK)
+  bit         Part     @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
+  type        BeyType  @default(ATTACK)
 
   ratings     Rating[]
   deckBuilds  DeckBuild[]
   matchesP1   Match[]  @relation("Player1Build")
   matchesP2   Match[]  @relation("Player2Build")
+
+  @@index([bladeId])
+  @@index([ratchetId])
+  @@index([bitId])
 }
 
 model Deck {
@@ -268,7 +341,11 @@ model DeckBuild {
   build    Build  @relation(fields: [buildId], references: [id])
   position Int
 
-  @@id([deckId, buildId, position])
+  // [Phase 5 Part A, REVIEW-FIX: backend-security #1] position is the row's identity within a
+  // deck; the same build may appear at most ONCE per deck — the DB itself enforces it, so a
+  // racing/malicious client can't bypass application-level deck validation.
+  @@id([deckId, position])
+  @@unique([deckId, buildId])
 }
 
 model Match {
@@ -295,18 +372,32 @@ model CollectionItem {
   userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   partOrBeyId   String
+  part          Part      @relation(fields: [partOrBeyId], references: [id], onDelete: Restrict)
   purchasePrice Float?
   currency      String    @default("EUR")
   merchant      String?
   boughtAt      DateTime?
+
+  @@index([partOrBeyId])
 }
 
+// Rating (Phase 5 Part A fix, [REVIEW-FIX: backend-security #1 "Rating has no userId"]) —
+// one rating per user per build (@@unique([buildId, userId])), so edit/delete-your-own and
+// abuse attribution work at all. Cascade: a user's ratings die with their account (the erasure
+// matrix also deletes them explicitly — this is the backstop).
 model Rating {
-  id      String  @id @default(uuid())
-  buildId String
-  build   Build   @relation(fields: [buildId], references: [id])
-  stars   Int
-  comment String?
+  id        String   @id @default(uuid())
+  buildId   String
+  build     Build    @relation(fields: [buildId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stars     Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([buildId, userId])
+  @@index([buildId, createdAt])
 }
 
 // AuditLog (Phase 4, [REVIEW-FIX: privacy-dsgvo #8]) — append-only record of privileged

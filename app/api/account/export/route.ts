@@ -1,9 +1,8 @@
 // app/api/account/export/route.ts
 // GET, owner-only — GDPR Art. 20 data portability. Assembles one machine-readable JSON document
 // covering every User-owned category. Collection/Deck/Friendship/ClubMember/TournamentParticipant
-// models exist since Task 3 but have no feature UI yet (Phases 3–5) — users naturally return
-// empty arrays for those categories today; the queries are written against the real schema so
-// the export is forward-compatible with the later phases that start writing rows.
+// queries are written against the real schema; Phase 5 Part A added the userId-scoped Rating
+// and PartRequest queries below (both models became User-owned with that phase).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
@@ -12,11 +11,13 @@ export async function GET() {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
 
-  const [user, collection, decks, friendships, clubMemberships, tournamentParticipations] =
+  const [user, collection, decks, ratings, partRequests, friendships, clubMemberships, tournamentParticipations] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
       prisma.collectionItem.findMany({ where: { userId } }),
       prisma.deck.findMany({ where: { userId }, include: { builds: true } }),
+      prisma.rating.findMany({ where: { userId } }),
+      prisma.partRequest.findMany({ where: { requestedById: userId } }),
       prisma.friendship.findMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
       prisma.clubMember.findMany({ where: { userId }, include: { club: true } }),
       prisma.tournamentParticipant.findMany({ where: { userId }, include: { tournament: true } }),
@@ -46,10 +47,8 @@ export async function GET() {
     },
     collection,
     decks,
-    // NOTE: Rating has no userId yet at Phase 1 (spec §3's Rating is anonymous) — a user's own
-    // ratings become exportable when Phase 5 Part A adds Rating.userId; see lib/accountErasure.ts
-    // for the paired erasure-matrix entry. Empty until then, never another user's data.
-    ratings: [] as unknown[],
+    ratings,
+    partRequests,
     friendships,
     clubMemberships,
     notificationPreferences: {
