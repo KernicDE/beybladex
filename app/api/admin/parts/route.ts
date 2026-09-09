@@ -8,7 +8,9 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parsePartInput } from '@/lib/partValidation'
 
-async function requireCurator() {
+type CuratorGate = { error: Response } | { actorId: string }
+
+async function requireCurator(): Promise<CuratorGate> {
   const session = await auth()
   if (!session?.user?.id) return { error: Response.json({ error: 'unauthorized' }, { status: 401 }) }
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
@@ -26,7 +28,7 @@ async function readJson(req: Request): Promise<unknown | { error: Response }> {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const gate = await requireCurator()
   if ('error' in gate) return gate.error
   const { allowed } = await rateLimit(`parts:create:${gate.actorId}`, 60, 60 * 60)
@@ -53,7 +55,7 @@ export async function POST(req: Request) {
   return Response.json({ id: part.id }, { status: 201 })
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: Request): Promise<Response> {
   const gate = await requireCurator()
   if ('error' in gate) return gate.error
   const { allowed } = await rateLimit(`parts:update:${gate.actorId}`, 120, 60 * 60)
