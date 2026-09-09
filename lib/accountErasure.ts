@@ -11,6 +11,12 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     await tx.notification.deleteMany({ where: { userId } })
     await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } })
     await tx.clubMember.deleteMany({ where: { userId } })
+    // Phase 5 Part B: PricePoint rows are onDelete: Cascade with their CollectionItem, so the
+    // DB would remove them anyway — the explicit deleteMany keeps the erasure matrix
+    // self-documenting (standing guard: a new User-owned model ships with its entry) and must
+    // run BEFORE the parent rows below.
+    const collectionItemIds = (await tx.collectionItem.findMany({ where: { userId }, select: { id: true } })).map((i) => i.id)
+    await tx.pricePoint.deleteMany({ where: { collectionItemId: { in: collectionItemIds } } })
     await tx.collectionItem.deleteMany({ where: { userId } })
     // Phase 5 Part A: ratings and part requests are personal and die with the account
     // (Rating.userId arrived with this phase; the onDelete: Cascade is the backstop — the
