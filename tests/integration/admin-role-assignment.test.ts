@@ -46,7 +46,10 @@ describe('admin role assignment', () => {
     expect((await PATCH(patchRole(target.id, 'ADMIN'), ctx(target.id))).status).toBe(403)
 
     expect((await prisma.user.findUnique({ where: { id: target.id } }))!.role).toBe('USER')
-    expect(await prisma.auditLog.count()).toBe(0)
+    // Scoped to this test's own target, not a global count — integration tests run against a
+    // shared Postgres instance where other suites (e.g. club-roles.test.ts's admin-kick path)
+    // legitimately write AuditLog rows concurrently.
+    expect(await prisma.auditLog.count({ where: { targetId: target.id } })).toBe(0)
 
     await prisma.user.delete({ where: { id: organizer.id } })
     await prisma.user.delete({ where: { id: user.id } })
