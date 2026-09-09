@@ -1,10 +1,11 @@
 // components/tournament/OrganizerConsole.tsx
 // Phase 5 Part C — the operator surface for running a tournament ([REVIEW-FIX: ux-product §3f]:
-// Match.status/round/bracketOrder existed with no operator UI at all). Visible ONLY to the
+// Match.status/round/bracketOrder existed with no operator UI at all); Phase 5 Part C2 — the
+// single "Bracket generieren" action became a STAGE LIST: create stage → generate/pair the
+// current round → complete the stage → repeat for the next stage. Visible ONLY to the
 // tournament's creator or an ADMIN (enforced server-side on every action; the page additionally
-// gates rendering). Actions: Bracket generieren (once, after check-in), Judge zuweisen per
-// match, no-show handling (marks the participant withdrawn, auto-advances the opponent), and
-// Turnier abschließen.
+// gates rendering). Actions per stage: Bracket/Runde generieren (format-dispatched server-side),
+// Stage abschließen, Judge zuweisen per match, no-show handling, Turnier abschließen.
 'use client'
 
 import { useState } from 'react'
@@ -17,6 +18,7 @@ import { Card, CardTitle } from '@/components/ui/Card'
 export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean }
 export type ConsoleMatch = {
   id: string
+  stageId: string
   round: number
   label: string
   player1: string | null
@@ -24,26 +26,48 @@ export type ConsoleMatch = {
   status: string
   judgeId: string | null
 }
+export type ConsoleStanding = { userId: string; name: string; wins: number; losses: number; buchholz: number }
+export type ConsoleStage = {
+  id: string
+  order: number
+  name: string
+  format: 'SINGLE_ELIMINATION' | 'DOUBLE_ELIMINATION' | 'SWISS'
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED'
+  swissRounds: number | null
+  swissRoundsDone: number
+  qualifyCount: number | null
+  matches: ConsoleMatch[]
+  standings: ConsoleStanding[]
+}
 export type ConsoleJudge = { id: string; name: string }
+
+const FORMAT_LABEL: Record<ConsoleStage['format'], string> = {
+  SINGLE_ELIMINATION: 'Single Elimination',
+  DOUBLE_ELIMINATION: 'Double Elimination',
+  SWISS: 'Swiss',
+}
 
 export function OrganizerConsole({
   tournamentId,
   participants,
-  matches,
+  stages,
   judges,
-  bracketGenerated,
   completedAt,
 }: {
   tournamentId: string
   participants: ConsoleParticipant[]
-  matches: ConsoleMatch[]
+  stages: ConsoleStage[]
   judges: ConsoleJudge[]
-  bracketGenerated: boolean
   completedAt: string | null
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Create-stage form state.
+  const [stageName, setStageName] = useState('')
+  const [stageFormat, setStageFormat] = useState<ConsoleStage['format']>('SINGLE_ELIMINATION')
+  const [stageSwissRounds, setStageSwissRounds] = useState(3)
+  const [stageQualifyCount, setStageQualifyCount] = useState('')
 
   const base = `/api/tournaments/${tournamentId}`
   const call = async (fn: () => Promise<Response>, successMessage?: string) => {
@@ -65,8 +89,26 @@ export function OrganizerConsole({
   }
 
   const checkedIn = participants.filter((p) => p.checkedIn && !p.withdrawn)
-  const openMatches = matches.filter((m) => m.status !== 'COMPLETED')
   const completed = completedAt !== null
+  const allMatches = stages.flatMap((s) => s.matches)
+  const openMatches = allMatches.filter((m) => m.status !== 'COMPLETED')
+  const bracketGenerated = allMatches.length > 0
+
+  const createStage = () =>
+    call(
+      () =>
+        fetch(`${base}/stages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: stageName,
+            format: stageFormat,
+            ...(stageFormat === 'SWISS' ? { swissRounds: stageSwissRounds } : {}),
+            ...(stageQualifyCount !== '' ? { qualifyCount: Number(stageQualifyCount) } : {}),
+          }),
+        }),
+      'ok'
+    )
 
   return (
     <Card className="space-y-4 p-4">
@@ -76,66 +118,197 @@ export function OrganizerConsole({
       </div>
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
 
-      {!bracketGenerated && !completed && (
-        <div className="space-y-2">
-          <p className="text-sm text-current/70">
-            {checkedIn.length} eingecheckte Teilnehmer. Der Bracket wird aus allen eingecheckten,
-            nicht zurückgezogenen Teilnehmern erstellt (Freilose bei Teilnehmerzahlen ohne
-            Zweierpotenz — Auslosung deterministisch nach Benutzername).
+      {!completed && (
+        <section aria-labelledby="stage-create-heading" className="space-y-2">
+          <h3 id="stage-create-heading" className="text-sm font-semibold">Stage hinzufügen</h3>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-current/60">
+              Name
+              <input
+                value={stageName}
+                onChange={(e) => setStageName(e.target.value)}
+                placeholder="z.B. Vorrunde"
+                className="mt-1 block w-36 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
+              />
+            </label>
+            <label className="text-xs text-current/60">
+              Format
+              <Select value={stageFormat} onChange={(e) => setStageFormat(e.target.value as ConsoleStage['format'])} className="mt-1 block w-44">
+                <option value="SINGLE_ELIMINATION">Single Elimination</option>
+                <option value="DOUBLE_ELIMINATION">Double Elimination</option>
+                <option value="SWISS">Swiss</option>
+              </Select>
+            </label>
+            {stageFormat === 'SWISS' && (
+              <label className="text-xs text-current/60">
+                Runden
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={stageSwissRounds}
+                  onChange={(e) => setStageSwissRounds(Number(e.target.value))}
+                  className="mt-1 block w-20 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
+                />
+              </label>
+            )}
+            <label className="text-xs text-current/60">
+              Qualifikanten (optional)
+              <input
+                type="number"
+                min={1}
+                value={stageQualifyCount}
+                onChange={(e) => setStageQualifyCount(e.target.value)}
+                placeholder="—"
+                className="mt-1 block w-20 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
+              />
+            </label>
+            <Button disabled={busy || stageName.trim().length === 0} onClick={() => void createStage()}>
+              Stage erstellen
+            </Button>
+          </div>
+          <p className="text-xs text-current/50">
+            Die erste Stage (Reihenfolge 1) startet mit allen eingecheckten Teilnehmern; jede
+            weitere Stage startet mit den Qualifikanten der vorherigen Stage.
           </p>
-          <Button
-            disabled={busy || checkedIn.length < 2}
-            onClick={() => call(() => fetch(`${base}/bracket`, { method: 'POST' }), 'ok')}
-          >
-            Bracket generieren
-          </Button>
-          {checkedIn.length < 2 && (
-            <p className="text-xs text-current/50">Mindestens 2 eingecheckte Teilnehmer nötig.</p>
-          )}
-        </div>
+        </section>
       )}
+
+      {stages.map((stage) => {
+        const stageComplete = stage.status === 'COMPLETED'
+        const allDone = stage.matches.length > 0 && stage.matches.every((m) => m.status === 'COMPLETED')
+        const minPlayers = stage.format === 'DOUBLE_ELIMINATION' ? 3 : 2
+        const swissDone = stage.swissRounds !== null && stage.swissRoundsDone >= stage.swissRounds
+        return (
+          <section key={stage.id} aria-labelledby={`stage-${stage.id}`} className="space-y-2 rounded-lg border border-current/10 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 id={`stage-${stage.id}`} className="text-sm font-semibold">
+                {stage.order}. {stage.name}
+              </h3>
+              <Badge tone="cyan">{FORMAT_LABEL[stage.format]}</Badge>
+              {stageComplete && <Badge tone="green">Abgeschlossen</Badge>}
+              {stage.format === 'SWISS' && stage.swissRounds !== null && (
+                <span className="text-xs text-current/50">
+                  Runde {stage.swissRoundsDone}/{stage.swissRounds}
+                </span>
+              )}
+              {stage.qualifyCount !== null && (
+                <span className="text-xs text-current/50">Top {stage.qualifyCount} qualifiziert</span>
+              )}
+            </div>
+
+            {!stageComplete && stage.format !== 'SWISS' && stage.matches.length === 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  disabled={busy || checkedIn.length < minPlayers}
+                  onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }), 'ok')}
+                >
+                  Bracket generieren
+                </Button>
+                {checkedIn.length < minPlayers && (
+                  <p className="text-xs text-current/50">Mindestens {minPlayers} eingecheckte Teilnehmer nötig.</p>
+                )}
+              </div>
+            )}
+
+            {!stageComplete && stage.format === 'SWISS' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  disabled={busy || swissDone}
+                  onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }), 'ok')}
+                >
+                  Runde {Math.min(stage.swissRoundsDone + 1, stage.swissRounds ?? 0)} pairen
+                </Button>
+                {swissDone && <span className="text-xs text-current/50">Alle geplanten Runden gepaart.</span>}
+              </div>
+            )}
+
+            {!stageComplete && allDone && (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(`Stage „${stage.name}" abschließen?`)) {
+                    void call(() => fetch(`${base}/stages/${stage.id}/complete`, { method: 'POST' }), 'ok')
+                  }
+                }}
+              >
+                Stage abschließen
+              </Button>
+            )}
+
+            {stage.format === 'SWISS' && stage.standings.length > 0 && (
+              <table className="w-full text-sm">
+                <caption className="sr-only">Tabelle {stage.name}</caption>
+                <thead>
+                  <tr className="text-left text-current/60">
+                    <th scope="col" className="py-1 pr-2 font-medium">#</th>
+                    <th scope="col" className="py-1 pr-2 font-medium">Spieler</th>
+                    <th scope="col" className="py-1 pr-2 text-right font-medium">S</th>
+                    <th scope="col" className="py-1 pr-2 text-right font-medium">N</th>
+                    <th scope="col" className="py-1 text-right font-medium">Buchholz</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stage.standings.map((s, i) => (
+                    <tr key={s.userId} className="border-t border-current/10">
+                      <td className="py-1.5 pr-2 text-current/60">{i + 1}</td>
+                      <td className="py-1.5 pr-2">{s.name}</td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">{s.wins}</td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">{s.losses}</td>
+                      <td className="py-1.5 text-right tabular-nums">{s.buchholz}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {bracketGenerated && !completed && (
+              <section aria-labelledby="judge-assign-heading" className="space-y-2">
+                <h4 id="judge-assign-heading" className="text-sm font-semibold">
+                  Judge zuweisen — {stage.name} ({stage.matches.filter((m) => m.status !== 'COMPLETED').length} offene Matches)
+                </h4>
+                <ul className="space-y-2">
+                  {stage.matches.map((m) => (
+                    <li key={m.id} className="flex flex-wrap items-center gap-2 rounded-md border border-current/10 px-3 py-2 text-sm">
+                      <span className="min-w-40 flex-1">
+                        <span className="text-current/50">{m.label}: </span>
+                        {m.player1 ?? 'Offen'} vs. {m.player2 ?? 'Offen'}
+                      </span>
+                      <Select
+                        aria-label={`Judge für ${m.player1 ?? 'Offen'} vs. ${m.player2 ?? 'Offen'}`}
+                        defaultValue={m.judgeId ?? ''}
+                        disabled={busy || m.status === 'COMPLETED'}
+                        className="w-44"
+                        onChange={(e) => {
+                          const judgeId = e.target.value || null
+                          void call(() =>
+                            fetch(`${base}/matches/${m.id}/judge`, {
+                              method: 'PATCH',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({ judgeId }),
+                            })
+                          )
+                        }}
+                      >
+                        <option value="">— kein Judge —</option>
+                        {judges.map((j) => (
+                          <option key={j.id} value={j.id}>
+                            {j.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </section>
+        )
+      })}
 
       {bracketGenerated && !completed && (
         <>
-          <section aria-labelledby="judge-assign-heading" className="space-y-2">
-            <h3 id="judge-assign-heading" className="text-sm font-semibold">
-              Judge zuweisen ({openMatches.length} offene Matches)
-            </h3>
-            <ul className="space-y-2">
-              {matches.map((m) => (
-                <li key={m.id} className="flex flex-wrap items-center gap-2 rounded-md border border-current/10 px-3 py-2 text-sm">
-                  <span className="min-w-40 flex-1">
-                    <span className="text-current/50">{m.label}: </span>
-                    {m.player1 ?? 'Offen'} vs. {m.player2 ?? 'Offen'}
-                  </span>
-                  <Select
-                    aria-label={`Judge für ${m.player1 ?? 'Offen'} vs. ${m.player2 ?? 'Offen'}`}
-                    defaultValue={m.judgeId ?? ''}
-                    disabled={busy || m.status === 'COMPLETED'}
-                    className="w-44"
-                    onChange={(e) => {
-                      const judgeId = e.target.value || null
-                      void call(() =>
-                        fetch(`${base}/matches/${m.id}/judge`, {
-                          method: 'PATCH',
-                          headers: { 'content-type': 'application/json' },
-                          body: JSON.stringify({ judgeId }),
-                        })
-                      )
-                    }}
-                  >
-                    <option value="">— kein Judge —</option>
-                    {judges.map((j) => (
-                      <option key={j.id} value={j.id}>
-                        {j.name}
-                      </option>
-                    ))}
-                  </Select>
-                </li>
-              ))}
-            </ul>
-          </section>
-
           <section aria-labelledby="noshow-heading" className="space-y-2">
             <h3 id="noshow-heading" className="text-sm font-semibold">
               Nicht erschienen (No-Show)
@@ -179,6 +352,12 @@ export function OrganizerConsole({
             Turnier abschließen
           </Button>
         </>
+      )}
+      {openMatches.length === 0 && stages.length === 0 && !completed && (
+        <p className="text-sm text-current/60">
+          Noch keine Stage. Lege oben die erste Stage an (z.B. Vorrunde), sobald die Anmeldung
+          geschlossen ist.
+        </p>
       )}
     </Card>
   )
