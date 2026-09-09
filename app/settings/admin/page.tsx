@@ -46,12 +46,20 @@ export default async function AdminUsersPage({
     <section aria-labelledby="admin-users-heading" className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 id="admin-users-heading" className="text-xl font-semibold">Administration — Nutzer:innen</h2>
-        <Link
-          href="/settings/admin/audit"
-          className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
-        >
-          Audit-Log
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/settings/admin/parts"
+            className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
+          >
+            Teile-Katalog
+          </Link>
+          <Link
+            href="/settings/admin/audit"
+            className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
+          >
+            Audit-Log
+          </Link>
+        </div>
       </div>
 
       <SearchInput action="/settings/admin" />
