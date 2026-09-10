@@ -14,7 +14,7 @@ import { parseTournamentInput } from '@/lib/tournamentValidation'
 type Ctx = { params: Promise<{ id: string }> }
 
 async function loadAuthorized(id: string, userId: string) {
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { id: true, createdById: true } })
+  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { id: true, createdById: true, startedAt: true } })
   if (!tournament) return { error: Response.json({ error: 'not_found' }, { status: 404 }) }
   const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
   if (tournament.createdById !== userId && caller?.role !== 'ADMIN') {
@@ -68,8 +68,14 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
-  const { error } = await loadAuthorized(id, session.user.id)
+  const { error, tournament } = await loadAuthorized(id, session.user.id)
   if (error) return error
+
+  // Phase 16 item 6 — a started tournament is a real, already-running event (and may have
+  // locked-deck snapshots other participants are relying on); "Turnier absagen" is only for
+  // the pre-start planning stage. The UI already hides the button once started, this is the
+  // server-side backstop (standing rule: never trust the client-side gate alone).
+  if (tournament!.startedAt) return Response.json({ error: 'already_started' }, { status: 409 })
 
   await prisma.$transaction([
     prisma.match.deleteMany({ where: { tournamentId: id } }),
