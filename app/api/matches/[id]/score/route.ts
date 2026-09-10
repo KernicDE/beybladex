@@ -36,6 +36,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { markMetaDirty } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
+import { assignFreedArena } from '@/lib/arenaAssign'
 import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -292,6 +293,10 @@ export async function POST(req: Request, { params }: Ctx) {
         data: { [slot]: winnerId },
       })
     }
+
+    // Phase 7 — the match just freed its arena: hand the number to the next waiting match in
+    // this stage (lib/arenaAssign.ts). No-op when arena management is off (arenaNumber null).
+    await assignFreedArena(updated)
   }
 
   return Response.json({

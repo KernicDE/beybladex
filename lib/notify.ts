@@ -30,6 +30,19 @@ function notificationContent(t: Tournament): { title: string; message: string; l
   }
 }
 
+/**
+ * Phase 7 — single-user notification: durable Notification row (source of truth) + a per-user
+ * Redis pub/sub publish for the SSE stream. Per-user channel ONLY — a global channel would leak
+ * every user's notification content to every connected SSE client ([REVIEW-FIX: frontend-pwa I9]).
+ * Published with the command connection; the SSE route subscribes on redisSubscriber.
+ */
+export async function notifyUser(userId: string, title: string, message: string, link?: string): Promise<void> {
+  const row = await prisma.notification.create({
+    data: { userId, title, message, link },
+  })
+  await redis.publish(notifyChannel(userId), JSON.stringify(row))
+}
+
 export async function notifyUsersInRadius(tournament: Tournament): Promise<void> {
   const candidates = await prisma.user.findMany({
     where: {
@@ -54,14 +67,7 @@ export async function notifyUsersInRadius(tournament: Tournament): Promise<void>
 
   const content = notificationContent(tournament)
   for (const user of eligible) {
-    const row = await prisma.notification.create({
-      data: { userId: user.id, ...content },
-    })
-
-    // Per-user channel ONLY — a global channel would leak every user's notification content
-    // to every connected SSE client ([REVIEW-FIX: frontend-pwa I9]). Published with the
-    // command connection; the SSE route subscribes on redisSubscriber.
-    await redis.publish(notifyChannel(user.id), JSON.stringify(row))
+    await notifyUser(user.id, content.title, content.message, content.link)
 
     if (user.notifyEmail && !user.isMinor && user.email) {
       try {

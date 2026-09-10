@@ -18,6 +18,7 @@
 //   SINGLE_ELIMINATION — unchanged Part C behavior, now stage-scoped.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { assignFreedArena } from '@/lib/arenaAssign'
 import { winnerPropagation } from '@/lib/doubleElimination'
 import { markEliminated, recordSwissResult, resolveStuckByes } from '@/lib/stageFlow'
 
@@ -101,6 +102,8 @@ export async function POST(req: Request, { params }: Ctx) {
         where: { id: m.id },
         data: { winnerId: opponent, status: 'COMPLETED', [isP1 ? 'player1Id' : 'player2Id']: opponent },
       })
+      // Phase 7 — an auto-completed match frees its arena like a played one (no-op without one).
+      await assignFreedArena(m)
       if (stage?.format === 'SWISS' || stage?.format === 'ROUND_ROBIN') {
         // The opponent wins on the standings (recordSwissResult is the shared standings-ranked
         // formats' helper — Swiss pairing and Round Robin both); the withdrawn player takes the
