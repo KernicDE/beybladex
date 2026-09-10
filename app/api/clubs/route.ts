@@ -11,20 +11,12 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { slugify, uniqueSlug } from '@/lib/slug'
 import { CLUB_DESCRIPTION_MAX as DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
+import { parseOptionalUrl } from '@/lib/urlValidation'
 
 const PAGE_SIZE = 24
 const NAME_MAX = 100
 const URL_MAX = 200
 const JOIN_POLICIES = ['OPEN', 'APPLICATION', 'INVITE_ONLY'] as const
-
-// Phase 13: optional profile links — deliberately NOT a hard format allowlist server-side
-// (a legitimate edge-case URL must never be rejected); the length cap is the only server
-// validation, the "looks like a URL" hint is client-side only.
-function parseOptionalUrl(value: unknown): { ok: boolean; value: string | null } {
-  if (value === undefined || value === null) return { ok: true, value: null }
-  if (typeof value !== 'string' || value.length > URL_MAX) return { ok: false, value: null }
-  return { ok: true, value: value.trim() || null }
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -85,9 +77,9 @@ export async function POST(req: Request) {
   if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > DESCRIPTION_MAX)) {
     return Response.json({ error: 'invalid_description' }, { status: 400 })
   }
-  const websiteUrl = parseOptionalUrl(fields.websiteUrl)
+  const websiteUrl = parseOptionalUrl(fields.websiteUrl, URL_MAX)
   if (!websiteUrl.ok) return Response.json({ error: 'invalid_club_url' }, { status: 400 })
-  const discordUrl = parseOptionalUrl(fields.discordUrl)
+  const discordUrl = parseOptionalUrl(fields.discordUrl, URL_MAX)
   if (!discordUrl.ok) return Response.json({ error: 'invalid_club_url' }, { status: 400 })
   const joinPolicy = fields.joinPolicy ?? 'OPEN'
   if (typeof joinPolicy !== 'string' || !(JOIN_POLICIES as readonly string[]).includes(joinPolicy)) {
