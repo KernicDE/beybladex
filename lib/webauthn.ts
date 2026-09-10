@@ -57,7 +57,7 @@ export async function getAuthenticationOptions(username: string) {
 export async function verifyAuthentication(response: AuthenticationResponseJSON, expectedChallenge: string) {
   const credentialId = response.id
   const passkey = await prisma.passkey.findUnique({ where: { credentialId } })
-  if (!passkey) return { verified: false }
+  if (!passkey) return { verified: false, userId: null }
   const verification = await verifyAuthenticationResponse({
     response,
     expectedChallenge,
@@ -72,5 +72,5 @@ export async function verifyAuthentication(response: AuthenticationResponseJSON,
   if (verification.verified) {
     await prisma.passkey.update({ where: { id: passkey.id }, data: { counter: verification.authenticationInfo.newCounter } })
   }
-  return verification
+  return { ...verification, userId: verification.verified ? passkey.userId : null }
 }
