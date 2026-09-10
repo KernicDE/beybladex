@@ -10,6 +10,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { DECK_FORMAT_LABELS, RULESET_FIELD_HINTS } from '@/lib/rulesetLabels'
 
 export const revalidate = 300 // [REVIEW-FIX: performance P16]
@@ -44,7 +45,7 @@ export default async function RulesetPage({ params }: { params: Promise<{ slug: 
         {!ruleset.isPublic && <Badge tone="neutral">Privat</Badge>}
       </div>
 
-      {ruleset.description && <p className="text-current/80">{ruleset.description}</p>}
+      {ruleset.description && <MarkdownContent className="text-current/80">{ruleset.description}</MarkdownContent>}
 
       <dl className="grid gap-4 sm:grid-cols-3">
         <Card className="p-4">

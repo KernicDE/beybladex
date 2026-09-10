@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { MarkdownContent } from '@/components/ui/MarkdownContent'
 
 interface QueueEntry {
   id: string
@@ -42,8 +43,8 @@ export function PartRequestQueue({ entries }: { entries: QueueEntry[] }) {
             <p className="text-sm text-current/60">
               von @{entry.requestedBy.username}
               {entry.manufacturerGuess && <> · Vermutung: {entry.manufacturerGuess === 'TT' ? 'Takara Tomy' : 'Hasbro'}</>}
-              {entry.notes && <> · {entry.notes}</>}
             </p>
+            {entry.notes && <MarkdownContent className="text-sm text-current/60">{entry.notes}</MarkdownContent>}
           </div>
           <Badge tone="cyan">Ausstehend</Badge>
           <Button size="sm" disabled={busyId === entry.id} onClick={() => settle(entry.id, 'RESOLVED')}>

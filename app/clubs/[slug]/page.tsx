@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardTitle } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { ClubActions, type ClubMemberRow } from '@/components/clubs/ClubActions'
 
 export const revalidate = 120 // public, infrequently-mutated content [REVIEW-FIX: performance P16]
@@ -86,7 +87,7 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
         )}
       </div>
 
-      {club.description && <p className="text-current/80">{club.description}</p>}
+      {club.description && <MarkdownContent className="text-current/80">{club.description}</MarkdownContent>}
 
       <Card>
         <CardTitle className="mb-4">Mitglieder ({roster.length})</CardTitle>

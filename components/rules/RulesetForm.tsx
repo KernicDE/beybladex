@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { Textarea } from '@/components/ui/Textarea'
+import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { errorMessage } from '@/lib/errorCopy'
+import { RULESET_DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 import { DECK_FORMATS, DECK_FORMAT_LABELS, RULESET_FIELD_HINTS } from '@/lib/rulesetLabels'
 
 export type RulesetFormValues = {
@@ -124,8 +125,8 @@ export function RulesetForm({
         <Input value={values.title} onChange={setText('title')} maxLength={100} required />
       </FormField>
 
-      <FormField label="Beschreibung">
-        <Textarea value={values.description} onChange={setText('description')} rows={4} maxLength={1000} />
+      <FormField label="Beschreibung (Markdown)">
+        <MarkdownEditor value={values.description} onChange={(description) => setValues((v) => ({ ...v, description }))} rows={4} maxLength={RULESET_DESCRIPTION_MAX} />
       </FormField>
 
       <FormField label="Deck-Format">

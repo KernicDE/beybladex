@@ -9,8 +9,8 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { RATING_COMMENT_MAX as COMMENT_MAX } from '@/lib/markdownFieldCaps'
 
-const COMMENT_MAX = 500 // bio-convention free-text cap (Phase 1 Task 12/13)
 const PAGE_SIZE = 20
 type Ctx = { params: Promise<{ id: string }> }
 
