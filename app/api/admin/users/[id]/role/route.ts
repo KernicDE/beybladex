@@ -5,7 +5,7 @@
 // assignable like any other role: it means "trusted catalog contributor" (Phase 5's Part
 // curation), not a half-state. Every successful change writes an append-only AuditLog row
 // (Phase 4, [REVIEW-FIX: privacy-dsgvo #8]) — the test asserts both halves in one test.
-import { auth } from '@/lib/auth'
+import { requireAdmin } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 
 const ROLES = ['GUEST', 'USER', 'TRUSTED', 'JUDGE', 'ORGANIZER', 'ADMIN'] as const
@@ -13,13 +13,8 @@ const ROLES = ['GUEST', 'USER', 'TRUSTED', 'JUDGE', 'ORGANIZER', 'ADMIN'] as con
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function PATCH(req: Request, { params }: Ctx) {
-  const session = await auth()
-  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
-
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (caller?.role !== 'ADMIN') {
-    return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const gate = await requireAdmin()
+  if ('error' in gate) return gate.error
 
   const { id } = await params
   const target = await prisma.user.findUnique({ where: { id }, select: { id: true, username: true, role: true } })
@@ -35,7 +30,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     return Response.json({ error: 'invalid_role' }, { status: 400 })
   }
   const role = (body as { role: (typeof ROLES)[number] }).role
-  const actorId = session.user.id
+  const actorId = gate.userId
 
   const updated = await prisma.$transaction(async (tx) => {
     const user = await tx.user.update({ where: { id: target.id }, data: { role } })

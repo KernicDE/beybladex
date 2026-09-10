@@ -1,6 +1,9 @@
-// lib/partValidation.ts (Phase 5 Part A)
+// lib/partValidation.ts (Phase 5 Part A; RC4 #55: schema-driven via lib/parseBody.ts)
 // Shared input parsing for the parts-catalog curation API (POST/PATCH /api/admin/parts).
 // Everything is validated here so both methods enforce exactly the same shape.
+// Error tokens are API contract (tests assert invalid_manufacturer etc.) — the schema below
+// pins each one explicitly.
+import { parseBody, type BodySchema } from '@/lib/parseBody'
 
 const NAME_MAX = 120
 
@@ -19,75 +22,25 @@ export interface PartInput {
   metadata: Record<string, unknown> | null
 }
 
-function takeString(body: Record<string, unknown>, key: string, max: number): string | null | undefined {
-  const v = body[key]
-  if (v === undefined) return undefined
-  if (v === null) return null
-  if (typeof v !== 'string') return null
-  const trimmed = v.trim()
-  if (trimmed.length === 0) return null
-  return trimmed.slice(0, max)
-}
-
-function isEnumValue<T extends string>(values: readonly T[], v: unknown): v is T {
-  return typeof v === 'string' && (values as readonly string[]).includes(v)
+// POST validates EVERY field (absence errors — a Part create carries the full shape, with
+// beyType/weightGrams/metadata explicitly nullable); PATCH (partial) skips absent keys but
+// rejects a present key with a wrong type. name caps by slicing (the historical takeString),
+// never errors on oversize.
+const PART_SCHEMA: BodySchema = {
+  name: { type: 'string', trim: true, maxLength: NAME_MAX, required: true, token: 'invalid_name' },
+  manufacturer: { type: 'enum', enum: MANUFACTURERS, required: true, token: 'invalid_manufacturer' },
+  category: { type: 'enum', enum: CATEGORIES, required: true, token: 'invalid_category' },
+  beyType: { type: 'enum', enum: BEY_TYPES, required: true, nullable: true, token: 'invalid_beyType' },
+  spinDirection: { type: 'enum', enum: SPIN_DIRECTIONS, required: true, token: 'invalid_spinDirection' },
+  weightGrams: { type: 'number', gt: 0, lt: 1000, required: true, nullable: true, token: 'invalid_weightGrams' },
+  metadata: { type: 'json', required: true, nullable: true, token: 'invalid_metadata' },
 }
 
 /** Parses a Part payload. Returns `{ data }` or `{ errors }`; `partial` allows PATCH-style
  *  sparse bodies (only present keys are validated and returned). */
 export function parsePartInput(body: unknown, partial: boolean): { data?: Partial<PartInput>; errors?: string[] } {
-  if (typeof body !== 'object' || body === null) return { errors: ['invalid_body'] }
-  const b = body as Record<string, unknown>
-  const errors: string[] = []
-  const data: Partial<PartInput> = {}
-
-  const name = takeString(b, 'name', NAME_MAX)
-  if (!partial || name !== undefined) {
-    if (!name) errors.push('invalid_name')
-    else data.name = name
-  }
-
-  const manufacturer = b.manufacturer
-  if (!partial || manufacturer !== undefined) {
-    if (!isEnumValue(MANUFACTURERS, manufacturer)) errors.push('invalid_manufacturer')
-    else data.manufacturer = manufacturer
-  }
-
-  const category = b.category
-  if (!partial || category !== undefined) {
-    if (!isEnumValue(CATEGORIES, category)) errors.push('invalid_category')
-    else data.category = category
-  }
-
-  if (b.beyType !== undefined || !partial) {
-    if (b.beyType === null) data.beyType = null
-    else if (isEnumValue(BEY_TYPES, b.beyType)) data.beyType = b.beyType
-    else errors.push('invalid_beyType')
-  }
-
-  const spinDirection = b.spinDirection
-  if (!partial || spinDirection !== undefined) {
-    if (!isEnumValue(SPIN_DIRECTIONS, spinDirection)) errors.push('invalid_spinDirection')
-    else data.spinDirection = spinDirection
-  }
-
-  if (b.weightGrams !== undefined || !partial) {
-    if (b.weightGrams === null) data.weightGrams = null
-    else if (typeof b.weightGrams === 'number' && Number.isFinite(b.weightGrams) && b.weightGrams > 0 && b.weightGrams < 1000) {
-      data.weightGrams = b.weightGrams
-    } else errors.push('invalid_weightGrams')
-  }
-
-  // Phase 11: catalog images are MediaAsset FKs (uploaded via the generic pipeline), not a
-  // free-text URL — imageUrl no longer exists on Part and is not accepted here.
-
-  if (b.metadata !== undefined || !partial) {
-    if (b.metadata === null) data.metadata = null
-    else if (typeof b.metadata === 'object' && !Array.isArray(b.metadata)) data.metadata = b.metadata as Record<string, unknown>
-    else errors.push('invalid_metadata')
-  }
-
-  return errors.length > 0 ? { errors } : { data }
+  const { data, errors } = parseBody(body, PART_SCHEMA, { partial })
+  return errors.length > 0 ? { errors } : { data: data as Partial<PartInput> }
 }
 
 // parsePartRequestInput (the old "request missing part" free-text validator) is gone —

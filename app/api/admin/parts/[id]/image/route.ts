@@ -1,12 +1,14 @@
 // app/api/admin/parts/[id]/image/route.ts (Phase 11, item 3/4)
 // Upload/replace a catalog Part's image via the generic media pipeline (lib/media.ts,
-// PART_IMAGE_TARGET). AUTHZ RULE (standing Global-Constraints requirement): TRUSTED/ADMIN
-// only — same tier as the rest of /api/admin/parts, not the wider proposal-reviewer tier
-// (this is direct catalog authoring, not proposal review). Replacing an existing image
-// leaves the OLD MediaAsset row/file orphaned (acceptable — no other row references it once
-// Part.imageId is repointed; a future cleanup pass could sweep unreferenced assets, out of
-// scope here) rather than risk deleting a file another in-flight request still reads.
-import { auth } from '@/lib/auth'
+// PART_IMAGE_TARGET). AUTHZ RULE (standing Global-Constraints requirement): the canonical
+// curator tier TRUSTED/JUDGE/ORGANIZER/ADMIN (lib/guards.ts requireCurator). Issue #42 widened
+// this together with the rest of /api/admin/parts: a JUDGE/ORGANIZER who may edit a Part's data
+// must not get an arbitrary 403 on its image — one tier for all of parts curation, defined in
+// lib/roles.ts CURATOR_ROLES. Replacing an existing image leaves the OLD MediaAsset row/file
+// orphaned (acceptable — no other row references it once Part.imageId is repointed; a future
+// cleanup pass could sweep unreferenced assets, out of scope here) rather than risk deleting
+// a file another in-flight request still reads.
+import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { PART_IMAGE_TARGET, processAndStoreImage } from '@/lib/media'
@@ -14,13 +16,9 @@ import { PART_IMAGE_TARGET, processAndStoreImage } from '@/lib/media'
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function POST(req: Request, { params }: Ctx): Promise<Response> {
-  const session = await auth()
-  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (caller?.role !== 'TRUSTED' && caller?.role !== 'ADMIN') {
-    return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
-  const { allowed } = await rateLimit(`parts:image:${session.user.id}`, 30, 60 * 60)
+  const gate = await requireCurator()
+  if ('error' in gate) return gate.error
+  const { allowed } = await rateLimit(`parts:image:${gate.userId}`, 30, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const { id } = await params
@@ -40,7 +38,7 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
 
   let assetId: string
   try {
-    const asset = await processAndStoreImage(file, PART_IMAGE_TARGET, session.user.id)
+    const asset = await processAndStoreImage(file, PART_IMAGE_TARGET, gate.userId)
     assetId = asset.id
   } catch (err) {
     const token = err instanceof Error && err.message === 'invalid_file_type' ? 'invalid_image_type' : 'invalid_image'

@@ -8,8 +8,9 @@
 // user administers (ClubMember.isAdmin === true for THAT club — verified by query, never
 // trusted from the client; Phase 4). createdById is ALWAYS taken from the session — the body
 // can never nominate an owner. Rate-limited per user. Radius notifications fire post-create.
-import { auth } from '@/lib/auth'
+import { requireUser } from '@/lib/guards'
 import { prisma } from '@/lib/db'
+import { getActiveAdminMembership } from '@/lib/clubMembers'
 import { notifyUsersInRadius } from '@/lib/notify'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
@@ -111,10 +112,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth()
-  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if ('error' in gate) return gate.error
+  const userId = gate.userId
 
-  const { allowed } = await rateLimit(`tournaments:create:${session.user.id}`, 20, 60 * 60)
+  const { allowed } = await rateLimit(`tournaments:create:${userId}`, 20, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   let body: unknown
@@ -129,17 +131,15 @@ export async function POST(req: Request) {
 
   // Club authorization happens BEFORE any other validation so a 403 never leaks whether
   // the club itself exists; a well-formed clubId that doesn't exist is a 400 either way.
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
   const hasGlobalRole = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN'
   if (data.clubId) {
     if (!hasGlobalRole) {
       // Club-admins may create events for THEIR club only — verified by query, not by the body.
       // Phase 13: the membership must be ACTIVE — a pending application/invite never confers
-      // event-creation rights, even if the row is (mistakenly) flagged isAdmin.
-      const membership = await prisma.clubMember.findFirst({
-        where: { clubId: data.clubId, userId: session.user.id, status: 'ACTIVE', isAdmin: true },
-        select: { id: true },
-      })
+      // event-creation rights, even if the row is (mistakenly) flagged isAdmin. The read is
+      // lib/clubMembers.ts's ACTIVE-filtered authz read (issue #61) so the filter can't drift.
+      const membership = await getActiveAdminMembership(data.clubId, userId)
       if (!membership) return Response.json({ error: 'forbidden' }, { status: 403 })
     }
     const club = await prisma.club.findUnique({ where: { id: data.clubId }, select: { id: true } })
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
 
   const tournament = await prisma.tournament.create({
     // description is a required (non-null) column; an absent/JSON-null description means "".
-    data: { ...data, description: data.description ?? '', createdById: session.user.id },
+    data: { ...data, description: data.description ?? '', createdById: userId },
     select: { id: true, title: true, startDate: true, city: true },
   })
 

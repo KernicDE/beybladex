@@ -1,8 +1,10 @@
-// lib/buildInput.ts (Phase 11)
+// lib/buildInput.ts (Phase 11; RC4 #55: schema-driven via lib/parseBody.ts)
 // Shared input parsing for creating a Build from three part references (POST /api/builds —
 // any logged-in user's personal combo; POST /api/admin/builds — curator direct-create of an
 // official Set; CatalogProposal kind=BUILD payloads). The shape is validated here so all
 // three paths enforce exactly the same fields.
+import { parseBody, type BodySchema } from '@/lib/parseBody'
+
 const SET_NAME_MAX = 160
 
 const BEY_TYPES = ['ATTACK', 'DEFENSE', 'STAMINA', 'BALANCE'] as const
@@ -20,37 +22,29 @@ export interface BuildInput {
   name: string | null
 }
 
-function isEnumValue<T extends string>(values: readonly T[], v: unknown): v is T {
-  return typeof v === 'string' && (values as readonly string[]).includes(v)
+// The three slot ids are required non-empty strings; type/name tolerate absence as an
+// explicit null (the Build columns default to null). The Set `name` field is only in the
+// schema for official creates — user combos force it back to null below.
+function buildSchema(official: boolean): BodySchema {
+  return {
+    bladeId: { type: 'string', minLength: 1, required: true, token: 'invalid_bladeId' },
+    ratchetId: { type: 'string', minLength: 1, required: true, token: 'invalid_ratchetId' },
+    bitId: { type: 'string', minLength: 1, required: true, token: 'invalid_bitId' },
+    type: { type: 'enum', enum: BEY_TYPES, nullable: true, absentNull: true, token: 'invalid_type' },
+    ...(official
+      ? { name: { type: 'string', trim: true, maxLength: SET_NAME_MAX, nullable: true, absentNull: true, token: 'invalid_name' } }
+      : {}),
+  }
 }
 
 /** Parses a build-create payload. `official` allows the Set name field (only meaningful for
  *  isOfficialSet=true creates; user combos never carry one). Returns `{ data }` or `{ errors }`. */
 export function parseBuildInput(body: unknown, opts: { official: boolean }): { data?: BuildInput; errors?: string[] } {
-  if (typeof body !== 'object' || body === null) return { errors: ['invalid_body'] }
-  const b = body as Record<string, unknown>
-  const errors: string[] = []
-  const data = {} as BuildInput
-
-  for (const slot of BUILD_SLOTS) {
-    const v = b[slot]
-    if (typeof v !== 'string' || v.length === 0) errors.push(`invalid_${slot}`)
-    else data[slot] = v
-  }
-
-  if (b.type === undefined || b.type === null) data.type = null
-  else if (isEnumValue(BEY_TYPES, b.type)) data.type = b.type
-  else errors.push('invalid_type')
-
-  if (opts.official) {
-    if (b.name === undefined || b.name === null) data.name = null
-    else if (typeof b.name !== 'string' || b.name.trim().length === 0) errors.push('invalid_name')
-    else data.name = b.name.trim().slice(0, SET_NAME_MAX)
-  } else {
-    data.name = null
-  }
-
-  return errors.length > 0 ? { errors } : { data }
+  const { data, errors } = parseBody(body, buildSchema(opts.official), { partial: false })
+  if (errors.length > 0) return { errors }
+  const input = data as unknown as BuildInput
+  if (!opts.official) input.name = null
+  return { data: input }
 }
 
 /** Verifies that the three referenced parts exist AND sit in the slot's category.

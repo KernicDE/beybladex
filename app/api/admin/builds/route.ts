@@ -8,29 +8,16 @@
 // Duplicate combo (same bladeId+ratchetId+bitId) returns the existing Build's id gracefully
 // ({ id, existing: true }) instead of a raw unique-constraint 500. Every successful create
 // writes an append-only AuditLog row; rate-limited per curator.
-import { auth } from '@/lib/auth'
+import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
-import { isCurator } from '@/lib/roles'
 import { parseBuildInput, verifyBuildParts } from '@/lib/buildInput'
 import { deriveBuildName } from '@/lib/buildNaming'
-
-type CuratorGate = { error: Response } | { actorId: string }
-
-async function requireCurator(): Promise<CuratorGate> {
-  const session = await auth()
-  if (!session?.user?.id) return { error: Response.json({ error: 'unauthorized' }, { status: 401 }) }
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (!isCurator(caller?.role)) {
-    return { error: Response.json({ error: 'forbidden' }, { status: 403 }) }
-  }
-  return { actorId: session.user.id }
-}
 
 export async function POST(req: Request): Promise<Response> {
   const gate = await requireCurator()
   if ('error' in gate) return gate.error
-  const { allowed } = await rateLimit(`builds:admin-create:${gate.actorId}`, 60, 60 * 60)
+  const { allowed } = await rateLimit(`builds:admin-create:${gate.userId}`, 60, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   let body: unknown
@@ -66,7 +53,7 @@ export async function POST(req: Request): Promise<Response> {
     })
     await tx.auditLog.create({
       data: {
-        actorId: gate.actorId,
+        actorId: gate.userId,
         action: 'build.create',
         targetType: 'build',
         targetId: created.id,

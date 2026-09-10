@@ -19,17 +19,9 @@
 // an admin action, not an automatic cron (this repo's standing no-scheduler-infra constraint).
 // A season boundary never touches Match rows or the previous (now-frozen) season's PlayerRating
 // rows — those remain the permanent historical record for that season.
-import { auth } from '@/lib/auth'
+import { requireAdmin } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { regressToMean } from '@/lib/elo'
-
-async function requireAdmin(): Promise<{ error: Response } | { userId: string }> {
-  const session = await auth()
-  if (!session?.user?.id) return { error: Response.json({ error: 'unauthorized' }, { status: 401 }) }
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (caller?.role !== 'ADMIN') return { error: Response.json({ error: 'forbidden' }, { status: 403 }) }
-  return { userId: session.user.id }
-}
 
 export async function GET() {
   const gate = await requireAdmin()

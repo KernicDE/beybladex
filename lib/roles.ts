@@ -4,6 +4,8 @@
 // people most likely to encounter an uncatalogued real-world part at an event.
 export const CURATOR_ROLES = ['TRUSTED', 'JUDGE', 'ORGANIZER', 'ADMIN'] as const
 
+export type CuratorRole = (typeof CURATOR_ROLES)[number]
+
 export function isCurator(role: string | null | undefined): role is (typeof CURATOR_ROLES)[number] {
   return role != null && (CURATOR_ROLES as readonly string[]).includes(role)
 }
