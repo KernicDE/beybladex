@@ -54,7 +54,7 @@ Der vollständige, laufend aktualisierte Implementierungsplan liegt in [`docs/su
 | Stufe | Umfang | Status |
 |---|---|---|
 | **MVP1** | Phasen 1–6: Fundament, Design-System, Auth, Regel-Editor, DACH-Kalender & Social, Deck-/Sammlungs-/Turniermanager mit Offline-Judge-UI & Auto-Meta, CI/CD-Pipeline | ✅ **Live** auf beybladex.de |
-| **MVP1.5** | Phasen 7–13: Lücken/Politur am laufenden Betrieb — QR-Workflows & Zahlungsverfolgung, Markdown-Authoring, Standort-Autofill, Profil-/Turnier-/Regelseiten-Tiefe, offizielle Sets & Teile-Bilder, Club-Chat, Club-Profilfelder & Beitrittsrichtlinien | 📋 Geplant, nicht gestartet |
+| **MVP1.5** | Phasen 7–13: Lücken/Politur am laufenden Betrieb — QR-Workflows & Zahlungsverfolgung, Markdown-Authoring, Standort-Autofill, Profil-/Turnier-/Regelseiten-Tiefe, generische Bild-Upload-Pipeline mit Community-Vorschlagssystem für Sets/Teile & Event-Header-Bilder, Club-Chat, Club-Profilfelder & Beitrittsrichtlinien | 📋 Geplant, nicht gestartet |
 | **MVP2** | Phasen 14–17: Ranglisten-System mit Elo-Rating (Saisons, öffentliche Rangliste), Rating-basiertes Bracket-Seeding, Dual-Spin-Part-Modus (aktuelle CX-Serie), eigene visuelle Identität/Branding | 📋 Geplant, nicht gestartet |
 | **MVP3** | 3-vs-3-Team-Wettkampfformat (analog WBO Masters League) | 💭 Noch nicht ausgeplant (Design-Skizze vorhanden) |
 
