@@ -9,6 +9,7 @@ import { rateLimit } from '@/lib/rateLimit'
 import { calculateAge, MINOR_CONSENT_AGE_THRESHOLD } from '@/lib/age'
 import { BIO_MAX } from '@/lib/markdownFieldCaps'
 import { geocodePostalCode, type DachCountry } from '@/lib/geo'
+import { normalizeDisplayName } from '@/lib/displayName'
 
 // Free-text length caps — the bio/displayName convention every later phase's forms follow.
 const DISPLAY_NAME_MAX = 50
@@ -93,6 +94,13 @@ export async function PATCH(req: Request) {
     return Response.json({ error: 'no_fields' }, { status: 400 })
   }
 
+  // Phase 19: displayName writes always store both columns together — displayName itself stays
+  // free-form Unicode/casing, displayNameNormalized is its collision-checked form (lib/displayName.ts),
+  // backed by the @unique column below. A null displayName clears the normalized column too.
+  if (data.displayName !== undefined) {
+    data.displayNameNormalized = normalizeDisplayName(data.displayName as string | null)
+  }
+
   // Phase 10 item 6a — real bug fix: nothing ever geocoded a User's own postalCode into
   // latitude/longitude, so the "nearby tournament" notification radius (lib/notify.ts's
   // notifyUsersInRadius, which requires both) could never fire for any real user despite the
@@ -122,14 +130,35 @@ export async function PATCH(req: Request) {
     }
   }
 
-  const user = await prisma.user.update({
-    where: { id: session.user.id },
-    data,
-    select: {
-      displayName: true, bio: true, city: true, postalCode: true, state: true, country: true,
-      discordTag: true, birthDate: true, isMinor: true,
-    },
-  })
+  // displayNameNormalized is @unique — resolve before the write so a taken (normalized) name is
+  // a clean 409, not a mid-write unique-constraint abort. The caller's own row is excluded:
+  // re-saving an unchanged display name must not collide with itself.
+  if (typeof data.displayNameNormalized === 'string') {
+    const existing = await prisma.user.findUnique({ where: { displayNameNormalized: data.displayNameNormalized } })
+    if (existing && existing.id !== session.user.id) {
+      return Response.json({ error: 'displayname_taken' }, { status: 409 })
+    }
+  }
+
+  let user
+  try {
+    user = await prisma.user.update({
+      where: { id: session.user.id },
+      data,
+      select: {
+        displayName: true, bio: true, city: true, postalCode: true, state: true, country: true,
+        discordTag: true, birthDate: true, isMinor: true,
+      },
+    })
+  } catch (e) {
+    // P2002: the displayNameNormalized unique constraint — a concurrent write won the race
+    // between the pre-check above and this UPDATE. Same clean 409; the DB is the race-proof
+    // backstop (the same posture as Club.name/username check-then-write elsewhere).
+    if (typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002') {
+      return Response.json({ error: 'displayname_taken' }, { status: 409 })
+    }
+    throw e
+  }
 
   return Response.json(user, { status: 200 })
 }

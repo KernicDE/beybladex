@@ -51,6 +51,12 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
       where: { id: userId },
       data: {
         username: anonymizedUsername, displayName: 'Gelöschter Nutzer', email: null, passwordHash: null,
+        // Phase 19: displayNameNormalized is @unique, so the shared tombstone displayName must not
+        // be stored with its shared normalized form ('gelöschter nutzer' would collide on the
+        // SECOND erased user and abort the whole erasure with P2002). The tombstone is a system
+        // placeholder, not a user-chosen display name — store a per-user unique normalized value
+        // (both columns still written together) so erasure stays repeatable for every account.
+        displayNameNormalized: `gelöschter nutzer ${userId}`,
         bio: null, discordTag: null, city: null, postalCode: null, latitude: null, longitude: null,
         birthDate: null, totpSecret: null, parentalConsentEmail: null,
       },

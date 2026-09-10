@@ -58,6 +58,11 @@ export default function RegisterPage() {
           Benutzername
           <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={20} />
         </label>
+        {/* Phase 19: explain the lowercase-only rule (and the display-name alternative) BEFORE
+            the user fails submission — lib/errorCopy.ts's invalid_username copy only showed reactively. */}
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Nur Kleinbuchstaben, Zahlen und Unterstrich — einen Anzeigenamen mit normaler Schreibweise kannst du später in den Profileinstellungen festlegen.
+        </p>
         <label className="block text-sm">
           Passwort
           <input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} maxLength={128} />

@@ -120,6 +120,10 @@ model User {
   role         Role    @default(USER)
 
   displayName String?
+  // Phase 19: collision-checked form of displayName (trim().toLowerCase().normalize('NFKC')),
+  // written in the same write as displayName itself (lib/displayName.ts). Nullable — multiple
+  // NULLs are allowed in a unique index, so users without a display name never collide.
+  displayNameNormalized String? @unique
   birthDate   DateTime?
   country     Country   @default(DE)
   state       String?
