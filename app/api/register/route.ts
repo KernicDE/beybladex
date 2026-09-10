@@ -22,9 +22,20 @@ export async function POST(req: Request) {
   const { allowed } = await rateLimit(`register:${ip}`, 5, 60 * 15, { onRedisError: 'closed' }) // 5 registrations / 15min / IP
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
-  const body = await req.json()
-  const username = typeof body.username === 'string' ? body.username.toLowerCase() : ''
-  const { password, email, birthDate, privacyPolicyAccepted, parentalConsentEmail } = body
+  // [RC3 #64] a malformed/truncated body makes req.json() THROW (was an unhandled 500) — answer
+  // a stable 400 instead, same idiom as the other mutating routes.
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return Response.json({ error: 'invalid_json' }, { status: 400 })
+  }
+  if (typeof body !== 'object' || body === null) {
+    return Response.json({ error: 'invalid_body' }, { status: 400 })
+  }
+  const b = body as Record<string, unknown>
+  const username = typeof b.username === 'string' ? b.username.toLowerCase() : ''
+  const { password, email, birthDate, privacyPolicyAccepted, parentalConsentEmail } = b
 
   if (!USERNAME_RE.test(username) || RESERVED_USERNAMES.has(username)) {
     return Response.json({ error: 'invalid_username' }, { status: 400 })
@@ -35,7 +46,7 @@ export async function POST(req: Request) {
   if (!privacyPolicyAccepted) {
     return Response.json({ error: 'privacy_policy_not_accepted' }, { status: 400 })
   }
-  const parsedBirthDate = new Date(birthDate)
+  const parsedBirthDate = new Date(birthDate as string)
   if (!birthDate || Number.isNaN(parsedBirthDate.getTime()) || parsedBirthDate > new Date()) {
     return Response.json({ error: 'invalid_birth_date' }, { status: 400 })
   }
@@ -49,19 +60,32 @@ export async function POST(req: Request) {
   if (existing) return Response.json({ error: 'username_taken' }, { status: 409 })
 
   const passwordHash = await bcrypt.hash(password, 12)
-  const user = await prisma.user.create({
-    data: {
-      username,
-      passwordHash,
-      email: email || null,
-      birthDate: parsedBirthDate,
-      isMinor,
-      privacyPolicyAcceptedAt: new Date(),
-      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
-      status: isMinor ? 'PENDING_PARENTAL_CONSENT' : 'ACTIVE',
-      parentalConsentEmail: isMinor ? parentalConsentEmail : null,
-    },
-  })
+  let user
+  try {
+    user = await prisma.user.create({
+      data: {
+        username,
+        passwordHash,
+        email: (email as string) || null,
+        birthDate: parsedBirthDate,
+        isMinor,
+        privacyPolicyAcceptedAt: new Date(),
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+        status: isMinor ? 'PENDING_PARENTAL_CONSENT' : 'ACTIVE',
+        parentalConsentEmail: isMinor ? (parentalConsentEmail as string) : null,
+      },
+    })
+  } catch (e) {
+    // [RC3 #64] the findUnique check above and this create are not atomic — two concurrent
+    // registrations with the same username race, and the loser's create dies on the unique
+    // constraint. That is a client-visible conflict (409), not a server error (500). Username
+    // is the only unique field involved (email is NOT unique in the schema), so P2002 here
+    // always means the username race.
+    if (typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002') {
+      return Response.json({ error: 'username_taken' }, { status: 409 })
+    }
+    throw e
+  }
 
   if (isMinor) {
     // Single-use confirmation token, consumed by GET /api/parental-consent/[token], which sets

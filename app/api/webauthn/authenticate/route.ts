@@ -32,7 +32,19 @@ export async function POST(req: Request) {
   const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
-  const { nonce, response } = await req.json()
+  let parsedBody: unknown
+  try {
+    parsedBody = await req.json()
+  } catch {
+    return Response.json({ error: 'invalid_json' }, { status: 400 })
+  }
+  if (typeof parsedBody !== 'object' || parsedBody === null) {
+    return Response.json({ error: 'invalid_body' }, { status: 400 })
+  }
+  const { nonce, response } = parsedBody as {
+    nonce?: unknown
+    response: Parameters<typeof verifyAuthentication>[0]
+  }
   const raw = await redis.get(`webauthn-challenge:${nonce}`)
   if (!raw) return Response.json({ error: 'challenge_expired_or_used' }, { status: 400 })
   await redis.del(`webauthn-challenge:${nonce}`) // single-use: delete before verifying, not after

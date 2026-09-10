@@ -16,7 +16,16 @@ export async function POST(req: Request) {
   const { allowed } = await rateLimit(`totp-verify:${session.user.id}`, 5, 300)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
-  const { token } = await req.json()
+  let parsedBody: unknown
+  try {
+    parsedBody = await req.json()
+  } catch {
+    return Response.json({ error: 'invalid_json' }, { status: 400 })
+  }
+  if (typeof parsedBody !== 'object' || parsedBody === null) {
+    return Response.json({ error: 'invalid_body' }, { status: 400 })
+  }
+  const { token } = parsedBody as { token?: unknown }
   if (typeof token !== 'string' || !/^\d{6}$/.test(token)) {
     return Response.json({ error: 'invalid_token' }, { status: 400 })
   }

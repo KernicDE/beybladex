@@ -141,4 +141,19 @@ describe('POST /api/webauthn/authenticate user binding (issue #39)', () => {
     expect(body).toHaveProperty('options.challenge')
     expect(redisStore.has(`webauthn-challenge:${body.nonce}`)).toBe(true)
   })
+
+  it('returns 400 invalid_json for a malformed body instead of a 500 (issue #64)', async () => {
+    const res = await POST(
+      new Request('http://localhost/api/webauthn/authenticate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{ "nonce": "truncated',
+      })
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'invalid_json' })
+    // The challenge store must not even be touched.
+    expect(redisStore.size).toBe(0)
+  })
 })
