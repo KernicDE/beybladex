@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { calculateAge, MINOR_CONSENT_AGE_THRESHOLD } from '@/lib/age'
 import { BIO_MAX } from '@/lib/markdownFieldCaps'
+import { geocodePostalCode, type DachCountry } from '@/lib/geo'
 
 // Free-text length caps — the bio/displayName convention every later phase's forms follow.
 const DISPLAY_NAME_MAX = 50
@@ -90,6 +91,35 @@ export async function PATCH(req: Request) {
 
   if (Object.keys(data).length === 0) {
     return Response.json({ error: 'no_fields' }, { status: 400 })
+  }
+
+  // Phase 10 item 6a — real bug fix: nothing ever geocoded a User's own postalCode into
+  // latitude/longitude, so the "nearby tournament" notification radius (lib/notify.ts's
+  // notifyUsersInRadius, which requires both) could never fire for any real user despite the
+  // setting being visible and saveable. Reuse lib/geo.ts's existing geocodePostalCode (already
+  // used for tournament locations) — only re-geocode when postalCode or country actually
+  // changed in this request, not on every unrelated profile edit.
+  if (data.postalCode !== undefined || data.country !== undefined) {
+    const current = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { postalCode: true, country: true },
+    })
+    const effectivePostalCode = (data.postalCode as string | null | undefined) ?? current?.postalCode ?? null
+    const effectiveCountry = (data.country as DachCountry | undefined) ?? current?.country ?? null
+    if (effectivePostalCode && effectiveCountry) {
+      const point = await geocodePostalCode(effectiveCountry, effectivePostalCode)
+      // A geocoding miss (bad postal code, Nominatim unreachable) leaves latitude/longitude
+      // untouched rather than nulling out a previously-good value — geocoding is a convenience
+      // here, not something that should silently break the radius-notify feature.
+      if (point) {
+        data.latitude = point.lat
+        data.longitude = point.lng
+      }
+    } else if (data.postalCode === null) {
+      // The user explicitly cleared their postal code — clear the derived coordinates too.
+      data.latitude = null
+      data.longitude = null
+    }
   }
 
   const user = await prisma.user.update({

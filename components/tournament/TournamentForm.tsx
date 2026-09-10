@@ -42,8 +42,13 @@ export interface ClubOption {
 export interface TournamentFormValues {
   title: string
   description: string
-  startDate: string
-  endDate: string
+  // Phase 10 item 5 — one shared date plus a start/end TIME, not two independent
+  // datetime-local pickers (the common case: a Beyblade tournament runs within a single
+  // day). Combined into startDate/endDate DateTimes at submit time. Genuine multi-day
+  // events are explicitly out of scope for this form — see the master plan's item 5 note.
+  date: string
+  startTime: string
+  endTime: string
   locationName: string
   street: string
   postalCode: string
@@ -63,8 +68,9 @@ export interface TournamentFormValues {
 export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
   title: '',
   description: '',
-  startDate: '',
-  endDate: '',
+  date: '',
+  startTime: '',
+  endTime: '',
   locationName: '',
   street: '',
   postalCode: '',
@@ -103,15 +109,34 @@ const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Fr
 const AUTOCOMPLETE_DEBOUNCE_MS = 300
 const GEOCODE_DEBOUNCE_MS = 600
 
-export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { rulesets: RulesetOption[]; clubs?: ClubOption[]; initialClubId?: string }) {
+export function TournamentForm({
+  rulesets,
+  clubs = [],
+  initialClubId = '',
+  mode = 'create',
+  tournamentId,
+  initialValues,
+}: {
+  rulesets: RulesetOption[]
+  clubs?: ClubOption[]
+  initialClubId?: string
+  /** Phase 10 item 2 — 'edit' PATCHes /api/tournaments/[id] instead of POSTing a new one. */
+  mode?: 'create' | 'edit'
+  /** Required when mode === 'edit'. */
+  tournamentId?: string
+  /** Required when mode === 'edit' — pre-filled from the loaded Tournament row. */
+  initialValues?: TournamentFormValues
+}) {
   const router = useRouter()
-  const [values, setValues] = useState<TournamentFormValues>({
-    ...DEFAULT_TOURNAMENT_VALUES,
-    rulesetId: rulesets[0]?.id ?? '',
-    // Pre-selection (e.g. from a club page's "Neues Club-Event" button) only honors clubs the
-    // user actually administers — unknown ids fall back to "no club".
-    clubId: clubs.some((c) => c.id === initialClubId) ? initialClubId : '',
-  })
+  const [values, setValues] = useState<TournamentFormValues>(
+    initialValues ?? {
+      ...DEFAULT_TOURNAMENT_VALUES,
+      rulesetId: rulesets[0]?.id ?? '',
+      // Pre-selection (e.g. from a club page's "Neues Club-Event" button) only honors clubs the
+      // user actually administers — unknown ids fall back to "no club".
+      clubId: clubs.some((c) => c.id === initialClubId) ? initialClubId : '',
+    }
+  )
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -248,8 +273,8 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
     const payload = {
       title: values.title.trim(),
       description: values.description.trim() || null,
-      startDate: new Date(values.startDate).toISOString(),
-      endDate: values.endDate ? new Date(values.endDate).toISOString() : null,
+      startDate: new Date(`${values.date}T${values.startTime}`).toISOString(),
+      endDate: values.endTime ? new Date(`${values.date}T${values.endTime}`).toISOString() : null,
       locationName: values.locationName.trim(),
       street: values.street.trim() || null,
       postalCode: values.postalCode.trim(),
@@ -265,15 +290,22 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
       rulesetId: values.rulesetId,
       clubId: values.clubId || null,
     }
-    const res = await fetch('/api/tournaments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+    const res =
+      mode === 'edit'
+        ? await fetch(`/api/tournaments/${tournamentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await fetch('/api/tournaments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
     setPending(false)
     if (res.ok) {
       const body = await res.json()
-      router.push(`/events/${body.id}`)
+      router.push(`/events/${mode === 'edit' ? tournamentId : body.id}`)
       router.refresh()
     } else {
       const body = await res.json().catch(() => null)
@@ -301,12 +333,15 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
         <MarkdownEditor value={values.description} onChange={(description) => setValues((v) => ({ ...v, description }))} rows={4} maxLength={TOURNAMENT_DESCRIPTION_MAX} />
       </FormField>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="Beginn">
-          <Input type="datetime-local" value={values.startDate} onChange={setText('startDate')} required />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <FormField label="Datum">
+          <Input type="date" value={values.date} onChange={setText('date')} required />
         </FormField>
-        <FormField label="Ende (optional)">
-          <Input type="datetime-local" value={values.endDate} onChange={setText('endDate')} />
+        <FormField label="Uhrzeit von">
+          <Input type="time" value={values.startTime} onChange={setText('startTime')} required />
+        </FormField>
+        <FormField label="Uhrzeit bis (optional)">
+          <Input type="time" value={values.endTime} onChange={setText('endTime')} />
         </FormField>
       </div>
 
@@ -476,7 +511,7 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
       )}
 
       <Button type="submit" disabled={pending || rulesets.length === 0}>
-        {pending ? 'Erstelle…' : 'Turnier erstellen'}
+        {pending ? 'Speichere…' : mode === 'edit' ? 'Änderungen speichern' : 'Turnier erstellen'}
       </Button>
       {rulesets.length === 0 && (
         <p className="text-sm text-current/60">

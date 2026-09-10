@@ -29,14 +29,25 @@ function stageWinnersRounds(stage: LoadedTournament['stages'][number]): number {
   return stage.matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
 }
 
-export default async function TournamentBracketPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function TournamentBracketPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ view?: string }>
+}) {
   const { id } = await params
+  const { view } = await searchParams
   const [tournament, session] = await Promise.all([loadTournamentBracket(id), auth()])
   if (!tournament) notFound()
 
   const me = session?.user?.id
   const caller = me ? await prismaCallerRole(me) : null
   const isOrganizer = me !== undefined && (tournament.createdById === me || caller === 'ADMIN')
+  // Phase 10 item 2 — a shareable/bookmarkable ?view= toggle so the OrganizerConsole doesn't
+  // permanently crowd the page for an organizer who's here as a spectator/player right now.
+  // Defaults to Verwaltung (unchanged prior behavior) when the viewer IS the organizer.
+  const managementView = isOrganizer && view !== 'teilnehmer'
 
   const players = tournament.participants.map((p) => ({
     id: p.userId,
@@ -88,6 +99,27 @@ export default async function TournamentBracketPage({ params }: { params: Promis
         {tournament.completedAt && <Badge tone="green">Abgeschlossen</Badge>}
         <Badge tone="cyan">{tournament.ruleset.title}</Badge>
       </div>
+
+      {isOrganizer && (
+        <div className="flex gap-2 text-sm" role="tablist" aria-label="Ansicht">
+          <Link
+            href={`/tournaments/${tournament.id}?view=teilnehmer`}
+            role="tab"
+            aria-selected={!managementView}
+            className={`rounded-md px-3 py-1.5 font-medium transition-colors ${!managementView ? 'bg-x-cyan text-base-dark' : 'border border-current/30 hover:bg-current/5'}`}
+          >
+            Teilnehmer
+          </Link>
+          <Link
+            href={`/tournaments/${tournament.id}?view=verwaltung`}
+            role="tab"
+            aria-selected={managementView}
+            className={`rounded-md px-3 py-1.5 font-medium transition-colors ${managementView ? 'bg-x-cyan text-base-dark' : 'border border-current/30 hover:bg-current/5'}`}
+          >
+            Verwaltung
+          </Link>
+        </div>
+      )}
 
       {myMatch && (
         <Card className="space-y-1 border-neon-green/40 p-4">
@@ -144,7 +176,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
         ))
       )}
 
-      {isOrganizer && (
+      {isOrganizer && managementView && (
         <OrganizerConsole
           tournamentId={tournament.id}
           participants={tournament.participants.map((p) => ({
@@ -195,7 +227,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
         />
       )}
 
-      {isOrganizer && checkInQrSvg && (
+      {isOrganizer && managementView && checkInQrSvg && (
         <details className="rounded-md border border-x-cyan/20 p-3">
           <summary className="cursor-pointer text-sm font-medium">Check-in-QR-Code (Venue)</summary>
           <p className="mt-2 text-xs text-current/60">

@@ -9,6 +9,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -133,6 +134,47 @@ export function OrganizerConsole({
         {completed && <Badge tone="green">Turnier abgeschlossen</Badge>}
       </div>
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
+
+      {/* Phase 10 item 2 — closes the gap where PATCH/DELETE /api/tournaments/[id] had no UI
+          caller anywhere. "Absagen" only makes sense before the bracket exists — once matches
+          are generated, DELETE would silently wipe live results, so it's hidden after that
+          point (organizers use "Turnier abschließen" instead, further below). */}
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href={`/tournaments/${tournamentId}/edit`}
+          className="inline-block rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
+        >
+          Turnier bearbeiten
+        </Link>
+        {!bracketGenerated && !completed && (
+          <Button
+            variant="danger"
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm('Turnier absagen? Alle Anmeldungen werden entfernt. Dies kann nicht rückgängig gemacht werden.')) {
+                setBusy(true)
+                setError(null)
+                fetch(base, { method: 'DELETE' })
+                  .then((res) => {
+                    if (res.ok) {
+                      router.push('/events')
+                      router.refresh()
+                    } else {
+                      setBusy(false)
+                      setError(`Fehler (${res.status})`)
+                    }
+                  })
+                  .catch(() => {
+                    setBusy(false)
+                    setError('Netzwerkfehler — bitte erneut versuchen.')
+                  })
+              }
+            }}
+          >
+            Turnier absagen
+          </Button>
+        )}
+      </div>
 
       <HeaderImageUpload tournamentId={tournamentId} headerImageId={headerImageId} />
 

@@ -14,6 +14,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { friendshipBetween } from '@/lib/friendship'
+import { notifyUser } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,5 +56,17 @@ export async function POST(req: Request) {
     data: { requesterId, addresseeId, status: 'PENDING' },
     select: { id: true, requesterId: true, addresseeId: true, status: true, createdAt: true },
   })
+
+  // Phase 10 item 9 — real gap found by the user: nothing ever notified the addressee of an
+  // incoming request; the only way to discover one was chance revisiting of the requester's
+  // profile. Reuse lib/notify.ts's notifyUser (no second notification mechanism) — link goes
+  // to the requester's profile, where the existing Annehmen/Ablehnen buttons already work.
+  const requester = await prisma.user.findUnique({ where: { id: requesterId }, select: { username: true, displayName: true } })
+  await notifyUser(addresseeId, {
+    title: 'Neue Freundschaftsanfrage',
+    message: `${requester?.displayName ?? requester?.username ?? 'Jemand'} möchte mit dir befreundet sein.`,
+    link: `/profile/${requester?.username}`,
+  })
+
   return Response.json(friendship, { status: 201 })
 }
