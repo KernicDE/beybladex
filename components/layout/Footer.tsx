@@ -1,12 +1,7 @@
 // components/layout/Footer.tsx
 // Desktop-only static footer with legal page links (Impressum, Datenschutz, AGB).
 import Link from 'next/link'
-
-const LEGAL_LINKS = [
-  { href: '/impressum', label: 'Impressum' },
-  { href: '/datenschutz', label: 'Datenschutz' },
-  { href: '/agb', label: 'AGB' },
-] as const
+import { LEGAL_LINKS } from '@/components/layout/legalLinks'
 
 export function Footer() {
   return (

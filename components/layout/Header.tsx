@@ -8,6 +8,7 @@ import type { Session } from 'next-auth'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { GuestLegalMenu } from '@/components/layout/GuestLegalMenu'
 import { BrandMark } from '@/components/brand/BrandMark'
 
 // Primary nav. These routes land in later phases (3–5); linking to them now is
@@ -64,12 +65,17 @@ export function Header({ session, avatarImageId }: { session: Session | null; av
         {session ? (
           <UserMenu username={username ?? ''} avatarImageId={avatarImageId} />
         ) : (
-          <Link
-            href="/login"
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
-          >
-            Anmelden
-          </Link>
+          <>
+            {/* Guests have no other path to the legal pages below `md` — the Footer is
+                desktop-only and UserMenu only renders for a session (issue #22). */}
+            <GuestLegalMenu />
+            <Link
+              href="/login"
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
+            >
+              Anmelden
+            </Link>
+          </>
         )}
       </div>
     </header>

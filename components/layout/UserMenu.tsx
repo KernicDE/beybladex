@@ -11,12 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
-
-const LEGAL_LINKS = [
-  { href: '/impressum', label: 'Impressum' },
-  { href: '/datenschutz', label: 'Datenschutz' },
-  { href: '/agb', label: 'AGB' },
-] as const
+import { LEGAL_LINKS } from '@/components/layout/legalLinks'
 
 export function UserMenu({ username, avatarImageId }: { username: string; avatarImageId: string | null }) {
   const [open, setOpen] = useState(false)
