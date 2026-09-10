@@ -16,6 +16,7 @@
 // - DELETE: only the participant themselves; withdraws up until Tournament.startDate (409 after).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { validateDeckForFormat } from '@/lib/deckValidation'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -26,6 +27,39 @@ async function ownDeck(deckId: unknown, userId: string): Promise<boolean> {
   return deck?.userId === userId
 }
 
+// Phase 16 item 5 — re-validates a chosen deck against the TOURNAMENT'S linked
+// Ruleset.deckFormat: a genuinely new check (join previously accepted any deckId belonging to
+// the caller with no format cross-check at all). Returns null (valid) or the error payload.
+async function validateDeckAgainstTournamentFormat(
+  deckId: string,
+  tournamentId: string
+): Promise<{ error: string; conflicts?: string[] } | null> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { ruleset: { select: { deckFormat: true } } },
+  })
+  if (!tournament) return { error: 'not_found' }
+  const deck = await prisma.deck.findUnique({
+    where: { id: deckId },
+    include: {
+      builds: {
+        include: {
+          build: {
+            select: {
+              id: true, bladeId: true, ratchetId: true, bitId: true,
+              blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  })
+  if (!deck) return { error: 'invalid_deck' }
+  const { valid, conflicts } = validateDeckForFormat(deck.builds.map((db) => db.build), tournament.ruleset.deckFormat)
+  if (!valid) return { error: 'deck_format_mismatch', conflicts }
+  return null
+}
+
 export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
@@ -33,11 +67,17 @@ export async function POST(req: Request, { params }: Ctx) {
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
-    select: { startDate: true, stages: { select: { _count: { select: { matches: true } } } } },
+    select: { startDate: true, startedAt: true, stages: { select: { _count: { select: { matches: true } } } } },
   })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
   const bracketGenerated = tournament.stages.some((s) => s._count.matches > 0)
-  if (new Date() > tournament.startDate || bracketGenerated) {
+  // [REVIEW-FIX P16-5] registration also closes once the organizer has explicitly "started" the
+  // tournament (Phase 16 item 6, Tournament.startedAt) — not just at startDate/bracket
+  // generation. Without this, a player could join AFTER a locked-decks tournament's deck
+  // snapshot was already taken, register a deck, and field it with no lock ever applied to
+  // them (TournamentParticipant.lockedBuildIds stays empty for a late joiner, which every
+  // consumer treats as "no restriction" — exactly the bypass the snapshot exists to prevent).
+  if (new Date() > tournament.startDate || bracketGenerated || tournament.startedAt !== null) {
     return Response.json({ error: 'registration_closed' }, { status: 409 })
   }
 
@@ -50,6 +90,10 @@ export async function POST(req: Request, { params }: Ctx) {
   const deckId = (body as Record<string, unknown>).deckId
   if (!(await ownDeck(deckId, session.user.id))) {
     return Response.json({ error: 'invalid_deck' }, { status: 403 })
+  }
+  if (typeof deckId === 'string') {
+    const formatError = await validateDeckAgainstTournamentFormat(deckId, id)
+    if (formatError) return Response.json(formatError, { status: 400 })
   }
 
   try {
@@ -71,9 +115,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true } })
+  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true, startedAt: true } })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
-  if (new Date() > tournament.startDate) {
+  // [REVIEW-FIX P16-5] same startedAt gate as POST above — a deck swap after "Turnier starten"
+  // would otherwise let a participant change deckId AFTER their (or an empty) snapshot was
+  // taken, pointing lockedBuildIds at a deck that no longer matches what deckId now says.
+  // (DELETE/withdraw below deliberately does NOT get this gate — dropping out mid-event stays
+  // allowed after start; only the deck-content edit this route guards is the lock-bypass risk.)
+  if (new Date() > tournament.startDate || tournament.startedAt !== null) {
     return Response.json({ error: 'tournament_started' }, { status: 409 })
   }
 
@@ -94,6 +143,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (!(await ownDeck(deckId, session.user.id))) {
     return Response.json({ error: 'invalid_deck' }, { status: 403 })
+  }
+  if (typeof deckId === 'string') {
+    const formatError = await validateDeckAgainstTournamentFormat(deckId, id)
+    if (formatError) return Response.json(formatError, { status: 400 })
   }
 
   const updated = await prisma.tournamentParticipant.update({

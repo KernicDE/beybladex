@@ -156,20 +156,40 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
         ...(type ? { beyType: type } : {}),
         ...(manufacturer ? { manufacturer } : {}),
       },
-      select: { id: true, name: true, category: true, beyType: true, manufacturer: true },
+      select: { id: true, name: true, category: true, beyType: true, manufacturer: true, dualSpin: true },
       orderBy: { name: 'asc' },
     })
-    const stats = await getPartStats(parts.map((p) => p.id))
+    // Phase 16 item 3 — a dual-spin part gets TWO composite-keyed lookups (RIGHT/LEFT) instead
+    // of one bare-id lookup, so the leaderboard never conflates its two modes into one
+    // misleading combined number (the acceptance criterion's exact wording).
+    const statKeys = parts.flatMap((p) => (p.dualSpin ? [`${p.id}:RIGHT`, `${p.id}:LEFT`] : [p.id]))
+    const stats = await getPartStats(statKeys)
     const rows = sortRows(
-      parts.map((p) => ({
-        id: p.id,
-        name: p.name,
-        category: p.category,
-        beyType: p.beyType,
-        manufacturer: p.manufacturer,
-        appearances: stats.get(p.id)?.appearances ?? 0,
-        winRate: stats.get(p.id)?.winRate ?? null,
-      })),
+      parts.flatMap((p) =>
+        p.dualSpin
+          ? (['RIGHT', 'LEFT'] as const).map((mode) => ({
+              id: `${p.id}:${mode}`,
+              name: `${p.name} (${mode === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'})`,
+              linkName: p.name,
+              category: p.category,
+              beyType: p.beyType,
+              manufacturer: p.manufacturer,
+              appearances: stats.get(`${p.id}:${mode}`)?.appearances ?? 0,
+              winRate: stats.get(`${p.id}:${mode}`)?.winRate ?? null,
+            }))
+          : [
+              {
+                id: p.id,
+                name: p.name,
+                linkName: p.name,
+                category: p.category,
+                beyType: p.beyType,
+                manufacturer: p.manufacturer,
+                appearances: stats.get(p.id)?.appearances ?? 0,
+                winRate: stats.get(p.id)?.winRate ?? null,
+              },
+            ]
+      ),
       sort,
       dir,
     )
@@ -179,7 +199,7 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
       <ul className="divide-y rounded-xl border">
         {rows.map((row) => (
           <li key={row.id}>
-            <Link href={`/builds?q=${encodeURIComponent(row.name)}`} className="flex items-center gap-3 px-4 py-3 hover:bg-current/5">
+            <Link href={`/builds?q=${encodeURIComponent(row.linkName)}`} className="flex items-center gap-3 px-4 py-3 hover:bg-current/5">
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{row.name}</span>
                 <span className="block text-sm text-current/60">

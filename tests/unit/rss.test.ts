@@ -32,6 +32,7 @@ function makeTournament(overrides: Partial<Tournament>): Tournament {
     checkInToken: 'token-1',
     headerImageId: null,
     rankedEligible: true,
+    startedAt: null,
     ...overrides,
   }
 }

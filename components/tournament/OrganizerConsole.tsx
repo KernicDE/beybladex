@@ -57,6 +57,7 @@ export function OrganizerConsole({
   stages,
   judges,
   completedAt,
+  startedAt,
   tournamentJudges,
   entryFeeCent,
   headerImageId,
@@ -66,6 +67,10 @@ export function OrganizerConsole({
   stages: ConsoleStage[]
   judges: ConsoleJudge[]
   completedAt: string | null
+  /** Phase 16 item 6 — "Turnier starten": one-way, distinct from completedAt and NOT inferred
+   *  from startDate. Once set, a locked-decks ruleset's participants have their build
+   *  selection snapshotted (TournamentParticipant.lockedBuildIds). */
+  startedAt: string | null
   /** Phase 7 — users granted per-tournament check-in/arena/payment staff authority. */
   tournamentJudges: ConsoleJudge[]
   /** Phase 7 — the payment section only renders when the event actually charges an entry fee. */
@@ -147,7 +152,23 @@ export function OrganizerConsole({
         >
           Turnier bearbeiten
         </Link>
-        {!bracketGenerated && !completed && (
+        {/* Phase 16 item 6 — one-way; sets Tournament.startedAt and, for a locked-decks
+            ruleset, snapshots every participant's current deck builds. Typically pressed
+            before "Bracket generieren" for the first stage, but not enforced in either order. */}
+        {!startedAt && !completed && (
+          <Button
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm('Turnier starten? Dies kann nicht rückgängig gemacht werden — bei einem Regelwerk mit gesperrten Decks werden alle angemeldeten Decks jetzt eingefroren.')) {
+                void call(() => fetch(`${base}/start`, { method: 'POST' }), 'ok')
+              }
+            }}
+          >
+            Turnier starten
+          </Button>
+        )}
+        {startedAt && <Badge tone="cyan">Gestartet</Badge>}
+        {!bracketGenerated && !completed && !startedAt && (
           <Button
             variant="danger"
             disabled={busy}

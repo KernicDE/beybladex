@@ -2729,9 +2729,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 16: Dual-Spin Part Mode Support & Ruleset-Driven Deck Rules — added post-Phase-6, MVP2, by explicit user request, extended on later review
 
-**Tracking:** [Issue #10](https://github.com/KernicDE/beybladex/issues/10)
+**Tracking:** [Issue #10](https://github.com/KernicDE/beybladex/issues/10) (closed)
 
-**Status: planned, not started.** Same standing note: confirm before starting.
+**Status: DONE — merged to main 2026-09-10 (commit `e482593`).** `Part.dualSpin`, `Match.player1/2SpinMode`, `Tournament.startedAt`, `TournamentParticipant.lockedBuildIds`, format-aware deck validation, join-time re-validation, "Turnier starten" + snapshot lock-in, Auto-Meta per-mode grouping. Reviewed by Kimi before merge — a real explicit-confirmation gap in the judge UI plus a start-route race/snapshot-bypass class of bugs were found and fixed (see commit `c5a5eb1`) before merging. PICK_THREE_CHOOSE_ONE's duplicate-parts rule stayed the documented open question, not invented. `npx tsc --noEmit` clean, eslint clean, 239/239 unit tests.
 
 **Scope, and why it's a real gap, not polish**: current-generation Beyblade X CX-series parts include **dual-spin** Layers/Layer-Bases whose spin mode is not fixed — per the actual WBO rulebook, the mode must be selected during the Beyblade-selection/deck-check phase, submitted for judge inspection in that mode, and **cannot be changed for the rest of the match**. This codebase's `Part.spinDirection` (`RIGHT | LEFT`, `prisma/schema.prisma`) models spin as a fixed per-part attribute — there is no way to represent a part whose mode is chosen per-match, which means judging with current-generation retail parts is incomplete today, not just under-featured.
 
