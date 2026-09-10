@@ -2765,9 +2765,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 17: Visual Identity / Branding — added post-Phase-6, MVP2, by explicit user request
 
-**Tracking:** [Issue #11](https://github.com/KernicDE/beybladex/issues/11)
+**Tracking:** [Issue #11](https://github.com/KernicDE/beybladex/issues/11) (closed)
 
-**Status: planned, not started.** Same standing note: confirm before starting.
+**Status: DONE — merged to main 2026-09-10 (commit `72c579a`).** Artwork direction (an "X-Stadium" mark) confirmed with the user before any code was touched. Reviewed by Kimi before merge — no blocking findings. Real icon set, Next's auto-favicon + apple-touch-icon, `app/opengraph-image.tsx`, header/landing wordmark. `npx tsc --noEmit` clean, eslint clean, 247/247 unit tests.
 
 **Scope, and why it's needed**: verified this session that `public/icons/icon-192.png` (1 KB), `icon-512.png` (4 KB), and `icon-maskable-512.png` (3 KB) are generic placeholder assets, not a designed mark — and the site otherwise relies solely on the `X-Cyan`/`Neon-Green` color tokens (Phase 1 Task 1) plus the plain text wordmark "BeybladeX.de" for identity. Next to WBO's forum branding and Challonge's generic multi-game bracket UI, an actual distinctive logo/icon is what makes this platform instantly recognizable rather than blending in as "another Beyblade tool" — this closes that gap.
 
