@@ -8,6 +8,7 @@ import type { Session } from 'next-auth'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { BrandMark } from '@/components/brand/BrandMark'
 
 // Primary nav. These routes land in later phases (3–5); linking to them now is
 // the binding IA decision — they 404 until their phase ships.
@@ -31,8 +32,9 @@ export function Header({ session }: { session: Session | null }) {
     <header className="sticky top-0 z-40 flex items-center gap-4 border-b border-x-cyan/20 bg-base-light/90 px-4 py-3 backdrop-blur dark:bg-base-dark/90 md:px-8">
       <Link
         href="/"
-        className="text-lg font-bold tracking-tight text-x-cyan-text dark:text-x-cyan"
+        className="flex items-center gap-2 text-lg font-bold tracking-tight text-x-cyan-text dark:text-x-cyan"
       >
+        <BrandMark size={26} />
         BeybladeX.de
       </Link>
       <nav aria-label="Hauptnavigation" className="hidden items-center gap-1 lg:flex">
