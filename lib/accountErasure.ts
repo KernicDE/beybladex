@@ -34,6 +34,9 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // Cascade-delete: purely personal, no other user's legitimate interest in keeping it.
     await tx.passkey.deleteMany({ where: { userId } })
     await tx.notification.deleteMany({ where: { userId } })
+    // Phase 18: push subscriptions are purely personal (Cascade backstop, explicit deleteMany
+    // for the same self-documenting reason as above).
+    await tx.pushSubscription.deleteMany({ where: { userId } })
     await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } })
     await tx.clubMember.deleteMany({ where: { userId } })
     // Phase 5 Part B: PricePoint rows are onDelete: Cascade with their CollectionItem, so the

@@ -41,7 +41,9 @@ export async function PATCH(req: Request) {
     }
     data.notifyRadiusKm = radius
   }
-  for (const key of ['notifyRecurring', 'notifyEmail'] as const) {
+  // Phase 18 — notifyMatchLifecycle(Email) added to this same route's field set (not a new
+  // route): still "owns only notify* fields", per this file's own header comment.
+  for (const key of ['notifyRecurring', 'notifyEmail', 'notifyMatchLifecycle', 'notifyMatchLifecycleEmail'] as const) {
     if (fields[key] !== undefined) {
       if (typeof fields[key] !== 'boolean') {
         return Response.json({ error: `invalid_${key}` }, { status: 400 })
@@ -57,7 +59,7 @@ export async function PATCH(req: Request) {
   const user = await prisma.user.update({
     where: { id: session.user.id },
     data,
-    select: { notifyRadiusKm: true, notifyRecurring: true, notifyEmail: true },
+    select: { notifyRadiusKm: true, notifyRecurring: true, notifyEmail: true, notifyMatchLifecycle: true, notifyMatchLifecycleEmail: true },
   })
 
   return Response.json(user, { status: 200 })

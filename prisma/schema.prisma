@@ -119,20 +119,20 @@ model User {
   email        String?
   role         Role    @default(USER)
 
-  displayName String?
+  displayName           String?
   // Phase 19: collision-checked form of displayName (trim().toLowerCase().normalize('NFKC')),
   // written in the same write as displayName itself (lib/displayName.ts). Nullable — multiple
   // NULLs are allowed in a unique index, so users without a display name never collide.
-  displayNameNormalized String? @unique
-  birthDate   DateTime?
-  country     Country   @default(DE)
-  state       String?
-  postalCode  String?
-  city        String?
-  latitude    Float?
-  longitude   Float?
-  discordTag  String?
-  bio         String?
+  displayNameNormalized String?   @unique
+  birthDate             DateTime?
+  country               Country   @default(DE)
+  state                 String?
+  postalCode            String?
+  city                  String?
+  latitude              Float?
+  longitude             Float?
+  discordTag            String?
+  bio                   String?
 
   profileVisibility    PrivacyLevel @default(PUBLIC)
   locationVisibility   PrivacyLevel @default(FRIENDS_ONLY) // was PUBLIC — Art. 25 privacy-by-default
@@ -140,9 +140,21 @@ model User {
   decksVisibility      PrivacyLevel @default(PUBLIC)
   ageVisibility        PrivacyLevel @default(PRIVATE) // spec §2.D: "Alter" is privacy-controlled
 
-  notifyRadiusKm  Int?    @default(50)
-  notifyRecurring Boolean @default(false) // was true — opt-in, not opt-out
-  notifyEmail     Boolean @default(false)
+  notifyRadiusKm            Int?               @default(50)
+  notifyRecurring           Boolean            @default(false) // was true — opt-in, not opt-out
+  notifyEmail               Boolean            @default(false)
+  // Phase 18 — granular match/arena-lifecycle toggles, separate from the blanket notifyEmail
+  // above (which stays the toggle for the nearby-tournament radius blast and club activity —
+  // narrowing this phase's scope to the categories its own triggers actually add; a full
+  // per-category rebuild of every existing notification type is a larger, separate task).
+  // notifyMatchLifecycle gates PUSH for "Turnier gestartet"/"Gehe zu Arena N"/"Dein nächstes
+  // Match beginnt" — default true (matches are time-sensitive; in-app always shows regardless
+  // of this flag, it only gates the OS-level push send). notifyMatchLifecycleEmail is the
+  // separate, conservative-default (false) email toggle for the same three triggers — keeps
+  // the existing minor-ceiling rule (never emailed to an isMinor user, same as notifyEmail).
+  notifyMatchLifecycle      Boolean            @default(true)
+  notifyMatchLifecycleEmail Boolean            @default(false)
+  pushSubscriptions         PushSubscription[]
 
   totpSecret String?
   passkeys   Passkey[]
@@ -224,6 +236,23 @@ model Notification {
   link      String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+// Phase 18 — Web Push subscriptions. A user may have several (one per device/browser); each is
+// keyed by its unique push `endpoint` (the browser-assigned URL identifying that subscription),
+// upserted on (re-)subscribe. Purely personal data — Cascade with the account, no erasure-
+// matrix entry needed beyond the existing Cascade backstop (unlike AuditLog/MediaAsset, a push
+// endpoint has no value to anyone but its owner).
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // Phase 13: join policies. OPEN = today's behavior (immediate join); APPLICATION = self-service

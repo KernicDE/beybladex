@@ -39,6 +39,7 @@ import { rateLimit } from '@/lib/rateLimit'
 import { assignFreedArena } from '@/lib/arenaAssign'
 import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
 import { getActiveSeason, applyMatchResultToRatings } from '@/lib/season'
+import { notifyMatchReady } from '@/lib/notify'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -359,10 +360,25 @@ export async function POST(req: Request, { params }: Ctx) {
       await propagateEliminationResult(match, winnerId, 2 ** R)
     } else {
       const slot = match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
+      const nextRound = match.round + 1
+      const nextBracketOrder = Math.floor(match.bracketOrder / 2)
       await prisma.match.updateMany({
-        where: { stageId: match.stageId, round: match.round + 1, bracketOrder: Math.floor(match.bracketOrder / 2) },
+        where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
         data: { [slot]: winnerId },
       })
+      // Phase 18 item 2 — "Dein nächstes Match beginnt": self-guarded by notifyMatchReady
+      // (no-op unless this write was the SECOND slot filled). Best-effort.
+      const nextMatch = await prisma.match.findFirst({
+        where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
+        select: { id: true },
+      })
+      if (nextMatch) {
+        try {
+          await notifyMatchReady(nextMatch.id)
+        } catch (err) {
+          console.error(`[score] notifyMatchReady(${nextMatch.id}) failed:`, err)
+        }
+      }
     }
 
     // Phase 7 — the match just freed its arena: hand the number to the next waiting match in
