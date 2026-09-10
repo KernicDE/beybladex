@@ -11,7 +11,7 @@ import { prisma } from '@/lib/db'
 // The user fields the club roster needs for resolveVisibleFields projection.
 const ROSTER_USER_SELECT = {
   id: true, username: true, displayName: true, city: true, discordTag: true,
-  bio: true, birthDate: true, isMinor: true,
+  bio: true, birthDate: true, isMinor: true, avatarImageId: true,
   profileVisibility: true, locationVisibility: true, collectionVisibility: true,
   decksVisibility: true, ageVisibility: true,
 } as const

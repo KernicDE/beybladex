@@ -26,7 +26,7 @@ const NAV_LINKS = [
   { href: '/rangliste', label: 'Rangliste' },
 ] as const
 
-export function Header({ session }: { session: Session | null }) {
+export function Header({ session, avatarImageId }: { session: Session | null; avatarImageId: string | null }) {
   const username = session?.user?.name
   return (
     <header className="sticky top-0 z-40 flex items-center gap-4 border-b border-x-cyan/20 bg-base-light/90 px-4 py-3 backdrop-blur dark:bg-base-dark/90 md:px-8">
@@ -62,7 +62,7 @@ export function Header({ session }: { session: Session | null }) {
         )}
         <ThemeToggle />
         {session ? (
-          <UserMenu username={username ?? ''} />
+          <UserMenu username={username ?? ''} avatarImageId={avatarImageId} />
         ) : (
           <Link
             href="/login"

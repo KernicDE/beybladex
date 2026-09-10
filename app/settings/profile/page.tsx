@@ -6,6 +6,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { ProfileForm } from '@/components/settings/ProfileForm'
+import { AvatarSection } from '@/components/settings/AvatarSection'
 
 export const dynamic = 'force-dynamic' // per-user surface — never cached (Cross-Phase rule)
 
@@ -14,8 +15,9 @@ export default async function SettingsProfilePage() {
   const user = await prisma.user.findUnique({
     where: { id: session!.user!.id },
     select: {
+      username: true,
       displayName: true, bio: true, city: true, postalCode: true, state: true, country: true,
-      discordTag: true, birthDate: true, isMinor: true,
+      discordTag: true, birthDate: true, isMinor: true, avatarImageId: true,
     },
   })
   if (!user) return <p>Benutzerkonto nicht gefunden.</p>
@@ -40,6 +42,9 @@ export default async function SettingsProfilePage() {
         }}
         isMinor={user.isMinor}
       />
+      {/* Phase 21 (item 3): the avatar manager — preview, upload-on-pick, "Entfernen" only
+          while an avatar is set. The viewer's own row: no privacy gate needed. */}
+      <AvatarSection username={user.username} avatarImageId={user.avatarImageId} />
     </section>
   )
 }

@@ -8,6 +8,7 @@
 // profileVisible, the same lever every other extra-content field on this page already uses
 // (there is no dedicated privacy field for either, and neither existed before this phase).
 import Link from 'next/link'
+import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { resolveVisibleFields } from '@/lib/privacy'
@@ -74,15 +75,28 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-4">
-        {/* Avatar placeholder (Phase 10 item 4) — no avatar-upload feature exists yet
-            (deliberately out of scope, see Phase 5 Part A's own note); a static initial
-            keeps the header from looking broken until that lands. */}
-        <div
-          aria-hidden="true"
-          className="flex size-16 shrink-0 items-center justify-center rounded-full bg-x-cyan/15 text-xl font-semibold text-x-cyan-text dark:text-x-cyan"
-        >
-          {(view.displayName ?? view.username).slice(0, 1).toUpperCase()}
-        </div>
+        {/* Avatar (Phase 21): the subject's uploaded photo, served by the generic
+            /api/media/[id] route — but ONLY through the resolveVisibleFields projection
+            (view.avatarImageId is null unless profileVisibility permits it), falling back
+            to the initial-letter circle when unset or not visible. next/image with explicit
+            sizing, same as every other catalog image ([REVIEW-FIX: performance P12]). */}
+        {view.avatarImageId ? (
+          <Image
+            src={`/api/media/${view.avatarImageId}`}
+            alt={`Profilbild von ${view.displayName ?? view.username}`}
+            width={64}
+            height={64}
+            sizes="64px"
+            className="size-16 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex size-16 shrink-0 items-center justify-center rounded-full bg-x-cyan/15 text-xl font-semibold text-x-cyan-text dark:text-x-cyan"
+          >
+            {(view.displayName ?? view.username).slice(0, 1).toUpperCase()}
+          </div>
+        )}
         <div>
           <h1 className="text-2xl font-semibold">{view.displayName ?? view.username}</h1>
           <p className="text-sm text-current/60">@{view.username}</p>

@@ -3,6 +3,9 @@
 // three legal links (Impressum/Datenschutz/AGB). The Footer that carries them is
 // desktop-only (Task 10), so this menu is the mobile path to the legal pages
 // (binding per the plan's "Mobile legal-page access" note — ≤2 clicks on any viewport).
+// Phase 21: the trigger renders the viewer's OWN uploaded avatar (avatarImageId, fetched
+// by the server-component Header) with the initial-letter fallback — always the viewer's
+// own data, no privacy gate, matching the username rendered next to it.
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -15,7 +18,7 @@ const LEGAL_LINKS = [
   { href: '/agb', label: 'AGB' },
 ] as const
 
-export function UserMenu({ username }: { username: string }) {
+export function UserMenu({ username, avatarImageId }: { username: string; avatarImageId: string | null }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -42,9 +45,14 @@ export function UserMenu({ username }: { username: string }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-x-cyan/20 text-sm font-semibold text-x-cyan-text dark:text-x-cyan"
+        className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-x-cyan/20 text-sm font-semibold text-x-cyan-text dark:text-x-cyan"
       >
-        <span aria-hidden="true">{(username[0] ?? '?').toUpperCase()}</span>
+        {avatarImageId ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 32px menu trigger showing the viewer's OWN avatar (always their own data, no privacy gate)
+          <img src={`/api/media/${avatarImageId}`} alt="" className="h-8 w-8 rounded-full object-cover" />
+        ) : (
+          <span aria-hidden="true">{(username[0] ?? '?').toUpperCase()}</span>
+        )}
         <span className="sr-only">Kontomenü ({username})</span>
       </button>
       {open && (

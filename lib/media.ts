@@ -33,6 +33,10 @@ export const PART_IMAGE_TARGET: MediaTarget = { width: 512, height: 512, fit: 'c
  *  thumbnail on /events renders a cropped excerpt of the SAME stored asset at display size
  *  (object-fit) — one MediaAsset per upload, no second stored variant. */
 export const EVENT_HEADER_TARGET: MediaTarget = { width: 1200, height: 400, fit: 'cover' }
+/** User avatars: fixed square crop for the profile-page header circle and the UserMenu
+ *  button. Rendered small (32–64 px) but stored at 256 so the image stays crisp on
+ *  high-DPI displays without a second stored variant. */
+export const AVATAR_TARGET: MediaTarget = { width: 256, height: 256, fit: 'cover' }
 
 export function mediaDir(): string {
   return process.env.MEDIA_UPLOADS_DIR ?? path.join(process.cwd(), 'media_uploads')

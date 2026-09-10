@@ -8,7 +8,7 @@ describe('Header', () => {
   it('renders the brand name and a theme toggle', () => {
     render(
       <ThemeProvider>
-        <Header session={null} />
+        <Header session={null} avatarImageId={null} />
       </ThemeProvider>
     )
     expect(screen.getByText('BeybladeX.de')).toBeInTheDocument()
