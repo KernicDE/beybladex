@@ -180,7 +180,10 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
       .map((part) => part.trim())
       .filter(Boolean)
     if (parts.join(' ').trim().length < 3) {
-      setSuggestions([])
+      // Don't setState synchronously in the effect body (react-hooks/set-state-in-effect) —
+      // the render below already hides stale suggestions once the query is too short
+      // (queryTooShort guard), so there's nothing to clear here; the next real fetch
+      // (query long enough again) replaces `suggestions` from inside the debounce callback.
       return
     }
     const q = [...parts, values.country].join(', ')
@@ -278,6 +281,16 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
     }
   }
 
+  // Same "too short" threshold the autocomplete effect above uses to decide whether to fetch —
+  // kept as a render-time guard (not synced into state) so a short query hides stale
+  // suggestions without a setState-in-effect call.
+  const addressQueryTooShort =
+    [values.locationName, values.street, values.postalCode, values.city]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim().length < 3
+
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <FormField label="Titel">
@@ -319,7 +332,7 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
 
       {/* Phase 9 address type-ahead: selecting a suggestion fills street/postalCode/city/
           state/country/coordinates at once; every field stays hand-editable afterwards. */}
-      {suggestions.length > 0 && (
+      {!addressQueryTooShort && suggestions.length > 0 && (
         <div className="rounded-md border border-zinc-300 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-base-dark-alt">
           <ul role="listbox" aria-label="Adressvorschläge">
             {suggestions.map((s) => (
