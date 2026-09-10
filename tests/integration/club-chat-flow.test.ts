@@ -7,6 +7,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { GET, POST } from '@/app/api/clubs/[slug]/messages/route'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
+import { redis } from '@/lib/redis'
 
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 const mockAuth = vi.mocked(auth)
@@ -120,13 +121,20 @@ describe('club chat flow', () => {
     const member = await seedUser(suffix, 'chatc')
     const club = await seedClub(member.id, suffix)
     mockAuth.mockResolvedValue(asSession({ id: member.id, name: member.username }))
+    // This test is specifically about the 50-message CAP, not the 10-messages/minute rate
+    // limit (that's the separate "flooding" test below) — 51 posts in a tight loop would
+    // otherwise get 429'd from message 11 onward under a real rate limiter. Clear the
+    // rate-limit key between batches of 10 so this test exercises only the cap behavior.
+    const rateLimitKey = `ratelimit:club-chat:post:${club.id}:${member.id}`
 
     for (let i = 1; i <= 50; i++) {
+      if ((i - 1) % 10 === 0) await redis.del(rateLimitKey)
       const res = await POST(jsonRequest(`http://localhost/api/clubs/${club.slug}/messages`, 'POST', { body: `Nachricht ${i}` }), ctx(club.slug))
       expect(res.status).toBe(201)
     }
     expect(await prisma.clubMessage.count({ where: { clubId: club.id } })).toBe(50)
 
+    await redis.del(rateLimitKey)
     const res51 = await POST(jsonRequest(`http://localhost/api/clubs/${club.slug}/messages`, 'POST', { body: 'Nachricht 51' }), ctx(club.slug))
     expect(res51.status).toBe(201)
 

@@ -1,7 +1,13 @@
-// app/decks/[id]/page.tsx
+// app/decks/item/[id]/page.tsx
 // Deck detail + deck builder. Owner-only in Part A (404 for anyone else — existence of
 // another user's deck isn't leaked). Part C (tournament registration) consumes Deck rows
 // server-side; public deck sharing would gate on decksVisibility via resolveVisibleFields.
+// [FIX] Moved from app/decks/[id] to app/decks/item/[id] (mirroring
+// /collection/item/[id]'s existing convention) — Next.js rejects two sibling dynamic routes
+// with different param names at the same path depth ("/decks/[id]" vs "/decks/[username]",
+// the Phase 10 public listing page); this was a genuine build-breaking bug that had never
+// been caught locally (a full `next build` production build, not `next typegen`/`tsc`, is
+// what actually enforces this).
 import { notFound, redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -10,7 +16,7 @@ import { DeckBuilder } from '@/components/beyblade/DeckBuilder'
 
 export const dynamic = 'force-dynamic'
 
-export default async function DeckDetailPage({ params }: PageProps<'/decks/[id]'>) {
+export default async function DeckDetailPage({ params }: PageProps<'/decks/item/[id]'>) {
   const { id } = await params
   const session = await auth()
   if (!session?.user?.id) redirect('/login')

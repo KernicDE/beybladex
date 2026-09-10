@@ -30,7 +30,7 @@ export function DeckCreateForm() {
       return
     }
     const { id } = (await res.json()) as { id: string }
-    router.push(`/decks/${id}`)
+    router.push(`/decks/item/${id}`)
     router.refresh()
   }
 

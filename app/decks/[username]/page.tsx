@@ -3,7 +3,7 @@
 // the subject is projected through resolveVisibleFields BEFORE anything renders, and the
 // page 404s (not 403) when decksVisible is false — existence isn't leaked (standing
 // not-403 privacy policy). Unlike /collection/[username], this page does NOT link through to
-// /decks/[id] — that route is still owner-only (see its own header comment: public deck
+// /decks/item/[id] — that route is still owner-only (see its own header comment: public deck
 // detail sharing via decksVisible is a separate, not-yet-built feature) — so each deck's
 // build summary renders inline here instead of behind a click-through that would 404 anyway.
 import { notFound } from 'next/navigation'

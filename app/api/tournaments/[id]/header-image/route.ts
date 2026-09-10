@@ -8,7 +8,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
-import { EVENT_HEADER_TARGET, processAndStoreImage } from '@/lib/media'
+import { EVENT_HEADER_TARGET, processAndStoreImage, isUploadedFile } from '@/lib/media'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -33,7 +33,7 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
     return Response.json({ error: 'invalid_form' }, { status: 400 })
   }
   const file = form.get('image')
-  if (!(file instanceof File) || file.size === 0) {
+  if (!isUploadedFile(file) || file.size === 0) {
     return Response.json({ error: 'invalid_image' }, { status: 400 })
   }
 

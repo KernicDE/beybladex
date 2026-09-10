@@ -25,6 +25,29 @@ function req(method: string, url: string, body?: unknown) {
   })
 }
 
+// [FIX] Phase 16 added format-aware deck validation at join/deck-edit time (the tournament's
+// linked Ruleset.deckFormat defaults to WBO_COUNTERDECK, which requires exactly 3 builds with
+// no part reused across them) — this test's deck fixtures were empty (0 builds), a pattern
+// that predates Phase 16 and was never actually exercised against real validation until CI
+// started running to completion. Gives each deck 3 builds with fully distinct parts (no blade/
+// ratchet/bit reused across the three, satisfying validateNoDuplicateParts too).
+async function makeValidDeck(title: string, userId: string, suffix: string): Promise<{ id: string; partIds: string[]; buildIds: string[] }> {
+  const partIds: string[] = []
+  const buildIds: string[] = []
+  for (let i = 0; i < 3; i++) {
+    const blade = await prisma.part.create({ data: { name: `jf_${suffix}_bl${i}`, category: 'BLADE', manufacturer: 'TT', spinDirection: 'RIGHT' } })
+    const ratchet = await prisma.part.create({ data: { name: `jf_${suffix}_ra${i}`, category: 'RATCHET', manufacturer: 'TT', spinDirection: 'RIGHT' } })
+    const bit = await prisma.part.create({ data: { name: `jf_${suffix}_bi${i}`, category: 'BIT', manufacturer: 'TT', spinDirection: 'RIGHT' } })
+    partIds.push(blade.id, ratchet.id, bit.id)
+    const build = await prisma.build.create({ data: { bladeId: blade.id, ratchetId: ratchet.id, bitId: bit.id, type: 'ATTACK' } })
+    buildIds.push(build.id)
+  }
+  const deck = await prisma.deck.create({
+    data: { title, userId, builds: { create: buildIds.map((buildId, position) => ({ buildId, position })) } },
+  })
+  return { id: deck.id, partIds, buildIds }
+}
+
 describe('tournament join flow', () => {
   afterEach(() => {
     mockAuth.mockReset()
@@ -52,9 +75,9 @@ describe('tournament join flow', () => {
         createdById: organizer.id,
       },
     })
-    const deckA = await prisma.deck.create({ data: { title: `Deck A ${suffix}`, userId: player.id } })
-    const deckB = await prisma.deck.create({ data: { title: `Deck B ${suffix}`, userId: player.id } })
-    const foreignDeck = await prisma.deck.create({ data: { title: `Deck F ${suffix}`, userId: player2.id } })
+    const deckA = await makeValidDeck(`Deck A ${suffix}`, player.id, `${suffix}a`)
+    const deckB = await makeValidDeck(`Deck B ${suffix}`, player.id, `${suffix}b`)
+    const foreignDeck = await makeValidDeck(`Deck F ${suffix}`, player2.id, `${suffix}f`)
 
     const joinUrl = `http://localhost/api/tournaments/${tournament.id}/join`
     const checkinUrl = `http://localhost/api/tournaments/${tournament.id}/checkin`
@@ -127,7 +150,9 @@ describe('tournament join flow', () => {
     // cleanup (participants first — no cascade on the tournament FK in spec §3)
     await prisma.tournamentParticipant.deleteMany({ where: { tournamentId: tournament.id } })
     await prisma.tournament.delete({ where: { id: tournament.id } })
-    await prisma.deck.deleteMany({ where: { userId: { in: [player.id, player2.id] } } })
+    await prisma.deck.deleteMany({ where: { userId: { in: [player.id, player2.id] } } }) // cascades DeckBuild
+    await prisma.build.deleteMany({ where: { id: { in: [...deckA.buildIds, ...deckB.buildIds, ...foreignDeck.buildIds] } } })
+    await prisma.part.deleteMany({ where: { id: { in: [...deckA.partIds, ...deckB.partIds, ...foreignDeck.partIds] } } })
     await prisma.ruleset.delete({ where: { id: ruleset.id } })
     await prisma.user.deleteMany({ where: { id: { in: [organizer.id, player.id, player2.id, stranger.id] } } })
   })

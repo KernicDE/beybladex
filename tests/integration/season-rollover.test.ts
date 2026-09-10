@@ -23,8 +23,18 @@ async function seedUser(suffix: string, prefix: string, role: 'USER' | 'ADMIN' =
   return prisma.user.create({ data: { username: `${prefix}_${suffix}`, passwordHash: 'x', role } })
 }
 
-afterEach(() => {
+// [FIX] Same Season-leak class as ranked-eligibility.test.ts: the admin seasons route enforces
+// "at most one ACTIVE season" at the application level, so an un-cleaned-up ACTIVE Season row
+// left behind by one test here makes a LATER test's own 201/409 expectation flaky depending on
+// run order. onDelete: Cascade on PlayerRating.season means deleting the Season is enough.
+const createdSeasonIds: string[] = []
+
+afterEach(async () => {
   vi.clearAllMocks()
+  if (createdSeasonIds.length) {
+    await prisma.season.deleteMany({ where: { id: { in: createdSeasonIds } } })
+    createdSeasonIds.length = 0
+  }
 })
 
 describe('season rollover', () => {
@@ -44,6 +54,7 @@ describe('season rollover', () => {
     const oldSeason = await prisma.season.create({
       data: { name: `Old ${suffix}`, startsAt: new Date(Date.now() - 86400_000), endsAt: new Date(), status: 'ACTIVE' },
     })
+    createdSeasonIds.push(oldSeason.id)
     const oldRating = await prisma.playerRating.create({
       data: { seasonId: oldSeason.id, userId: player.id, elo: 1400, peakElo: 1450, gamesPlayed: 12 },
     })
@@ -59,6 +70,7 @@ describe('season rollover', () => {
     )
     expect(res.status).toBe(201)
     const newSeason = (await res.json()) as { id: string }
+    createdSeasonIds.push(newSeason.id)
 
     // Old season is now COMPLETED and its rating row is untouched.
     const frozenOldSeason = await prisma.season.findUniqueOrThrow({ where: { id: oldSeason.id } })
@@ -77,9 +89,10 @@ describe('season rollover', () => {
   it('creating a season while one is already ACTIVE and unaccounted-for is a 409', async () => {
     const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
     const admin = await seedUser(suffix, 'srcon', 'ADMIN')
-    await prisma.season.create({
+    const activeSeason = await prisma.season.create({
       data: { name: `Active ${suffix}`, startsAt: new Date(), endsAt: new Date(Date.now() + 86400_000), status: 'ACTIVE' },
     })
+    createdSeasonIds.push(activeSeason.id)
     mockAuth.mockResolvedValue(asSession({ id: admin.id, name: admin.username }))
     const res = await POST(post({ name: 'Conflict', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400_000).toISOString() }))
     expect(res.status).toBe(409)

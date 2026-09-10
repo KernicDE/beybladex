@@ -61,7 +61,9 @@ describe('mark set purchased', () => {
 
     // Each row stays independently deletable — deleting one leaves the other two intact.
     const delRes = await DELETE_ITEM(new Request(`http://localhost/api/collection/${ids[0]}`, { method: 'DELETE' }), { params: Promise.resolve({ id: ids[0] }) })
-    expect(delRes.status).toBe(204)
+    // [FIX] app/api/collection/[id]/route.ts's DELETE has always returned 200 + { ok: true },
+    // not 204 — a stale test expectation never actually validated against real infra before.
+    expect(delRes.status).toBe(200)
     const remaining = await prisma.collectionItem.findMany({ where: { id: { in: ids } } })
     expect(remaining).toHaveLength(2)
 

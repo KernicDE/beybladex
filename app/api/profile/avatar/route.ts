@@ -10,7 +10,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
-import { AVATAR_TARGET, processAndStoreImage } from '@/lib/media'
+import { AVATAR_TARGET, processAndStoreImage, isUploadedFile } from '@/lib/media'
 
 export async function POST(req: Request): Promise<Response> {
   const session = await auth()
@@ -26,7 +26,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'invalid_form' }, { status: 400 })
   }
   const file = form.get('image')
-  if (!(file instanceof File) || file.size === 0) {
+  if (!isUploadedFile(file) || file.size === 0) {
     return Response.json({ error: 'invalid_image' }, { status: 400 })
   }
 

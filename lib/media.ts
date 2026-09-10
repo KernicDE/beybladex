@@ -54,6 +54,25 @@ export interface ProcessedImage {
   height: number
 }
 
+/** [FIX] Duck-typed File check, used by every upload route instead of `x instanceof File`.
+ *  The strict instanceof check silently failed under the test suite's jsdom environment
+ *  (vitest.config.mts): jsdom ships its OWN File/FormData/Request implementation, and a
+ *  Request constructed with jsdom's FormData does not reliably round-trip
+ *  `form.get('field') instanceof File` against the GLOBAL File constructor a route module
+ *  sees — a genuine realm-mismatch class of bug, not test-only trivia (the same mismatch can
+ *  occur between different fetch-polyfill packages in real deployments too, e.g. undici vs a
+ *  proxy/edge runtime's own File). Structural checks (the actual properties every caller here
+ *  needs: type/size/arrayBuffer) are robust regardless of which realm constructed the object. */
+export function isUploadedFile(value: unknown): value is File {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { type?: unknown }).type === 'string' &&
+    typeof (value as { size?: unknown }).size === 'number' &&
+    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
+  )
+}
+
 /** Validates the file (image type + size cap) and normalizes it to the target dimensions as
  *  WebP. Pure processing — no storage, no DB; unit-testable without infrastructure. */
 export async function processImage(file: File, target: MediaTarget): Promise<ProcessedImage> {

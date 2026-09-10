@@ -192,7 +192,11 @@ describe('Auto-Meta dirty-set recompute', () => {
     expect(bitBStats).toMatchObject({ id: bitB.id, wins: 4, losses: 13, appearances: 17, winRate: 0.235 })
 
     // A build with NO completed matches but a dirty entry caches explicit zeros (not absence).
-    const buildIdle = await prisma.build.create({ data: { bladeId: bladeS.id, ratchetId: ratchetS.id, bitId: bitS.id, type: 'STAMINA' } })
+    // [FIX] needs its OWN distinct parts triple — reusing bladeS/ratchetS/bitS (buildSmall's
+    // combo) collided with Phase 20's @@unique([bladeId, ratchetId, bitId]) constraint, which
+    // postdates this test and was never exercised against it until CI actually ran for real.
+    const [bladeI, ratchetI, bitI] = await Promise.all([mk('bladei', 'BLADE'), mk('rati', 'RATCHET'), mk('biti', 'BIT')])
+    const buildIdle = await prisma.build.create({ data: { bladeId: bladeI.id, ratchetId: ratchetI.id, bitId: bitI.id, type: 'STAMINA' } })
     await markMetaDirty([buildIdle.id], [])
     await recomputeDirtyMeta()
     const idleStats = JSON.parse((await redis.get(buildCacheKey(buildIdle.id)))!)
@@ -210,7 +214,7 @@ describe('Auto-Meta dirty-set recompute', () => {
     await prisma.tournament.delete({ where: { id: tournament.id } })
     await prisma.ruleset.delete({ where: { id: ruleset.id } })
     await prisma.build.deleteMany({ where: { id: { in: [buildMain.id, buildOpp.id, buildSmall.id, buildIdle.id] } } })
-    await prisma.part.deleteMany({ where: { id: { in: [bladeA.id, ratchetA.id, bitA.id, bladeB.id, ratchetB.id, bitB.id, bladeS.id, ratchetS.id, bitS.id] } } })
+    await prisma.part.deleteMany({ where: { id: { in: [bladeA.id, ratchetA.id, bitA.id, bladeB.id, ratchetB.id, bitB.id, bladeS.id, ratchetS.id, bitS.id, bladeI.id, ratchetI.id, bitI.id] } } })
     await prisma.user.deleteMany({ where: { id: { in: [organizer.id, judge.id, p1.id, opp.id] } } })
   })
 })

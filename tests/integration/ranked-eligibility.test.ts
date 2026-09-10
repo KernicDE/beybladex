@@ -51,8 +51,19 @@ function scoreBody(overrides: Record<string, unknown>) {
   return new Request('http://localhost/x', { method: 'POST', body: JSON.stringify(overrides) })
 }
 
-afterEach(() => {
+// [FIX] Season has no @@unique on status, but the admin seasons route enforces "at most one
+// ACTIVE season" at the application level (see season-rollover.test.ts's 409 case) — every
+// Season row this file creates MUST be cleaned up, or it leaks as a permanent stray ACTIVE
+// season that makes an unrelated later test (in this file or another) fail its own 201/409
+// expectation. onDelete: Cascade on PlayerRating.season means deleting the Season is enough.
+const createdSeasonIds: string[] = []
+
+afterEach(async () => {
   vi.clearAllMocks()
+  if (createdSeasonIds.length) {
+    await prisma.season.deleteMany({ where: { id: { in: createdSeasonIds } } })
+    createdSeasonIds.length = 0
+  }
 })
 
 describe('ranked eligibility', () => {
@@ -65,6 +76,7 @@ describe('ranked eligibility', () => {
     const season = await prisma.season.create({
       data: { name: `S ${suffix}`, startsAt: new Date(), endsAt: new Date(Date.now() + 86400_000), status: 'ACTIVE' },
     })
+    createdSeasonIds.push(season.id)
     const { match } = await seedTournamentWithMatch(suffix, owner.id, ruleset.id, p1.id, p2.id, false)
 
     mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
@@ -92,6 +104,7 @@ describe('ranked eligibility', () => {
     const season = await prisma.season.create({
       data: { name: `S2 ${suffix}`, startsAt: new Date(), endsAt: new Date(Date.now() + 86400_000), status: 'ACTIVE' },
     })
+    createdSeasonIds.push(season.id)
     const { match } = await seedTournamentWithMatch(suffix, owner.id, ruleset.id, p1.id, p2.id, true)
 
     mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
@@ -117,6 +130,7 @@ describe('ranked eligibility', () => {
     const season = await prisma.season.create({
       data: { name: `Ladder ${suffix}`, startsAt: new Date(), endsAt: new Date(Date.now() + 86400_000), status: 'ACTIVE' },
     })
+    createdSeasonIds.push(season.id)
     const below = await prisma.user.create({ data: { username: `ldbelow_${suffix}`, passwordHash: 'x' } })
     const at = await prisma.user.create({ data: { username: `ldat_${suffix}`, passwordHash: 'x' } })
     await prisma.playerRating.create({ data: { seasonId: season.id, userId: below.id, elo: 1100, gamesPlayed: MIN_RATED_GAMES_FOR_LADDER - 1 } })

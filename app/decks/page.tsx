@@ -73,7 +73,7 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
           {decks.map((deck) => (
             <li key={deck.id}>
               <Card className="p-4">
-                <Link href={`/decks/${deck.id}`} className="block space-y-2">
+                <Link href={`/decks/item/${deck.id}`} className="block space-y-2">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">{deck.title}</p>
                     <Badge tone="neutral">{deck.builds.length}/3 Builds</Badge>

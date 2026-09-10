@@ -58,7 +58,11 @@ describe('club chat moderation', () => {
     const res = await DELETE(jsonRequest(`http://localhost/api/clubs/${club.slug}/messages?messageId=${message.id}`, 'DELETE'), ctx(club.slug))
     expect(res.status).toBe(200)
     expect(await prisma.clubMessage.findUnique({ where: { id: message.id } })).toBeNull()
-    expect(await prisma.auditLog.count({ where: { action: 'club.message_remove' } })).toBe(0)
+    // [FIX] Was a GLOBAL count (no targetId scope) — flaky depending on run order, since the
+    // owner/admin-deletes-another's-message tests below DO write real 'club.message_remove'
+    // rows and this file never cleaned up AuditLog rows at all. Scope to this test's own
+    // message id, the only thing this assertion actually means to prove.
+    expect(await prisma.auditLog.count({ where: { action: 'club.message_remove', targetId: message.id } })).toBe(0)
 
     await prisma.club.delete({ where: { id: club.id } })
     await prisma.user.delete({ where: { id: owner.id } })
@@ -81,6 +85,7 @@ describe('club chat moderation', () => {
     expect(audit).not.toBeNull()
     expect(audit!.actorId).toBe(owner.id)
 
+    await prisma.auditLog.deleteMany({ where: { targetId: message.id } })
     await prisma.club.delete({ where: { id: club.id } })
     await prisma.user.delete({ where: { id: member.id } })
     await prisma.user.delete({ where: { id: owner.id } })
@@ -101,6 +106,7 @@ describe('club chat moderation', () => {
     expect(res.status).toBe(200)
     expect(await prisma.auditLog.count({ where: { action: 'club.message_remove', targetId: message.id } })).toBe(1)
 
+    await prisma.auditLog.deleteMany({ where: { targetId: message.id } })
     await prisma.club.delete({ where: { id: club.id } })
     await prisma.user.delete({ where: { id: member.id } })
     await prisma.user.delete({ where: { id: admin.id } })
@@ -121,7 +127,8 @@ describe('club chat moderation', () => {
     const res = await DELETE(jsonRequest(`http://localhost/api/clubs/${club.slug}/messages?messageId=${message.id}`, 'DELETE'), ctx(club.slug))
     expect(res.status).toBe(403)
     expect(await prisma.clubMessage.findUnique({ where: { id: message.id } })).not.toBeNull()
-    expect(await prisma.auditLog.count({ where: { action: 'club.message_remove' } })).toBe(0)
+    // [FIX] Same global→scoped fix as the first test above.
+    expect(await prisma.auditLog.count({ where: { action: 'club.message_remove', targetId: message.id } })).toBe(0)
 
     await prisma.club.delete({ where: { id: club.id } })
     await prisma.user.delete({ where: { id: member.id } })
