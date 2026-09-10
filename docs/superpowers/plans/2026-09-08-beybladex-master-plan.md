@@ -2391,7 +2391,7 @@ Each phase below keeps its own full file/interface/acceptance-criteria detail in
 
 **MVP2 starts next** — proceeding directly per standing instruction ("mache weiter ohne Nachfragen … fahre mit MVP2 fort").
 
-### MVP2 — competitive identity & ranking (rough priority, not binding)
+### MVP2 — competitive identity & ranking — **COMPLETE, all 8 phases merged to main as of 2026-09-10**
 
 1. **Phase 14 — Ranked Ladder & Elo Rating System** — the single biggest identity/competitive gap found by the research: neither a cross-tournament player ranking nor any rating model exists today. This is the platform's answer to WBO's ranked leaderboard and to Challonge's paid "Seed by Rating" tier — free, DACH-specific, tied to real judge-confirmed matches rather than crowd-sourced self-reports.
 2. **Phase 15 — Rating-Based Seeding** — depends on Phase 14; closes the "manual/shuffle/rating seeding" gap versus Challonge (`lib/bracket.ts` currently only sorts by `userId`).
@@ -2400,6 +2400,9 @@ Each phase below keeps its own full file/interface/acceptance-criteria detail in
 5. **Phase 18 — Push Notifications & Event/Match Lifecycle Triggers** — neither real OS-level push notifications nor participant-facing lifecycle triggers ("Turnier gestartet," "Gehe zu Arena N") exist today; the only real-time mechanism is an open-tab SSE stream, and the only `notifyUser` call sites in the whole codebase are club-membership events. Depends on Phase 16's `Tournament.startedAt` and Phase 7's arena assignment for two of its three triggers.
 6. **Phase 19 — Unique Display Names & Registration Clarity** — `User.displayName` exists but has no uniqueness constraint at all today; adds a Unicode/case-insensitive uniqueness check (full free-form casing/UTF-8 preserved) plus registration-page copy explaining the username's lowercase-only rule before a user hits the error.
 7. **Phase 20 — Canonical Build Naming & Duplicate-Combo Prevention** — `Build.name` is free-text everywhere today with no auto-derivation from the constituent parts and no unique constraint on `(bladeId, ratchetId, bitId)` — two rows can reference the exact same combo. Adds a confirmed-grammar auto-naming function and a DB-level duplicate guard.
+8. **Phase 21 — User Avatars & Upload** — added mid-MVP2 (Issue #15, pre-existing): a real upload/delete avatar flow reusing the Phase 11 media pipeline, replacing the initial-letter placeholder everywhere it renders.
+
+**All 8 phases DONE, merged to main 2026-09-10.** Phases 14/15/16/17/20 built directly by Claude (16/17 with a Kimi review pass before merge); Phases 19/20/21 built by Kimi via tmux delegation with a Claude review before merge in every case, per the user's "two issues in progress, Claude reviews Kimi's work and vice versa" workflow established mid-MVP2. Real bugs were found and fixed in review on two phases (16: a judge-UI explicit-confirmation gap, a start-route race, a post-start lock bypass; 18: three missed notification call sites, an arena-timing gap) — see each phase's own status line above for specifics.
 
 **Explicitly out of MVP1.5 and MVP2**: 3-vs-3 team competition (WBO's "Masters League" format) — see MVP3 below; it needs a new roster/team concept this codebase doesn't have yet and is a bigger structural change than anything else in either list.
 
@@ -2855,9 +2858,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 21: User Avatars & Upload — added mid-MVP2, by explicit user request (Issue #15, pre-existing)
 
-**Tracking:** [Issue #15](https://github.com/KernicDE/beybladex/issues/15)
+**Tracking:** [Issue #15](https://github.com/KernicDE/beybladex/issues/15) (closed)
 
-**Status: planned, not started (assigned to Kimi via tmux delegation).**
+**Status: DONE — merged to main 2026-09-10 (commit `ee7e38d`).** Implemented by Kimi (tmux delegation), reviewed by Claude before merge — no blocking findings. `User.avatarImageId`, reused the existing generic media pipeline (`AVATAR_TARGET`), threaded through the same privacy-projection path (`resolveVisibleFields`) every other profile field uses, account erasure deletes both the `MediaAsset` row and its on-volume file (stronger than the tombstone treatment other `MediaAsset` consumers get — an avatar has no value beyond its owner). `npx tsc --noEmit` clean, eslint clean, 259/259 unit tests. **This was the last remaining MVP2 phase — MVP2 is now fully complete (Phases 14–21).**
 
 **Scope**: `User.avatarImageId String?` (additive FK to `MediaAsset`, `onDelete: SetNull`) — a user's uploaded profile photo, replacing the generic initial-letter circle placeholder everywhere it currently renders (`app/profile/[username]/page.tsx`, `components/layout/UserMenu.tsx`, anywhere else a per-user avatar shows). Reuse the EXISTING generic media pipeline (`lib/media.ts`'s `processAndStoreImage`) verbatim — no new upload machinery — with a new `AVATAR_TARGET: MediaTarget = { width: 256, height: 256, fit: 'cover' }` constant alongside `PART_IMAGE_TARGET`/`EVENT_HEADER_TARGET`. Serving is already generic (`GET /api/media/[id]`) — no new route needed there.
 
