@@ -23,6 +23,13 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+// The client (RegisterServiceWorker.tsx's "Aktualisieren" button) asks the waiting worker to
+// take over via postMessage; only THAT explicit user action activates a new version — the
+// install listener above still deliberately never skipWaiting()s on its own.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
+})
+
 // Generic shell-level fetch handling: network-first with a bounded timeout (a hung TCP connect
 // on a flaky hall connection must not block navigation for tens of seconds), falling back to the
 // offline document for navigations only. Phase 5 Part C adds a SEPARATE, additional fetch listener

@@ -1,12 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // Registers the shell service worker and surfaces a non-blocking "update available" toast when a
-// new SW is waiting (the SW deliberately never calls self.skipWaiting(), so the user — e.g. a
-// judge mid-tournament — keeps the current version until they choose to reload).
+// new SW is waiting. The SW deliberately never calls self.skipWaiting() on its own, so the user —
+// e.g. a judge mid-tournament — keeps the current version until they choose to update. The toast's
+// "Aktualisieren" button messages the waiting worker (SKIP_WAITING); the page reloads only once
+// the new worker has actually taken control (controllerchange), never from a bare reload() that
+// would just re-serve the old SW.
 export function RegisterServiceWorker() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
+  // Set by the button click, read by the controllerchange listener: only an explicit user-
+  // triggered update may reload the page — other controllerchange events (e.g. first registration
+  // taking control) must not.
+  const updateRequestedRef = useRef(false)
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -26,7 +33,10 @@ export function RegisterServiceWorker() {
     })
 
     // A waiting worker may have appeared while this page was open (e.g. after a redeploy).
-    navigator.serviceWorker.addEventListener('controllerchange', () => setWaitingWorker(null))
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      setWaitingWorker(null)
+      if (updateRequestedRef.current) window.location.reload()
+    })
   }, [])
 
   if (!waitingWorker) return null
@@ -40,7 +50,11 @@ export function RegisterServiceWorker() {
       <button
         type="button"
         className="rounded bg-x-cyan px-3 py-1 font-medium text-base-dark"
-        onClick={() => window.location.reload()}
+        onClick={() => {
+          if (!waitingWorker) return
+          updateRequestedRef.current = true
+          waitingWorker.postMessage({ type: 'SKIP_WAITING' })
+        }}
       >
         Aktualisieren
       </button>
