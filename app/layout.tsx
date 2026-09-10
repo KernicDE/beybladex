@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { Footer } from "@/components/layout/Footer";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,6 +30,13 @@ const THEME_INIT_SCRIPT = `
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const session = await auth();
+  // Phase 21: the header menu shows the viewer's OWN avatar. The session JWT only carries
+  // id/name (lib/auth.ts), so the avatar id is read here and passed down — always the
+  // viewer's own row, no privacy gate needed, same as the username it renders next to.
+  const avatarImageId = session?.user?.id
+    ? (await prisma.user.findUnique({ where: { id: session.user.id }, select: { avatarImageId: true } }))
+        ?.avatarImageId ?? null
+    : null;
   return (
     <html
       lang="de"
@@ -40,7 +48,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
-          <Header session={session} />
+          <Header session={session} avatarImageId={avatarImageId} />
           <main className="flex-1 pb-12 md:pb-0">{children}</main>
         </ThemeProvider>
         <Footer />

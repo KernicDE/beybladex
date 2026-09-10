@@ -1,10 +1,35 @@
 // lib/accountErasure.ts (excerpt — the erasure/anonymization matrix, Art. 17 compliant)
+import { unlink } from 'node:fs/promises'
 import { prisma } from '@/lib/db'
+import { mediaFilePath } from '@/lib/media'
 
 export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
+  // Phase 21: ids of the on-volume avatar files to unlink AFTER the transaction commits
+  // (below). lib/media.ts has no delete-file helper — the write path is
+  // writeFile(mediaFilePath(assetId), buffer), so the matching removal is this unlink.
+  const avatarFileIds: string[] = []
   await prisma.$transaction(async (tx) => {
     // The original username for the audit summary — gone once the row is anonymized below.
-    const originalUsername = (await tx.user.findUnique({ where: { id: userId }, select: { username: true } }))?.username ?? userId
+    // Also captures the avatar reference up front: it is gone once the MediaAsset row is
+    // deleted (the User FK's onDelete: SetNull nulls the column as a backstop) and before
+    // the anonymizing update writes avatarImageId: null explicitly.
+    const { username: originalUsername, avatarImageId } = (await tx.user.findUnique({
+      where: { id: userId },
+      select: { username: true, avatarImageId: true },
+    })) ?? { username: userId, avatarImageId: null }
+
+    // Phase 21: the user's CURRENT avatar is personal-only data — a photo of the person,
+    // with no value to anyone but its owner (unlike a Part catalog image or an event
+    // header banner, which outlive the uploader per the Phase 11 tombstone rule below).
+    // The avatar's MediaAsset row is therefore DELETED here, not tombstoned — the FK's
+    // SetNull only severs the reference and would leave the row + on-volume file orphaned.
+    // (A previously REPLACED avatar's asset is already orphaned by the upload routes'
+    // documented tradeoff; those keep the generic MediaAsset tombstone treatment — this
+    // entry covers the referenced avatar, per the phase spec.)
+    if (avatarImageId) {
+      await tx.mediaAsset.deleteMany({ where: { id: avatarImageId } })
+      avatarFileIds.push(avatarImageId)
+    }
 
     // Cascade-delete: purely personal, no other user's legitimate interest in keeping it.
     await tx.passkey.deleteMany({ where: { userId } })
@@ -62,6 +87,10 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
         displayNameNormalized: `gelöschter nutzer ${userId}`,
         bio: null, discordTag: null, city: null, postalCode: null, latitude: null, longitude: null,
         birthDate: null, totpSecret: null, parentalConsentEmail: null,
+        // Phase 21: the avatar reference is already severed by the MediaAsset deletion's
+        // SetNull above; the explicit null keeps the erasure matrix self-documenting
+        // (standing guard: every User-owned datum ships with its entry).
+        avatarImageId: null,
       },
     })
     // Club ownership can't dangle (onDelete: Restrict in spec §3) — reassign to another admin
@@ -104,6 +133,13 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
       },
     })
   })
+  // Phase 21: remove the erased user's avatar bytes from the volume only AFTER the
+  // transaction commits (a rollback must never leave the DB and the volume disagreeing the
+  // other way). Best-effort by definition — a file that is already gone is equivalent to
+  // erased, so a missing file must not abort the whole erasure.
+  for (const assetId of avatarFileIds) {
+    await unlink(mediaFilePath(assetId)).catch(() => {})
+  }
   // Session/token invalidation: KNOWN GAP — the plan calls for bumping a `tokenVersion` field so
   // existing 30-day JWTs stop authenticating immediately after erasure. That field is additive to
   // User and paired with the backend review's open token-revocation item, which has NOT been

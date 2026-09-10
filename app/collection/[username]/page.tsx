@@ -29,7 +29,7 @@ export default async function UserCollectionPage({ params, searchParams }: PageP
     where: { username },
     select: {
       id: true, username: true, displayName: true, city: true, discordTag: true, bio: true,
-      birthDate: true, isMinor: true, profileVisibility: true, locationVisibility: true,
+      birthDate: true, isMinor: true, avatarImageId: true, profileVisibility: true, locationVisibility: true,
       collectionVisibility: true, decksVisibility: true, ageVisibility: true,
     },
   })

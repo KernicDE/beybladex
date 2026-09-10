@@ -180,6 +180,13 @@ model User {
   reviewedProposals    CatalogProposal[] @relation("CatalogProposalReviewer")
   // No mediaAssets relation here — MediaAsset.uploadedById is a plain String (see that
   // model's own comment), not a FK, so it never appears as a Prisma relation on User.
+  // Phase 21: the user's own profile photo IS a real FK (onDelete: SetNull — the DB severs
+  // the reference if the asset ever goes), unlike uploadedById. The SetNull is only the
+  // backstop: account erasure (lib/accountErasure.ts) explicitly deletes the avatar's
+  // MediaAsset row + on-volume file first — an avatar is personal-only data, it must not
+  // survive its owner's erasure as an orphan.
+  avatarImage   MediaAsset? @relation("UserAvatar", fields: [avatarImageId], references: [id], onDelete: SetNull)
+  avatarImageId String?
   stageStandings       StageStanding[]
   // Phase 14 — real FK (not a plain String like AuditLog.actorId/MediaAsset.uploadedById):
   // account erasure ANONYMIZES the User row in place (lib/accountErasure.ts), it never hard-
@@ -745,6 +752,9 @@ model MediaAsset {
   builds      Build[]           @relation("BuildImage")
   tournaments Tournament[]      @relation("TournamentHeaderImage")
   proposals   CatalogProposal[] @relation("CatalogProposalImage")
+  // Phase 21: users whose current profile photo is this asset (User.avatarImageId,
+  // onDelete: SetNull — deleting the asset nulls the user's reference, never the user).
+  avatars     User[]            @relation("UserAvatar")
 }
 
 // PricePoint (Phase 5 Part B, [REVIEW-FIX: ux-product §3d, spec §5 Phase 5 "Preisverlauf"]) —

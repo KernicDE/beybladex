@@ -52,7 +52,7 @@ export async function searchUsers(opts: {
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
         id: true, username: true, displayName: true, city: true, bio: true, discordTag: true,
-        birthDate: true, isMinor: true, profileVisibility: true, locationVisibility: true,
+        birthDate: true, isMinor: true, avatarImageId: true, profileVisibility: true, locationVisibility: true,
         collectionVisibility: true, decksVisibility: true, ageVisibility: true,
       },
     })
