@@ -6,7 +6,7 @@
 // Posts /api/tournaments and redirects to /events/<id>.
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
@@ -14,6 +14,19 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { errorMessage } from '@/lib/errorCopy'
+
+// Client-side mirror of lib/geo.ts's AddressSuggestion shape — lib/geo itself is
+// server-only (it imports lib/redis), so the form can never import it.
+export interface AddressSuggestion {
+  displayName: string
+  street: string | null
+  postalCode: string | null
+  city: string | null
+  state: string | null
+  country: string
+  lat: number
+  lng: number
+}
 
 export interface RulesetOption {
   id: string
@@ -79,7 +92,15 @@ const CURRENCIES = [
   { value: 'USD', label: 'USD ($)' },
 ] as const
 
+// Phase 9: country → default currency, applied on country change until the organizer
+// hand-edits the currency field (a cross-border event or a CH club pricing in EUR can
+// always override the default).
+const CURRENCY_BY_COUNTRY: Record<string, string> = { DE: 'EUR', AT: 'EUR', CH: 'CHF' }
+
 const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'] as const
+
+const AUTOCOMPLETE_DEBOUNCE_MS = 300
+const GEOCODE_DEBOUNCE_MS = 600
 
 export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { rulesets: RulesetOption[]; clubs?: ClubOption[]; initialClubId?: string }) {
   const router = useRouter()
@@ -93,8 +114,128 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Phase 9 location autofill (see lib/geo.ts + app/api/geo/*):
+  // - `suggestions` — address type-ahead below the location fields.
+  // - `currencyTouched` — once the organizer hand-picks a currency, country changes no
+  //   longer overwrite it.
+  // - `coordsTouched` — once latitude/longitude are hand-edited (or cleared), automatic
+  //   geocoding no longer overwrites them; picking a suggestion explicitly is deliberate
+  //   and always (re)places the pin, resetting this flag.
+  // - `lastAutoState` — the region name last written by autofill, so a later geocode may
+  //   refresh it but never clobber a hand-edited one.
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([])
+  const currencyTouched = useRef(false)
+  const coordsTouched = useRef(false)
+  const lastAutoState = useRef<string | null>(null)
+
   const setText = (key: keyof TournamentFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setValues((v) => ({ ...v, [key]: e.target.value }))
+
+  function onCountryChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const country = e.target.value
+    setValues((v) => ({
+      ...v,
+      country,
+      ...(currencyTouched.current ? {} : { currency: CURRENCY_BY_COUNTRY[country] ?? v.currency }),
+    }))
+  }
+
+  function onCurrencyChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    currencyTouched.current = true
+    setText('currency')(e)
+  }
+
+  function onLatitudeChange(e: React.ChangeEvent<HTMLInputElement>) {
+    coordsTouched.current = true
+    setText('latitude')(e)
+  }
+
+  function onLongitudeChange(e: React.ChangeEvent<HTMLInputElement>) {
+    coordsTouched.current = true
+    setText('longitude')(e)
+  }
+
+  function applySuggestion(s: AddressSuggestion) {
+    setSuggestions([])
+    lastAutoState.current = s.state
+    setValues((v) => ({
+      ...v,
+      street: s.street ?? v.street,
+      postalCode: s.postalCode ?? v.postalCode,
+      city: s.city ?? v.city,
+      state: s.state ?? v.state,
+      country: s.country,
+      ...(currencyTouched.current ? {} : { currency: CURRENCY_BY_COUNTRY[s.country] ?? v.currency }),
+      latitude: String(s.lat),
+      longitude: String(s.lng),
+    }))
+    coordsTouched.current = false
+  }
+
+  // Type-ahead: as the organizer types location/street (city/postal code refine the
+  // query), ask the server for matching addresses. Debounced; stale responses are dropped.
+  useEffect(() => {
+    const parts = [values.locationName, values.street, values.postalCode, values.city]
+      .map((part) => part.trim())
+      .filter(Boolean)
+    if (parts.join(' ').trim().length < 3) {
+      setSuggestions([])
+      return
+    }
+    const q = [...parts, values.country].join(', ')
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/geo/autocomplete?q=${encodeURIComponent(q)}`)
+        if (!res.ok) {
+          if (!cancelled) setSuggestions([])
+          return
+        }
+        const body = (await res.json()) as { suggestions?: AddressSuggestion[] }
+        if (!cancelled) setSuggestions(Array.isArray(body.suggestions) ? body.suggestions : [])
+      } catch {
+        if (!cancelled) setSuggestions([])
+      }
+    }, AUTOCOMPLETE_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [values.locationName, values.street, values.postalCode, values.city, values.country])
+
+  // Full-address geocoding (the Phase 3 TODO): once street+postalCode+city+country are
+  // filled — by autocomplete or by hand — resolve coordinates and the canonical region.
+  // Never overwrites hand-edited coordinates or a hand-edited region name.
+  useEffect(() => {
+    const { street, postalCode, city, country } = values
+    if (!street.trim() || !postalCode.trim() || !city.trim() || !country) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ street, postalCode, city, country })
+        const res = await fetch(`/api/geo/geocode?${params}`)
+        if (!res.ok || cancelled) return
+        const body = (await res.json()) as { suggestion?: AddressSuggestion }
+        const suggestion = body.suggestion
+        if (!suggestion || cancelled) return
+        // Capture before setValues: the updater runs during re-render, AFTER the mutation
+        // below — reading the ref inside the updater would compare against the NEW value.
+        const prevAutoState = lastAutoState.current
+        setValues((v) => ({
+          ...v,
+          ...(coordsTouched.current ? {} : { latitude: String(suggestion.lat), longitude: String(suggestion.lng) }),
+          ...(suggestion.state && (v.state === '' || v.state === prevAutoState) ? { state: suggestion.state } : {}),
+        }))
+        if (suggestion.state) lastAutoState.current = suggestion.state
+      } catch {
+        // geocoding is a convenience — the form keeps working with manual coordinates
+      }
+    }, GEOCODE_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [values.street, values.postalCode, values.city, values.country])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -175,9 +316,36 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
         </FormField>
       </div>
 
+      {/* Phase 9 address type-ahead: selecting a suggestion fills street/postalCode/city/
+          state/country/coordinates at once; every field stays hand-editable afterwards. */}
+      {suggestions.length > 0 && (
+        <div className="rounded-md border border-zinc-300 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-base-dark-alt">
+          <ul role="listbox" aria-label="Adressvorschläge">
+            {suggestions.map((s) => (
+              <li key={`${s.lat}:${s.lng}:${s.displayName}`}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  onClick={() => applySuggestion(s)}
+                  className="block w-full px-3 py-2 text-left hover:bg-x-cyan/10 focus-visible:bg-x-cyan/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-x-cyan-text"
+                >
+                  {s.displayName}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {/* Nominatim results are OpenStreetMap data — attribution is required outside
+              the Leaflet map (see lib/geo.ts compliance notes). */}
+          <p className="border-t border-zinc-200 px-3 py-1 text-xs text-current/60 dark:border-zinc-700">
+            © OpenStreetMap contributors
+          </p>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-3">
         <FormField label="Land">
-          <Select value={values.country} onChange={setText('country')}>
+          <Select value={values.country} onChange={onCountryChange}>
             {COUNTRIES.map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
@@ -196,7 +364,7 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
           />
         </FormField>
         <FormField label="Währung">
-          <Select value={values.currency} onChange={setText('currency')}>
+          <Select value={values.currency} onChange={onCurrencyChange}>
             {CURRENCIES.map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
@@ -207,7 +375,8 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {/* TODO: once lib/geo.ts lands, auto-geocode from postalCode+country instead of manual entry. */}
+        {/* Auto-geocoded from the address above once street+PLZ+Stadt+Land are filled
+            (Phase 9) — both fields stay plain editable inputs for hand-correcting the pin. */}
         <FormField label="Breitengrad (Lat)">
           <Input
             type="number"
@@ -216,7 +385,7 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
             step="any"
             inputMode="decimal"
             value={values.latitude}
-            onChange={setText('latitude')}
+            onChange={onLatitudeChange}
             required
           />
         </FormField>
@@ -228,7 +397,7 @@ export function TournamentForm({ rulesets, clubs = [], initialClubId = '' }: { r
             step="any"
             inputMode="decimal"
             value={values.longitude}
-            onChange={setText('longitude')}
+            onChange={onLongitudeChange}
             required
           />
         </FormField>
