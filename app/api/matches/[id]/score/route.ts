@@ -38,7 +38,7 @@
 // client cannot award arbitrary points. When `event` is absent (build confirmation, UNDO),
 // the full state is stored after monotonicity checks (scores may never increase except through
 // a scored event; a COMPLETED match may not be re-opened by a non-ADMIN caller).
-import { auth } from '@/lib/auth'
+import { requireUser, getCallerRole } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { markMetaDirty } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
@@ -46,33 +46,14 @@ import { assignFreedArena } from '@/lib/arenaAssign'
 import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
 import { getActiveSeason, applyMatchResultToRatings } from '@/lib/season'
 import { notifyMatchReady } from '@/lib/notify'
+import { isKnownEventType, applyEvent, isMonotonicDecrease, winThreshold } from '@/lib/scoring'
 
 type Ctx = { params: Promise<{ id: string }> }
 
-const SCORED_EVENTS = new Set(['SPIN', 'OVER', 'BURST', 'XTREME', 'OUT_OF_BOUNDS', 'OVERFINISH', 'OWN_FINISH'])
-
-function pointsForEvent(type: string, ruleset: { outOfBounds2Pts: boolean; ownFinishPenalty: boolean }): number {
-  switch (type) {
-    case 'SPIN':
-      return 1
-    case 'OVER':
-    case 'BURST':
-    case 'OVERFINISH':
-      return 2
-    case 'XTREME':
-      return 3
-    case 'OUT_OF_BOUNDS':
-      return ruleset.outOfBounds2Pts ? 2 : 1
-    case 'OWN_FINISH':
-      return ruleset.ownFinishPenalty ? 1 : 0
-    default:
-      return 0
-  }
-}
-
 export async function POST(req: Request, { params }: Ctx) {
-  const session = await auth()
-  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if ('error' in gate) return gate.error
+  const userId = gate.userId
   const { id } = await params
 
   let body: Record<string, unknown>
@@ -110,10 +91,10 @@ export async function POST(req: Request, { params }: Ctx) {
   })
   if (!match) return Response.json({ error: 'not_found' }, { status: 404 })
 
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  const isAssignedJudge = match.judgeId === session.user.id
-  const isOwner = match.tournament.createdById === session.user.id
-  const isAdmin = caller?.role === 'ADMIN'
+  const callerRole = await getCallerRole(userId)
+  const isAssignedJudge = match.judgeId === userId
+  const isOwner = match.tournament.createdById === userId
+  const isAdmin = callerRole === 'ADMIN'
   if (!isAssignedJudge && !isOwner && !isAdmin) {
     return Response.json({ error: 'forbidden' }, { status: 403 })
   }
@@ -156,15 +137,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const player = event?.player
 
   if (event !== undefined && event !== null) {
-    if (typeof type !== 'string' || (player !== 1 && player !== 2)) {
-      return Response.json({ error: 'invalid_event' }, { status: 400 })
-    }
-    const rematchTriggers: Record<string, boolean> = {
-      EXTERNAL_DISTURBANCE: ruleset.externalDisturbanceRerun,
-      AERIAL_CONTACT: ruleset.aerialContactRerun,
-      OWN_FINISH: ruleset.ownFinishPenalty,
-    }
-    if (!SCORED_EVENTS.has(type) && !(type in rematchTriggers)) {
+    if (typeof type !== 'string' || (player !== 1 && player !== 2) || !isKnownEventType(type)) {
       return Response.json({ error: 'invalid_event' }, { status: 400 })
     }
   }
@@ -181,23 +154,12 @@ export async function POST(req: Request, { params }: Ctx) {
   let rematch = false
 
   if (type) {
-    // Server-authoritative scoring: recompute the delta from the Ruleset, don't trust the
-    // client's arithmetic.
-    if (SCORED_EVENTS.has(type)) {
-      const pts = pointsForEvent(type, ruleset)
-      if (type === 'OWN_FINISH') {
-        // Own-Finish is a penalty committed BY `player`; the OPPONENT receives the point.
-        if (player === 1) nextScore2 += pts
-        else nextScore1 += pts
-      } else if (player === 1) {
-        nextScore1 += pts
-      } else {
-        nextScore2 += pts
-      }
-    } else {
-      // Rerun events (external disturbance / aerial contact): no points, the round is replayed.
-      rematch = true
-    }
+    // Server-authoritative scoring: recompute the delta from the Ruleset (lib/scoring.ts),
+    // don't trust the client's arithmetic.
+    const applied = applyEvent(match.scorePlayer1, match.scorePlayer2, { type, player: player as 1 | 2 }, ruleset)
+    nextScore1 = applied.scorePlayer1
+    nextScore2 = applied.scorePlayer2
+    rematch = applied.rematch
     if (claimedScore1 !== nextScore1 || claimedScore2 !== nextScore2) {
       return Response.json(
         {
@@ -211,7 +173,7 @@ export async function POST(req: Request, { params }: Ctx) {
   } else {
     // No event: full-state store (build confirmation / UNDO). Scores may only stay or decrease
     // — an increase without a scored event would be an unaudited point award.
-    if (claimedScore1 > match.scorePlayer1 || claimedScore2 > match.scorePlayer2) {
+    if (!isMonotonicDecrease(claimedScore1, claimedScore2, match.scorePlayer1, match.scorePlayer2)) {
       return Response.json({ error: 'invalid_state' }, { status: 422 })
     }
     nextScore1 = claimedScore1
@@ -294,13 +256,10 @@ export async function POST(req: Request, { params }: Ctx) {
   }
 
   // Win threshold: finals (the stage's last round) use finalsTargetPoints, earlier rounds
-  // targetPoints — read from the Ruleset, never hardcoded. Phase 5 Part C2: the round lookup is
-  // scoped to THIS match's STAGE, and a SWISS or ROUND_ROBIN stage never uses finalsTargetPoints
-  // (every round is scored at targetPoints; there is no single final match).
+  // targetPoints — read from the Ruleset, never hardcoded (lib/scoring.ts). Stage-scoped, and
+  // SWISS/ROUND_ROBIN never use finalsTargetPoints.
   const maxRound = Math.max(0, ...match.stage.matches.map((m) => m.round))
-  const isFinal =
-    match.stage.format !== 'SWISS' && match.stage.format !== 'ROUND_ROBIN' && match.round > 0 && match.round === maxRound
-  const target = isFinal ? ruleset.finalsTargetPoints : ruleset.targetPoints
+  const target = winThreshold(match.stage.format, match.round, maxRound, ruleset)
   const completed = nextScore1 >= target || nextScore2 >= target
   const winnerId = completed ? (nextScore1 > nextScore2 ? match.player1Id : match.player2Id) : null
 
