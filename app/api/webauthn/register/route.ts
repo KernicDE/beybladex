@@ -12,7 +12,9 @@ const CHALLENGE_TTL_SECONDS = 120
 
 export async function GET(req: Request) {
   const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
-  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60)
+  // [RC3 #49] fail-closed: passkey registration mints new credentials — no working limiter, no
+  // registration while Redis is down.
+  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const session = await auth()
@@ -32,7 +34,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
-  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60)
+  // [RC3 #49] fail-closed: passkey registration mints new credentials — no working limiter, no
+  // registration while Redis is down.
+  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const session = await auth()

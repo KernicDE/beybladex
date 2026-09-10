@@ -17,7 +17,9 @@ const PRIVACY_POLICY_VERSION = '2026-09-08' // bump whenever /datenschutz's cont
 
 export async function POST(req: Request) {
   const ip = getClientIp(req) // last XFF hop — leftmost entries are client-spoofable (issue #34)
-  const { allowed } = await rateLimit(`register:${ip}`, 5, 60 * 15) // 5 registrations / 15min / IP
+  // [RC3 #49] fail-closed: registration is anonymous + credential-issuing — without a working
+  // limiter it pauses (429) instead of running unthrottled while Redis is down.
+  const { allowed } = await rateLimit(`register:${ip}`, 5, 60 * 15, { onRedisError: 'closed' }) // 5 registrations / 15min / IP
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const body = await req.json()

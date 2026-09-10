@@ -11,7 +11,8 @@ const CHALLENGE_TTL_SECONDS = 120
 
 export async function GET(req: Request) {
   const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
-  const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60)
+  // [RC3 #49] fail-closed: passkey login is brute-force-sensitive — no working limiter, no login.
+  const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const username = new URL(req.url).searchParams.get('username')?.toLowerCase()
@@ -27,7 +28,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
-  const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60)
+  // [RC3 #49] fail-closed: see GET above.
+  const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const { nonce, response } = await req.json()
