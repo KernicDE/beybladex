@@ -205,6 +205,9 @@ model Club {
   owner       User         @relation("ClubOwner", fields: [ownerId], references: [id])
   members     ClubMember[]
   tournaments Tournament[]
+  // Phase 12: capped chat stream (max 50 messages, enforced synchronously on insert) —
+  // messages die with the club (onDelete: Cascade).
+  messages    ClubMessage[]
   createdAt   DateTime     @default(now())
 }
 
@@ -218,6 +221,22 @@ model ClubMember {
   joinedAt  DateTime @default(now())
 
   @@unique([clubId, userId])
+}
+
+// Phase 12: club chat message. authorId is a plain String, NOT a User FK (same reasoning as
+// AuditLog.actorId): a message must survive its author's account erasure (Art. 17), showing an
+// anonymized "gelöschter Nutzer" attribution instead of breaking — never cascade-delete a
+// user's messages on account deletion (that would let a user retroactively erase chat history
+// other members already read).
+model ClubMessage {
+  id        String   @id @default(uuid())
+  clubId    String
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String   // bio-convention free-text cap (500), enforced in the route
+  createdAt DateTime @default(now())
+
+  @@index([clubId, createdAt])
 }
 
 model Ruleset {
