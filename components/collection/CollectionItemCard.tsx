@@ -41,7 +41,7 @@ export function CollectionItemCard({
         </p>
         {(item.merchant || item.boughtAt) && (
           <p className="text-sm text-current/60">
-            {[item.merchant, item.boughtAt ? new Date(item.boughtAt).toLocaleDateString('de-DE') : null]
+            {[item.merchant, item.boughtAt ? new Date(item.boughtAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null]
               .filter(Boolean)
               .join(' · ')}
           </p>

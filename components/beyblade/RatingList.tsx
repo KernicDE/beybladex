@@ -64,7 +64,7 @@ export function RatingList({
                   <span className="text-sm font-normal text-current/60">@{rating.username}</span>
                 </p>
                 {rating.comment && <MarkdownContent className="mt-1 text-sm">{rating.comment}</MarkdownContent>}
-                <p className="mt-1 text-xs text-current/50">{new Date(rating.createdAt).toLocaleDateString('de-DE')}</p>
+                <p className="mt-1 text-xs text-current/50">{new Date(rating.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
               </div>
               <div className="flex gap-2">
                 {rating.own && (

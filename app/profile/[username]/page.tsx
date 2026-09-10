@@ -64,7 +64,9 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
         {view.birthDate && (
           <div>
             <dt className="font-medium">Geburtsdatum</dt>
-            <dd>{view.birthDate.toLocaleDateString('de-DE')}</dd>
+            {/* Explicit 2-digit day/month — toLocaleDateString('de-DE') alone doesn't zero-pad
+                (e.g. "5.3.2015" instead of "05.03.2015"), found on the live site. */}
+            <dd>{view.birthDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</dd>
           </div>
         )}
       </dl>
