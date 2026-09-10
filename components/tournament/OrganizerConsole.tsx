@@ -16,8 +16,9 @@ import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { HeaderImageUpload } from '@/components/tournament/HeaderImageUpload'
+import { SeedingPanel } from '@/components/tournament/SeedingPanel'
 
-export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean; paidAt: string | null }
+export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean; paidAt: string | null; seed: number | null }
 export type ConsoleMatch = {
   id: string
   stageId: string
@@ -177,6 +178,15 @@ export function OrganizerConsole({
       </div>
 
       <HeaderImageUpload tournamentId={tournamentId} headerImageId={headerImageId} />
+
+      {/* Phase 15 — seeding only makes sense pre-bracket (it's read once at generation time);
+          hidden once the first stage has matches, same gating as "Stage hinzufügen" above. */}
+      {!bracketGenerated && !completed && participants.length > 0 && (
+        <SeedingPanel
+          tournamentId={tournamentId}
+          participants={participants.filter((p) => !p.withdrawn).map((p) => ({ userId: p.userId, name: p.name, seed: p.seed }))}
+        />
+      )}
 
       {!completed && (
         <section aria-labelledby="stage-create-heading" className="space-y-2">

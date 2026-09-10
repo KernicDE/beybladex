@@ -77,18 +77,20 @@ export async function POST(req: Request, { params }: Ctx) {
     if (arenaCount !== null) await assignArenasAtGeneration(stageId, arenaCount)
   }
 
-  // Participant pool: first stage = checked-in & present; later stages = previous stage's
-  // qualifiers only (stage-to-stage qualification gate).
-  let pool: string[]
+  // Participant pool: first stage = checked-in & present (Phase 15: carries each participant's
+  // TournamentParticipant.seed — this is the ONLY stage where organizer-set seeding applies;
+  // see lib/seeding.ts's own comment on why later stages don't seed from this field); later
+  // stages = previous stage's qualifiers only (stage-to-stage qualification gate), unseeded.
+  let pool: { userId: string; seed: number | null }[]
   if (stage.order === 1) {
     const participants = await prisma.tournamentParticipant.findMany({
       where: { tournamentId: id, checkedIn: true, withdrawn: false },
-      select: { userId: true },
+      select: { userId: true, seed: true },
     })
-    pool = participants.map((p) => p.userId)
+    pool = participants
   } else {
     const previous = await prisma.tournamentStage.findUnique({ where: { tournamentId_order: { tournamentId: id, order: stage.order - 1 } } })
-    pool = previous?.qualifiedUserIds ?? []
+    pool = (previous?.qualifiedUserIds ?? []).map((userId) => ({ userId, seed: null }))
   }
 
   if (stage.format !== 'SWISS') {
@@ -102,7 +104,7 @@ export async function POST(req: Request, { params }: Ctx) {
         return Response.json({ error: 'not_enough_participants', checkedIn: pool.length }, { status: 422 })
       }
       const repeats = stage.roundRobinRepeats ?? 1
-      const pairings = generateRoundRobinPairings(pool.map((userId) => ({ userId })), repeats)
+      const pairings = generateRoundRobinPairings(pool, repeats)
       const perRoundCount = new Map<number, number>()
       const rows: Prisma.MatchCreateManyInput[] = pairings.map((p) => {
         const orderInRound = perRoundCount.get(p.round) ?? 0
@@ -119,7 +121,7 @@ export async function POST(req: Request, { params }: Ctx) {
         }
       })
       await prisma.match.createMany({ data: rows })
-      await prisma.stageStanding.createMany({ data: pool.map((userId) => ({ stageId, userId })) })
+      await prisma.stageStanding.createMany({ data: pool.map((p) => ({ stageId, userId: p.userId })) })
       await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
       await assignArenas()
       return Response.json({ created: rows.length }, { status: 201 })
@@ -151,11 +153,11 @@ export async function POST(req: Request, { params }: Ctx) {
 
     let wbByes: ReturnType<typeof generateSingleEliminationBracket> = []
     if (stage.format === 'SINGLE_ELIMINATION') {
-      const nodes = generateSingleEliminationBracket(pool.map((userId) => ({ userId })))
+      const nodes = generateSingleEliminationBracket(pool)
       wbByes = nodes
       pushNodes(nodes, null)
     } else {
-      const bracket = generateDoubleEliminationBracket(pool.map((userId) => ({ userId })))
+      const bracket = generateDoubleEliminationBracket(pool)
       if (!bracket) return Response.json({ error: 'not_enough_participants', checkedIn: pool.length }, { status: 422 })
       wbByes = bracket.winners
       pushNodes(bracket.winners, 'WINNERS')
@@ -163,7 +165,7 @@ export async function POST(req: Request, { params }: Ctx) {
       pushNodes([bracket.grandFinal, bracket.grandFinalReset], 'GRAND_FINAL')
     }
     await prisma.match.createMany({ data: rows })
-    await prisma.stageStanding.createMany({ data: pool.map((userId) => ({ stageId, userId })) })
+    await prisma.stageStanding.createMany({ data: pool.map((p) => ({ stageId, userId: p.userId })) })
 
     // WB bye winners advance immediately (same propagation the score route performs later).
     for (const bye of wbByes.filter((n) => n.round === 1 && n.winnerId !== null)) {
@@ -191,13 +193,22 @@ export async function POST(req: Request, { params }: Ctx) {
   // First pairing seeds the stage standings from the pool; later rounds read them (minus anyone
   // eliminated or withdrawn since).
   if ((await prisma.stageStanding.count({ where: { stageId } })) === 0) {
-    await prisma.stageStanding.createMany({ data: pool.map((userId) => ({ stageId, userId })) })
+    await prisma.stageStanding.createMany({ data: pool.map((p) => ({ stageId, userId: p.userId })) })
   }
   const withdrawn = await prisma.tournamentParticipant.findMany({
     where: { tournamentId: id, withdrawn: true },
     select: { userId: true },
   })
   const withdrawnIds = new Set(withdrawn.map((w) => w.userId))
+  // Phase 15 — seed tiebreak: read from the original TournamentParticipant rows (not just this
+  // stage's pool var) since this pairing call runs for every round of the stage, not only the
+  // first; see lib/swiss.ts's own comment on why seed only actually decides anything while
+  // every standing still ties at wins=0/buchholz=0 (in practice: round 1).
+  const seededParticipants = await prisma.tournamentParticipant.findMany({
+    where: { tournamentId: id },
+    select: { userId: true, seed: true },
+  })
+  const seedByUserId = new Map(seededParticipants.map((p) => [p.userId, p.seed]))
   let standings = await prisma.stageStanding.findMany({
     where: { stageId, eliminated: false, userId: { notIn: [...withdrawnIds] } },
   })
@@ -211,7 +222,8 @@ export async function POST(req: Request, { params }: Ctx) {
   }
   standings = standings.map((s) => ({ ...s, buchholz: bh.get(s.userId) ?? 0 }))
 
-  const { pairings } = pairSwissRound(standings as SwissPlayer[])
+  const seededStandings: SwissPlayer[] = standings.map((s) => ({ ...s, seed: seedByUserId.get(s.userId) ?? null }))
+  const { pairings } = pairSwissRound(seededStandings)
   const nextRound = current + 1
   for (const p of pairings) {
     if (p.player2Id === null) {

@@ -416,6 +416,12 @@ model TournamentParticipant {
   // Phase 7 — Zahlungsverfolgung: null = entry fee unpaid; timestamp lets the organizer
   // console show when the payment was recorded.
   paidAt       DateTime?
+  // Phase 15 — bracket seeding. null = "use the organizer's chosen auto method" (rating-based
+  // or shuffle); a lower number is a better bracket position (seed 1 = top seed). A manually-
+  // set seed always wins over auto-assignment for that participant (mixed manual+auto is a
+  // real, supported case). Only consulted by the FIRST stage's generation — later stages seed
+  // from their own qualification order, not this field (see lib/seeding.ts's own comment).
+  seed         Int?
 
   @@unique([tournamentId, userId])
 }

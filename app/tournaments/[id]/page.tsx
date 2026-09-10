@@ -185,6 +185,7 @@ export default async function TournamentBracketPage({
             checkedIn: p.checkedIn,
             withdrawn: p.withdrawn,
             paidAt: p.paidAt?.toISOString() ?? null,
+            seed: p.seed,
           }))}
           stages={tournament.stages.map((stage) => {
             const wbRounds = stageWinnersRounds(stage)

@@ -3,8 +3,12 @@
 // acceptable per the plan given this platform's realistic tournament sizes).
 //
 // Algorithm:
-//   1. Sort by (wins desc, buchholz desc, userId asc) — buchholz is the sum of opponents' win
-//      counts at pairing time; the userId tiebreak makes the output fully deterministic.
+//   1. Sort by (wins desc, buchholz desc, seed asc [Phase 15], userId asc) — buchholz is the
+//      sum of opponents' win counts at pairing time; seed only ever matters for ROUND 1 (every
+//      standing starts at wins=0/buchholz=0, so seed IS the round-1 tiebreak — from round 2 on,
+//      real results dominate and seed stops mattering, which is the correct behavior: seeding
+//      places players into the initial field, it doesn't keep re-influencing pairing once
+//      they've actually played). userId remains the final, fully-deterministic tiebreak.
 //   2. Odd field: the LOWEST-RANKED player who has not yet received a bye (StageStanding.byes)
 //      leaves the pool and gets a bye (player2Id: null — an automatic win). Fallback documented:
 //      if every player has already had a bye (mathematically possible only in tiny fields), the
@@ -18,14 +22,26 @@
 // Pure function (no DB) so the whole Swiss lifecycle is unit-testable without infrastructure.
 import type { StageStanding } from '@prisma/client'
 
-export type SwissPlayer = Pick<StageStanding, 'userId' | 'wins' | 'buchholz' | 'opponentIds' | 'byes'>
+// Phase 15: `seed` is NOT a StageStanding column — it's supplied by the caller (the generate
+// route) only when pairing ROUND 1, read from TournamentParticipant.seed at that moment. Every
+// later round omits it (undefined), which the tiebreak below treats identically to null.
+export type SwissPlayer = Pick<StageStanding, 'userId' | 'wins' | 'buchholz' | 'opponentIds' | 'byes'> & {
+  seed?: number | null
+}
 
 export type SwissPairing = { player1Id: string; player2Id: string | null }
 
 export function sortSwiss(standings: SwissPlayer[]): SwissPlayer[] {
-  return [...standings].sort(
-    (a, b) => b.wins - a.wins || b.buchholz - a.buchholz || (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0)
-  )
+  return [...standings].sort((a, b) => {
+    if (a.wins !== b.wins) return b.wins - a.wins
+    if (a.buchholz !== b.buchholz) return b.buchholz - a.buchholz
+    const seedA = a.seed ?? null
+    const seedB = b.seed ?? null
+    if (seedA !== null && seedB !== null && seedA !== seedB) return seedA - seedB
+    if (seedA !== null && seedB === null) return -1
+    if (seedA === null && seedB !== null) return 1
+    return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0
+  })
 }
 
 export function pairSwissRound(standings: SwissPlayer[]): { pairings: SwissPairing[] } {
