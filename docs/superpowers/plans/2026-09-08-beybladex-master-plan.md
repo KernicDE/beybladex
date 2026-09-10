@@ -2705,9 +2705,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 15: Rating-Based Seeding — added post-Phase-6, MVP2, by explicit user request
 
-**Tracking:** [Issue #9](https://github.com/KernicDE/beybladex/issues/9)
+**Tracking:** [Issue #9](https://github.com/KernicDE/beybladex/issues/9) (closed)
 
-**Status: planned, not started.** Depends on Phase 14 (a `PlayerRating` to seed by must exist first). Same standing note: confirm before starting.
+**Status: DONE — merged to main 2026-09-10 (commit `44bd7c8`).** `TournamentParticipant.seed`, `lib/seeding.ts` (sortBySeed/assignSeedsToUnseeded/rankUnseededByRating/shuffleOrder), all four format generators switched to seed-first ordering with the zero-seed-set case confirmed byte-for-byte unchanged (37 pre-existing tests pass as-is), a new seed-management API + OrganizerConsole `SeedingPanel`. `npx tsc --noEmit` clean, eslint clean, 225/225 unit tests.
 
 **Scope**: `lib/bracket.ts` currently seeds every bracket format deterministically by ascending `userId` (documented in its own header comment as "participants carry no seeding data") — this phase gives organizers the three seeding options Challonge offers (manual, shuffle, rating-based), closing that specific parity gap.
 
