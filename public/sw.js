@@ -176,3 +176,43 @@ self.addEventListener('fetch', (event) => {
     })
   )
 })
+
+// ---------------------------------------------------------------------------
+// Phase 18 — Web Push. APPENDED listeners (the handlers above stay untouched, same "append, not
+// replace" precedent as the judge-offline fetch listener's own header comment). `push` renders
+// a native OS notification from the server's JSON payload (lib/webPush.ts's PushPayload shape:
+// { title, message, link? }); `notificationclick` focuses an already-open tab on that link if
+// one exists, else opens a new one — standard Push-API notification-click pattern.
+self.addEventListener('push', (event) => {
+  let payload = { title: 'BeybladeX.de', message: '', link: '/' }
+  try {
+    if (event.data) payload = { ...payload, ...event.data.json() }
+  } catch {
+    // Malformed/empty payload — fall back to the generic title above rather than dropping the
+    // notification silently (the OS still shows SOMETHING was pushed).
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.message,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { link: payload.link || '/' },
+    })
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const link = event.notification.data?.link || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        // matchAll's URLs are absolute — compare only the path/query against `link`.
+        if (new URL(client.url).pathname + new URL(client.url).search === link && 'focus' in client) {
+          return client.focus()
+        }
+      }
+      return self.clients.openWindow(link)
+    })
+  )
+})

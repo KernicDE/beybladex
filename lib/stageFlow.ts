@@ -6,6 +6,7 @@
 import { prisma } from '@/lib/db'
 import { winnerPropagation, loserPropagation, winnersRounds } from '@/lib/doubleElimination'
 import { computeBuchholz, type SwissPlayer } from '@/lib/swiss'
+import { notifyMatchReady } from '@/lib/notify'
 import type { Match, TournamentStage } from '@prisma/client'
 
 /**
@@ -21,10 +22,24 @@ export function stageWinnersRounds(stage: { format: TournamentStage['format']; m
 }
 
 async function writeSlot(stageId: string, round: number, bracketOrder: number, slot: 'player1Id' | 'player2Id', userId: string) {
-  await prisma.match.updateMany({
+  const { count } = await prisma.match.updateMany({
     where: { stageId, round, bracketOrder },
     data: { [slot]: userId },
   })
+  // Phase 18 item 2 — this write may be the SECOND slot filled (the match now has both
+  // players) — notifyMatchReady re-checks the current row and self-guards (no-op if only one
+  // slot is filled, or the match isn't PENDING), so it's safe to call unconditionally here.
+  // Best-effort: a notification hiccup must never fail the already-persisted slot write.
+  if (count > 0) {
+    const match = await prisma.match.findFirst({ where: { stageId, round, bracketOrder }, select: { id: true } })
+    if (match) {
+      try {
+        await notifyMatchReady(match.id)
+      } catch (err) {
+        console.error(`[stageFlow] notifyMatchReady(${match.id}) failed:`, err)
+      }
+    }
+  }
 }
 
 /**

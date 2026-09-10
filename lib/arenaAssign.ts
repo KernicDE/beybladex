@@ -19,6 +19,17 @@
 // updateMany re-queues the arena rather than double-booking it.
 import { prisma } from '@/lib/db'
 import type { Match } from '@prisma/client'
+import { notifyArenaAssigned } from '@/lib/notify'
+
+// Phase 18 item 2 — best-effort notification wrapper: an arena assignment is already persisted
+// by the caller before this runs; a notification-delivery hiccup must never fail that write.
+async function notifyArena(matchId: string, arenaNumber: number): Promise<void> {
+  try {
+    await notifyArenaAssigned(matchId, arenaNumber)
+  } catch (err) {
+    console.error(`[arenaAssign] notifyArenaAssigned(${matchId}) failed:`, err)
+  }
+}
 
 export type ArenaQueueMatch = Pick<
   Match,
@@ -80,6 +91,7 @@ export async function assignArenasAtGeneration(stageId: string, arenaCount: numb
       const arena = arenaForIndex(i, arenaCount)
       if (arena === null) continue // beyond arenaCount in this group — waits for the dynamic pass
       await prisma.match.update({ where: { id: m.id }, data: { arenaNumber: arena } })
+      await notifyArena(m.id, arena)
     }
   }
 }
@@ -110,6 +122,9 @@ export async function assignFreedArena(completedMatch: Pick<Match, 'id' | 'stage
       where: { id: nextId, arenaNumber: null },
       data: { arenaNumber: completedMatch.arenaNumber },
     })
-    if (count > 0) return
+    if (count > 0) {
+      await notifyArena(nextId, completedMatch.arenaNumber)
+      return
+    }
   }
 }

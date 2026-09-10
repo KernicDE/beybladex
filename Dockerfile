@@ -39,12 +39,20 @@ ARG NEXTAUTH_URL="http://localhost:3000"
 ARG NEXTAUTH_SECRET="build-time-placeholder-not-for-production"
 ARG TOTP_ENCRYPTION_KEY="dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ=="
 ARG WEBAUTHN_RP_ID="localhost"
+# Phase 18 — UNLIKE the throwaway stubs above, this one MUST be the real production value at
+# build time: Next.js inlines every NEXT_PUBLIC_* var into the client JS bundle during `next
+# build`, not read at container start, so a placeholder here would silently ship a broken Push
+# subscribe button to real users (the public key itself is not sensitive — safe to be a build
+# arg/CI secret either way). Supplied by .github/workflows/deploy.yml's build-args from a repo
+# secret; an empty value here still builds (client code checks for it and no-ops the UI).
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 ENV DATABASE_URL=$DATABASE_URL \
     REDIS_URL=$REDIS_URL \
     NEXTAUTH_URL=$NEXTAUTH_URL \
     NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
     TOTP_ENCRYPTION_KEY=$TOTP_ENCRYPTION_KEY \
-    WEBAUTHN_RP_ID=$WEBAUTHN_RP_ID
+    WEBAUTHN_RP_ID=$WEBAUTHN_RP_ID \
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 RUN npm run build
 # Shrink node_modules to production deps only; the runner stage copies this
 # pruned tree wholesale (see note there).

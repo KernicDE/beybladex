@@ -37,6 +37,19 @@ import { generateSingleEliminationBracket } from '@/lib/bracket'
 import { generateDoubleEliminationBracket } from '@/lib/doubleElimination'
 import { pairSwissRound, computeBuchholz, type SwissPlayer } from '@/lib/swiss'
 import { generateRoundRobinPairings } from '@/lib/roundRobin'
+import { notifyMatchReady } from '@/lib/notify'
+
+// Phase 18 item 2 — best-effort "Dein nächstes Match beginnt" fan-out for every newly-created
+// match that already has both players (round-robin/Swiss pairings, and round-1 of an
+// elimination bracket minus its byes). A notification-delivery hiccup must never fail an
+// already-successful generation.
+async function notifyReady(matchId: string): Promise<void> {
+  try {
+    await notifyMatchReady(matchId)
+  } catch (err) {
+    console.error(`[generate] notifyMatchReady(${matchId}) failed:`, err)
+  }
+}
 import type { Prisma } from '@prisma/client'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
@@ -124,6 +137,8 @@ export async function POST(req: Request, { params }: Ctx) {
       await prisma.stageStanding.createMany({ data: pool.map((p) => ({ stageId, userId: p.userId })) })
       await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
       await assignArenas()
+      const readyMatches = await prisma.match.findMany({ where: { stageId, round: 1 }, select: { id: true } })
+      for (const m of readyMatches) await notifyReady(m.id)
       return Response.json({ created: rows.length }, { status: 201 })
     }
 
@@ -177,6 +192,10 @@ export async function POST(req: Request, { params }: Ctx) {
     }
     await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
     await assignArenas()
+    // Round 1 only — later rounds' slots fill in as earlier matches complete (that path is
+    // notified from lib/stageFlow.ts's writeSlot / the score route's own slot-fill instead).
+    const readyMatches = await prisma.match.findMany({ where: { stageId, round: 1 }, select: { id: true } })
+    for (const m of readyMatches) await notifyReady(m.id)
     return Response.json({ created: rows.length }, { status: 201 })
   }
 
@@ -245,9 +264,10 @@ export async function POST(req: Request, { params }: Ctx) {
         data: { wins: { increment: 1 }, byes: { increment: 1 } },
       })
     } else {
-      await prisma.match.create({
+      const created = await prisma.match.create({
         data: { tournamentId: id, stageId, round: 0, swissRound: nextRound, player1Id: p.player1Id, player2Id: p.player2Id, status: 'PENDING' },
       })
+      await notifyReady(created.id)
     }
   }
   await prisma.tournamentStage.update({ where: { id: stageId }, data: { swissRoundsDone: nextRound, status: 'ACTIVE' } })

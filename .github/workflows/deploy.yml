@@ -48,5 +48,12 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ env.IMAGE_OWNER }}/beybladex:latest
+          # Phase 18 — the ONLY build-arg that needs a real value (Dockerfile's own comment):
+          # NEXT_PUBLIC_* vars are inlined into the client bundle at build time. Requires a
+          # repo secret NEXT_PUBLIC_VAPID_PUBLIC_KEY (not sensitive — safe as a public value —
+          # but kept as a secret rather than a plain repo variable so it's set once deliberately
+          # alongside the matching server-side VAPID_PRIVATE_KEY, not typo'd out of sync).
+          build-args: |
+            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

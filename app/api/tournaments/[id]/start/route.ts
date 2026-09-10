@@ -16,6 +16,7 @@
 // match as before this phase.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { notifyTournamentStarted } from '@/lib/notify'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -80,6 +81,15 @@ export async function POST(_req: Request, { params }: Ctx) {
       return Response.json({ error: 'already_started' }, { status: 409 })
     }
     throw e
+  }
+
+  // Phase 18 item 2 — "Turnier gestartet", best-effort (matches the score route's own
+  // markMetaDirty precedent): the tournament is already started and persisted above; a
+  // notification-delivery hiccup must never fail this already-successful request.
+  try {
+    await notifyTournamentStarted(id)
+  } catch (err) {
+    console.error(`[start] notifyTournamentStarted(${id}) failed:`, err)
   }
 
   return Response.json({ startedAt: result.startedAt })

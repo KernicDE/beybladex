@@ -6,6 +6,11 @@ type NotificationsValues = {
   notifyRadiusKm: number
   notifyRecurring: boolean
   notifyEmail: boolean
+  // Phase 18 — separate from notifyEmail (the blanket toggle for the two fields above and club
+  // activity): gates push+in-app / email respectively for the three match/arena-lifecycle
+  // triggers ("Turnier gestartet", "Gehe zu Arena N", "Dein nächstes Match beginnt").
+  notifyMatchLifecycle: boolean
+  notifyMatchLifecycleEmail: boolean
 }
 
 const inputCls =
@@ -64,6 +69,30 @@ export function NotificationsForm({ initial }: { initial: NotificationsValues })
         />
         Zusätzlich per E-Mail benachrichtigen
       </label>
+
+      <div className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
+        <p className="mb-2 text-sm font-medium">Turnier- und Match-Ablauf</p>
+        <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">
+          „Turnier gestartet“, „Gehe zu Arena N“, „Dein nächstes Match beginnt“ — für Turniere,
+          bei denen du angemeldet bist.
+        </p>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={values.notifyMatchLifecycle}
+            onChange={(e) => setValues((v) => ({ ...v, notifyMatchLifecycle: e.target.checked }))}
+          />
+          Push-Benachrichtigungen (zusätzlich zur Geräte-Freigabe oben nötig)
+        </label>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={values.notifyMatchLifecycleEmail}
+            onChange={(e) => setValues((v) => ({ ...v, notifyMatchLifecycleEmail: e.target.checked }))}
+          />
+          Zusätzlich per E-Mail
+        </label>
+      </div>
       {message && (
         <p role="status" className={message.ok ? 'text-sm text-type-balance' : 'text-sm text-type-attack'}>
           {message.text}
