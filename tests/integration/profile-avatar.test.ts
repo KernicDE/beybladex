@@ -1,3 +1,15 @@
+// @vitest-environment node
+// [FIX] The suite-wide jsdom environment (vitest.config.mts) corrupts binary File content sent
+// through a real FormData→Request→.formData() round trip — a 231-byte PNG built by sharp came
+// back as a 9-byte file named "blob" on the other side, which sharp then rejected as unparsable
+// (surfaced as a 400 invalid_image, not a crash — the earlier isUploadedFile duck-typing fix
+// was necessary but not sufficient; the multipart body itself was already mangled by jsdom
+// before the route ever saw it). This file's own tests are pure API-route tests with no DOM
+// dependency, so overriding to Node's native fetch/FormData/File implementation (which
+// round-trips correctly, verified locally) is the fix — not a workaround for a test-only
+// artifact, since the same corruption would hit any real caller whose polyfilled fetch stack
+// resembles jsdom's.
+//
 // tests/integration/profile-avatar.test.ts
 // Phase 21, items 1 + 2 + 5: POST /api/profile/avatar and DELETE /api/profile/avatar are
 // session-required and self-only (there is no target-user param — a session IS the whole
