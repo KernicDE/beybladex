@@ -218,6 +218,44 @@ export async function POST(req: Request, { params }: Ctx) {
   const player1BuildId = buildId(body.player1BuildId)
   const player2BuildId = buildId(body.player2BuildId)
 
+  // Phase 16 item 6 — once a tournament has been started with a locked-decks ruleset, every
+  // registered participant's TournamentParticipant.lockedBuildIds is the authoritative build
+  // list for their matches: a build confirmation for a build outside that snapshot is rejected.
+  // An empty lockedBuildIds (tournament not started yet, or its ruleset doesn't lock decks)
+  // means no restriction — the live deck keeps being read as before this phase.
+  const tournamentId = match.tournamentId
+  async function assertBuildIsLocked(playerId: string | null, buildIdToConfirm: string | undefined): Promise<Response | null> {
+    if (!buildIdToConfirm || !playerId) return null
+    const participant = await prisma.tournamentParticipant.findUnique({
+      where: { tournamentId_userId: { tournamentId, userId: playerId } },
+      select: { lockedBuildIds: true },
+    })
+    if (participant && participant.lockedBuildIds.length > 0 && !participant.lockedBuildIds.includes(buildIdToConfirm)) {
+      return Response.json({ error: 'build_not_locked' }, { status: 400 })
+    }
+    return null
+  }
+  const player1LockError = await assertBuildIsLocked(match.player1Id, player1BuildId)
+  if (player1LockError) return player1LockError
+  const player2LockError = await assertBuildIsLocked(match.player2Id, player2BuildId)
+  if (player2LockError) return player2LockError
+
+  // Phase 16 item 1-2 — dual-spin mode. Locked at the same moment the build is confirmed;
+  // immutable once the match has left PENDING (a "change" is only ever a DIFFERENT value than
+  // what's already stored — resubmitting the same value, e.g. a replayed non-idempotent-key
+  // request, is a harmless no-op, not a conflict).
+  const spinMode = (v: unknown): 'RIGHT' | 'LEFT' | undefined => (v === 'RIGHT' || v === 'LEFT' ? v : undefined)
+  const player1SpinMode = spinMode(body.player1SpinMode)
+  const player2SpinMode = spinMode(body.player2SpinMode)
+  if (match.status !== 'PENDING') {
+    if (player1SpinMode && match.player1SpinMode && player1SpinMode !== match.player1SpinMode) {
+      return Response.json({ error: 'spin_mode_locked' }, { status: 409 })
+    }
+    if (player2SpinMode && match.player2SpinMode && player2SpinMode !== match.player2SpinMode) {
+      return Response.json({ error: 'spin_mode_locked' }, { status: 409 })
+    }
+  }
+
   // Win threshold: finals (the stage's last round) use finalsTargetPoints, earlier rounds
   // targetPoints — read from the Ruleset, never hardcoded. Phase 5 Part C2: the round lookup is
   // scoped to THIS match's STAGE, and a SWISS or ROUND_ROBIN stage never uses finalsTargetPoints
@@ -239,6 +277,8 @@ export async function POST(req: Request, { params }: Ctx) {
       clientEventId,
       ...(player1BuildId ? { player1BuildId } : {}),
       ...(player2BuildId ? { player2BuildId } : {}),
+      ...(player1SpinMode ? { player1SpinMode } : {}),
+      ...(player2SpinMode ? { player2SpinMode } : {}),
     },
   })
 

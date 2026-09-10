@@ -98,6 +98,8 @@ export async function recomputeDirtyMeta(): Promise<{ parts: number; builds: num
           winnerId: true,
           player1BuildId: true,
           player2BuildId: true,
+          player1SpinMode: true,
+          player2SpinMode: true,
         },
       })
     : []
@@ -115,7 +117,12 @@ export async function recomputeDirtyMeta(): Promise<{ parts: number; builds: num
   })
   const buildParts = new Map(buildRows.map((r) => [r.id, r]))
 
-  const agg = aggregateWinRates(matches, buildParts, dirtyParts)
+  // Phase 16 item 3 — which of the dirty parts are dual-spin, so their composite per-mode
+  // cache entries get recomputed alongside the bare-key entry below.
+  const dirtyDualSpinParts = dirtyParts.length
+    ? (await prisma.part.findMany({ where: { id: { in: dirtyParts }, dualSpin: true }, select: { id: true } })).map((p) => p.id)
+    : []
+  const agg = aggregateWinRates(matches, buildParts, dirtyParts, new Set(dirtyDualSpinParts))
 
   const pipeline = redis.pipeline()
   for (const id of dirtyBuilds) {
@@ -135,6 +142,19 @@ export async function recomputeDirtyMeta(): Promise<{ parts: number; builds: num
       losses: 0,
       winRate: null,
     } satisfies PartMetaStats))
+  }
+  // Phase 16 item 3 — the composite per-mode entries for dirty dual-spin parts.
+  for (const id of dirtyDualSpinParts) {
+    for (const mode of ['RIGHT', 'LEFT'] as const) {
+      const key = `${id}:${mode}`
+      pipeline.set(partCacheKey(key), JSON.stringify(agg.parts.get(key) ?? {
+        id: key,
+        appearances: 0,
+        wins: 0,
+        losses: 0,
+        winRate: null,
+      } satisfies PartMetaStats))
+    }
   }
   try {
     await pipeline.exec()

@@ -16,6 +16,7 @@
 // - DELETE: only the participant themselves; withdraws up until Tournament.startDate (409 after).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { validateDeckForFormat } from '@/lib/deckValidation'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -24,6 +25,39 @@ async function ownDeck(deckId: unknown, userId: string): Promise<boolean> {
   if (typeof deckId !== 'string') return false
   const deck = await prisma.deck.findUnique({ where: { id: deckId }, select: { userId: true } })
   return deck?.userId === userId
+}
+
+// Phase 16 item 5 — re-validates a chosen deck against the TOURNAMENT'S linked
+// Ruleset.deckFormat: a genuinely new check (join previously accepted any deckId belonging to
+// the caller with no format cross-check at all). Returns null (valid) or the error payload.
+async function validateDeckAgainstTournamentFormat(
+  deckId: string,
+  tournamentId: string
+): Promise<{ error: string; conflicts?: string[] } | null> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { ruleset: { select: { deckFormat: true } } },
+  })
+  if (!tournament) return { error: 'not_found' }
+  const deck = await prisma.deck.findUnique({
+    where: { id: deckId },
+    include: {
+      builds: {
+        include: {
+          build: {
+            select: {
+              id: true, bladeId: true, ratchetId: true, bitId: true,
+              blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  })
+  if (!deck) return { error: 'invalid_deck' }
+  const { valid, conflicts } = validateDeckForFormat(deck.builds.map((db) => db.build), tournament.ruleset.deckFormat)
+  if (!valid) return { error: 'deck_format_mismatch', conflicts }
+  return null
 }
 
 export async function POST(req: Request, { params }: Ctx) {
@@ -50,6 +84,10 @@ export async function POST(req: Request, { params }: Ctx) {
   const deckId = (body as Record<string, unknown>).deckId
   if (!(await ownDeck(deckId, session.user.id))) {
     return Response.json({ error: 'invalid_deck' }, { status: 403 })
+  }
+  if (typeof deckId === 'string') {
+    const formatError = await validateDeckAgainstTournamentFormat(deckId, id)
+    if (formatError) return Response.json(formatError, { status: 400 })
   }
 
   try {
@@ -94,6 +132,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (!(await ownDeck(deckId, session.user.id))) {
     return Response.json({ error: 'invalid_deck' }, { status: 403 })
+  }
+  if (typeof deckId === 'string') {
+    const formatError = await validateDeckAgainstTournamentFormat(deckId, id)
+    if (formatError) return Response.json(formatError, { status: 400 })
   }
 
   const updated = await prisma.tournamentParticipant.update({
