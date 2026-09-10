@@ -12,6 +12,10 @@
 //   MediaAsset (Part.imageId / Build.imageId) and writes an append-only AuditLog row.
 //   REJECT → requires a reviewNote (returned to the submitter); sets status + note.
 //   Either outcome notifies the submitter via lib/notify.ts's notifyUser.
+//   CONCURRENT REVIEWS ([RC2 #53]): the status flip is a CONDITIONAL updateMany
+//   (WHERE id AND status='PENDING') inside the settle transaction, modeled on
+//   tournaments/[id]/start — two simultaneous approvals can no longer both create a Part/Build
+//   row; the loser of the race gets 409 already_reviewed.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
@@ -111,24 +115,34 @@ export async function PATCH(req: Request): Promise<Response> {
 
   const proposal = await prisma.catalogProposal.findUnique({ where: { id } })
   if (!proposal) return Response.json({ error: 'not_found' }, { status: 404 })
-  if (proposal.status !== 'PENDING') return Response.json({ error: 'already_reviewed' }, { status: 409 })
 
   if (status === 'REJECTED') {
-    await prisma.$transaction(async (tx) => {
-      await tx.catalogProposal.update({
-        where: { id },
-        data: { status: 'REJECTED', reviewNote, reviewedById: gate.actorId, reviewedAt: new Date() },
+    // [RC2 #53] Conditional claim, modeled on tournaments/[id]/start: the status flip is an
+    // updateMany guarded by status='PENDING' — two concurrent reviewers can no longer both
+    // pass the read above and both settle the proposal.
+    try {
+      await prisma.$transaction(async (tx) => {
+        const { count } = await tx.catalogProposal.updateMany({
+          where: { id, status: 'PENDING' },
+          data: { status: 'REJECTED', reviewNote, reviewedById: gate.actorId, reviewedAt: new Date() },
+        })
+        if (count === 0) throw new Error('ALREADY_REVIEWED_RACE')
+        await tx.auditLog.create({
+          data: {
+            actorId: gate.actorId,
+            action: 'catalog_proposal.reject',
+            targetType: 'catalog_proposal',
+            targetId: id,
+            summary: `Katalog-Vorschlag ${id} abgelehnt`,
+          },
+        })
       })
-      await tx.auditLog.create({
-        data: {
-          actorId: gate.actorId,
-          action: 'catalog_proposal.reject',
-          targetType: 'catalog_proposal',
-          targetId: id,
-          summary: `Katalog-Vorschlag ${id} abgelehnt`,
-        },
-      })
-    })
+    } catch (e) {
+      if (e instanceof Error && e.message === 'ALREADY_REVIEWED_RACE') {
+        return Response.json({ error: 'already_reviewed' }, { status: 409 })
+      }
+      throw e
+    }
     await notifyUser(proposal.submittedById, {
       title: 'Katalog-Vorschlag abgelehnt',
       message: `Dein Vorschlag wurde abgelehnt.${reviewNote ? ` Begründung: ${reviewNote}` : ''}`,
@@ -137,11 +151,21 @@ export async function PATCH(req: Request): Promise<Response> {
     return Response.json({ id, status }, { status: 200 })
   }
 
-  // APPROVE — everything below happens in ONE transaction: inline parts + build (or the
-  // standalone part), the proposal status flip, and the audit row. A payload that fails
-  // verification mid-transaction rolls the whole approval back.
+  // APPROVE — everything below happens in ONE transaction: the conditional claim (status
+  // flip), inline parts + build (or the standalone part), and the audit row. A payload that
+  // fails verification mid-transaction rolls the whole approval back.
+  // [RC2 #53] The claim is the FIRST statement: an updateMany guarded by status='PENDING'.
+  // Two concurrent approvals used to both pass the read above and both create their Part/Build
+  // row; now only one transaction can claim the proposal — the loser's count is 0, its
+  // transaction throws BEFORE any Part/Build insert, and it gets a clean 409.
   try {
     const result = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.catalogProposal.updateMany({
+        where: { id, status: 'PENDING' },
+        data: { status: 'APPROVED', reviewNote, reviewedById: gate.actorId, reviewedAt: new Date() },
+      })
+      if (claimed.count === 0) throw new Error('ALREADY_REVIEWED_RACE')
+
       let createdPartId: string | null = null
       let createdBuildId: string | null = null
 
@@ -197,10 +221,6 @@ export async function PATCH(req: Request): Promise<Response> {
         createdBuildId = build.id
       }
 
-      await tx.catalogProposal.update({
-        where: { id },
-        data: { status: 'APPROVED', reviewNote, reviewedById: gate.actorId, reviewedAt: new Date() },
-      })
       await tx.auditLog.create({
         data: {
           actorId: gate.actorId,
@@ -226,6 +246,9 @@ export async function PATCH(req: Request): Promise<Response> {
     })
     return Response.json({ id, status, ...result }, { status: 200 })
   } catch (err) {
+    if (err instanceof Error && err.message === 'ALREADY_REVIEWED_RACE') {
+      return Response.json({ error: 'already_reviewed' }, { status: 409 })
+    }
     if (err instanceof ComboExistsError) {
       return Response.json({ error: 'combo_exists', id: err.buildId, existing: true }, { status: 409 })
     }

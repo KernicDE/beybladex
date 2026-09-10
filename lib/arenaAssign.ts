@@ -19,7 +19,12 @@
 // updateMany re-queues the arena rather than double-booking it.
 import { prisma } from '@/lib/db'
 import type { Match } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import { notifyArenaAssigned } from '@/lib/notify'
+
+// [RC2 #41] assignFreedArena accepts an optional client so the score route can run the arena
+// hand-off inside the SAME transaction as the completion (see lib/stageFlow.ts's header).
+type Db = PrismaClient | Prisma.TransactionClient
 
 // Phase 18 item 2 — best-effort notification wrapper: an arena assignment is already persisted
 // by the caller before this runs; a notification-delivery hiccup must never fail that write.
@@ -100,10 +105,10 @@ export async function assignArenasAtGeneration(stageId: string, arenaCount: numb
  * Hand the arena freed by a COMPLETED match to the next waiting match in the same stage.
  * No-op when the completed match had no arena (arena management off or an unassigned match).
  */
-export async function assignFreedArena(completedMatch: Pick<Match, 'id' | 'stageId' | 'arenaNumber'>): Promise<void> {
+export async function assignFreedArena(completedMatch: Pick<Match, 'id' | 'stageId' | 'arenaNumber'>, db: Db = prisma): Promise<void> {
   if (completedMatch.arenaNumber === null) return
   for (let guard = 0; guard < 16; guard++) {
-    const waiting = await prisma.match.findMany({
+    const waiting = await db.match.findMany({
       where: {
         stageId: completedMatch.stageId,
         arenaNumber: null,
@@ -118,7 +123,7 @@ export async function assignFreedArena(completedMatch: Pick<Match, 'id' | 'stage
     if (nextId === null) return
     // Claim atomically: a concurrent completion that got here first leaves arenaNumber set and
     // the updateMany matches nothing — loop and queue the arena behind it instead of double-booking.
-    const { count } = await prisma.match.updateMany({
+    const { count } = await db.match.updateMany({
       where: { id: nextId, arenaNumber: null },
       data: { arenaNumber: completedMatch.arenaNumber },
     })

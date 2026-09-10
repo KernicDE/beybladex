@@ -8,6 +8,13 @@ import { winnerPropagation, loserPropagation, winnersRounds } from '@/lib/double
 import { computeBuchholz, type SwissPlayer } from '@/lib/swiss'
 import { notifyMatchReady } from '@/lib/notify'
 import type { Match, TournamentStage } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
+
+// [RC2 #41] Every helper accepts an optional client so the score route can run the whole
+// completion (match update + bracket/standings propagation) inside ONE transaction — a
+// mid-completion crash must not leave the match COMPLETED with diverged Standings/Bracket/Elo.
+// Callers outside a transaction omit the argument and get the global client, as before.
+type Db = PrismaClient | Prisma.TransactionClient
 
 /**
  * Winners bracket rounds R for a stage, derived from the stage's own match rows: the highest
@@ -21,8 +28,8 @@ export function stageWinnersRounds(stage: { format: TournamentStage['format']; m
   return (maxRound + 1) / 3
 }
 
-async function writeSlot(stageId: string, round: number, bracketOrder: number, slot: 'player1Id' | 'player2Id', userId: string) {
-  const { count } = await prisma.match.updateMany({
+async function writeSlot(stageId: string, round: number, bracketOrder: number, slot: 'player1Id' | 'player2Id', userId: string, db: Db = prisma) {
+  const { count } = await db.match.updateMany({
     where: { stageId, round, bracketOrder },
     data: { [slot]: userId },
   })
@@ -31,7 +38,7 @@ async function writeSlot(stageId: string, round: number, bracketOrder: number, s
   // slot is filled, or the match isn't PENDING), so it's safe to call unconditionally here.
   // Best-effort: a notification hiccup must never fail the already-persisted slot write.
   if (count > 0) {
-    const match = await prisma.match.findFirst({ where: { stageId, round, bracketOrder }, select: { id: true } })
+    const match = await db.match.findFirst({ where: { stageId, round, bracketOrder }, select: { id: true } })
     if (match) {
       try {
         await notifyMatchReady(match.id)
@@ -51,9 +58,9 @@ async function writeSlot(stageId: string, round: number, bracketOrder: number, s
  * a fixpoint because one auto-bye can unstick the next LB round. Grand-final matches are never
  * auto-completed — their feeders always deliver real players.
  */
-export async function resolveStuckByes(stageId: string, participantsForMapping: number): Promise<void> {
+export async function resolveStuckByes(stageId: string, participantsForMapping: number, db: Db = prisma): Promise<void> {
   for (let guard = 0; guard < 64; guard++) {
-    const lbMatches = await prisma.match.findMany({
+    const lbMatches = await db.match.findMany({
       where: { stageId, bracketSide: 'LOSERS', status: { in: ['PENDING', 'IN_PROGRESS'] } },
     })
     let resolved = false
@@ -64,19 +71,19 @@ export async function resolveStuckByes(stageId: string, participantsForMapping: 
       if (!live) continue
       const feeder = slotFeeder(m.round, m.bracketOrder, live.nullSlot, participantsForMapping)
       if (!feeder) continue
-      const feederMatch = await prisma.match.findFirst({
+      const feederMatch = await db.match.findFirst({
         where: { stageId, round: feeder.round, bracketOrder: feeder.bracketOrder },
       })
       // The slot can still fill while its feeder is open; only a COMPLETED feeder proves it never
       // will. Re-read the match so a fixpoint pass never double-resolves a slot filled meanwhile.
       if (!feederMatch || feederMatch.status !== 'COMPLETED') continue
-      const current = await prisma.match.findUnique({ where: { id: m.id } })
+      const current = await db.match.findUnique({ where: { id: m.id } })
       if (!current || current.status === 'COMPLETED') continue
       if (live.nullSlot === 'player1Id' ? current.player1Id !== null : current.player2Id !== null) continue
-      await prisma.match.update({ where: { id: m.id }, data: { status: 'COMPLETED', winnerId: live.id } })
+      await db.match.update({ where: { id: m.id }, data: { status: 'COMPLETED', winnerId: live.id } })
       const wp = winnerPropagation(m, participantsForMapping)
-      if (wp.type === 'slot') await writeSlot(stageId, wp.target.round, wp.target.bracketOrder, wp.target.slot, live.id)
-      else if (wp.type === 'grand-final') await writeSlot(stageId, 3 * winnersRounds(participantsForMapping) - 1, 0, wp.slot, live.id)
+      if (wp.type === 'slot') await writeSlot(stageId, wp.target.round, wp.target.bracketOrder, wp.target.slot, live.id, db)
+      else if (wp.type === 'grand-final') await writeSlot(stageId, 3 * winnersRounds(participantsForMapping) - 1, 0, wp.slot, live.id, db)
       resolved = true
     }
     if (!resolved) return
@@ -125,24 +132,25 @@ export function slotFeeder(
 export async function propagateEliminationResult(
   match: Pick<Match, 'id' | 'stageId' | 'round' | 'bracketOrder' | 'bracketSide' | 'player1Id' | 'player2Id'>,
   winnerId: string,
-  participantsForMapping: number
+  participantsForMapping: number,
+  db: Db = prisma
 ): Promise<void> {
   const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
 
   const wp = winnerPropagation(match, participantsForMapping)
-  if (wp.type === 'slot') await writeSlot(match.stageId, wp.target.round, wp.target.bracketOrder, wp.target.slot, winnerId)
+  if (wp.type === 'slot') await writeSlot(match.stageId, wp.target.round, wp.target.bracketOrder, wp.target.slot, winnerId, db)
   else if (wp.type === 'grand-final') {
     // WB-final and LB-final winners advance into the GRAND FINAL (round 3R−1, order 0) — not
     // into a round relative to the match just completed.
     const R = winnersRounds(participantsForMapping)
-    await writeSlot(match.stageId, 3 * R - 1, 0, wp.slot, winnerId)
+    await writeSlot(match.stageId, 3 * R - 1, 0, wp.slot, winnerId, db)
   }
 
   const lp = loserPropagation(match, participantsForMapping)
   if (lp.type === 'slot') {
-    if (loserId) await writeSlot(match.stageId, lp.target.round, lp.target.bracketOrder, lp.target.slot, loserId)
+    if (loserId) await writeSlot(match.stageId, lp.target.round, lp.target.bracketOrder, lp.target.slot, loserId, db)
   } else if (lp.type === 'eliminated' && loserId) {
-    await markEliminated(match.stageId, loserId)
+    await markEliminated(match.stageId, loserId, db)
   }
 
   // Grand-final reset wiring: the reset match is generated PENDING and is either populated (LB
@@ -151,7 +159,7 @@ export async function propagateEliminationResult(
   const R = winnersRounds(participantsForMapping)
   if (match.round === 3 * R - 1 && match.bracketOrder === 0) {
     if (winnerId === match.player2Id && loserId) {
-      await prisma.match.updateMany({
+      await db.match.updateMany({
         where: { stageId: match.stageId, round: match.round, bracketOrder: 1 },
         data: { player1Id: loserId, player2Id: winnerId },
       })
@@ -159,7 +167,7 @@ export async function propagateEliminationResult(
       // other slot fill in this file, it never went through writeSlot (which notifies), so the
       // single most important "your next match begins" moment of a double-elimination
       // tournament fired nothing. Fetch the reset match's id and notify directly.
-      const reset = await prisma.match.findFirst({
+      const reset = await db.match.findFirst({
         where: { stageId: match.stageId, round: match.round, bracketOrder: 1 },
         select: { id: true },
       })
@@ -171,17 +179,17 @@ export async function propagateEliminationResult(
         }
       }
     } else {
-      await prisma.match.deleteMany({
+      await db.match.deleteMany({
         where: { stageId: match.stageId, round: match.round, bracketOrder: 1 },
       })
     }
   }
 
-  await resolveStuckByes(match.stageId, participantsForMapping)
+  await resolveStuckByes(match.stageId, participantsForMapping, db)
 }
 
-export async function markEliminated(stageId: string, userId: string): Promise<void> {
-  await prisma.stageStanding.updateMany({ where: { stageId, userId }, data: { eliminated: true } })
+export async function markEliminated(stageId: string, userId: string, db: Db = prisma): Promise<void> {
+  await db.stageStanding.updateMany({ where: { stageId, userId }, data: { eliminated: true } })
 }
 
 /**
@@ -194,21 +202,22 @@ export async function markEliminated(stageId: string, userId: string): Promise<v
 export async function recordSwissResult(
   stageId: string,
   winnerId: string,
-  loserId: string | null
+  loserId: string | null,
+  db: Db = prisma
 ): Promise<void> {
-  await prisma.stageStanding.updateMany({
+  await db.stageStanding.updateMany({
     where: { stageId, userId: winnerId },
     data: { wins: { increment: 1 }, ...(loserId ? { opponentIds: { push: loserId } } : {}) },
   })
   if (loserId) {
-    await prisma.stageStanding.updateMany({
+    await db.stageStanding.updateMany({
       where: { stageId, userId: loserId },
       data: { losses: { increment: 1 }, opponentIds: { push: winnerId } },
     })
   }
-  const standings = await prisma.stageStanding.findMany({ where: { stageId } })
+  const standings = await db.stageStanding.findMany({ where: { stageId } })
   const buchholz = computeBuchholz(standings as SwissPlayer[])
   for (const [userId, value] of buchholz) {
-    await prisma.stageStanding.updateMany({ where: { stageId, userId }, data: { buchholz: value } })
+    await db.stageStanding.updateMany({ where: { stageId, userId }, data: { buchholz: value } })
   }
 }

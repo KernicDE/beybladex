@@ -2,7 +2,8 @@
 // THE generic image pipeline — built once, consumed by every image-upload need (part/set
 // images via catalog proposals and curator direct-create, event header images). One
 // upload → sharp resize/crop to the caller's target → WebP → one MediaAsset row + one file
-// ("<id>.webp") on the persistent volume.
+// ("<id>.webp") on the persistent volume. Ordering rule [RC2 #52]: the file is written BEFORE
+// the MediaAsset row is inserted, so a failed volume write can never leave an orphaned row.
 //
 // - No external image API (zero-external-CDN guarantee): sharp is npm-bundled.
 // - Authorization is the CALLER's job (per-consumer, see items 1 and 5) — this module is a
@@ -12,6 +13,7 @@
 //   (Watchtower recreates on every deploy), so MEDIA_UPLOADS_DIR must point at the
 //   bind-mounted `media_uploads:` volume in compose.yml.
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import sharp from 'sharp'
 import { prisma } from '@/lib/db'
@@ -95,8 +97,17 @@ export async function processAndStoreImage(
 ): Promise<{ id: string; width: number; height: number; sizeBytes: number }> {
   const { buffer, width, height } = await processImage(file, target)
 
-  const asset = await prisma.mediaAsset.create({
+  // [RC2 #52] File FIRST, DB row SECOND. The asset id is generated here (the schema default is
+  // the same uuid()), the file is named after it and written to the volume, and only a
+  // successful writeFile is followed by the MediaAsset insert. The old order (row first) left
+  // an orphaned MediaAsset row — referencing a file that 404s forever — whenever the volume
+  // write failed.
+  const id = randomUUID()
+  await mkdir(mediaDir(), { recursive: true })
+  await writeFile(mediaFilePath(id), buffer)
+  await prisma.mediaAsset.create({
     data: {
+      id,
       filename: file.name || 'upload',
       mimeType: 'image/webp', // normalized — the stored bytes are always WebP
       width,
@@ -105,10 +116,7 @@ export async function processAndStoreImage(
       uploadedById,
     },
   })
-
-  await mkdir(mediaDir(), { recursive: true })
-  await writeFile(mediaFilePath(asset.id), buffer)
-  return { id: asset.id, width, height, sizeBytes: buffer.byteLength }
+  return { id, width, height, sizeBytes: buffer.byteLength }
 }
 
 /** Reads a stored asset's bytes (throws if the file is missing). */

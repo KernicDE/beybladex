@@ -14,6 +14,12 @@
 // body for manual resolution — never a silent overwrite (adjacent-table judges are a real
 // scenario, not an edge case).
 //
+// CONCURRENT SUBMISSIONS ([RC2 #41]): the write itself is guarded by a conditional updateMany
+// (WHERE id + the clientEventId read above) inside ONE transaction that also carries the whole
+// completion propagation (Standings, Bracket, arena hand-off, Elo). Two POSTs racing with
+// different clientEventIds can no longer both apply: one claims the row, the other sees
+// count===0, skips propagation and gets the stored state / 409 conflict contract.
+//
 // POINT CALCULATION reads the Ruleset linked to the parent Tournament — no hardcoded point
 // values ([REVIEW-FIX], acceptance criterion "Match point calculation reads its point values
 // from the Tournament's linked Ruleset"):
@@ -298,29 +304,143 @@ export async function POST(req: Request, { params }: Ctx) {
   const completed = nextScore1 >= target || nextScore2 >= target
   const winnerId = completed ? (nextScore1 > nextScore2 ? match.player1Id : match.player2Id) : null
 
-  const updated = await prisma.match.update({
-    where: { id },
-    data: {
-      scorePlayer1: nextScore1,
-      scorePlayer2: nextScore2,
-      winnerId,
-      status: completed ? 'COMPLETED' : 'IN_PROGRESS',
-      clientEventId,
-      ...(player1BuildId ? { player1BuildId } : {}),
-      ...(player2BuildId ? { player2BuildId } : {}),
-      ...(player1SpinMode ? { player1SpinMode } : {}),
-      ...(player2SpinMode ? { player2SpinMode } : {}),
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    // [RC2 #41] CONDITIONAL WRITE: the guard is the clientEventId read above. Two POSTs with
+    // DIFFERENT clientEventIds used to both pass the replay/COMPLETED checks (each read the
+    // pre-update row) and both apply the completion — Standings wins/losses and the Elo delta
+    // landed TWICE. Only one concurrent caller can match this where-clause; the loser's
+    // count is 0 and the whole propagation below is skipped (the early replay/409 paths stay
+    // the sequential-request contract — this is the concurrent-request backstop).
+    const claimed = await tx.match.updateMany({
+      where: { id, clientEventId: match.clientEventId },
+      data: {
+        scorePlayer1: nextScore1,
+        scorePlayer2: nextScore2,
+        winnerId,
+        status: completed ? 'COMPLETED' : 'IN_PROGRESS',
+        clientEventId,
+        ...(player1BuildId ? { player1BuildId } : {}),
+        ...(player2BuildId ? { player2BuildId } : {}),
+        ...(player1SpinMode ? { player1SpinMode } : {}),
+        ...(player2SpinMode ? { player2SpinMode } : {}),
+      },
+    })
+    if (claimed.count === 0) return null
+    const row = await tx.match.findUniqueOrThrow({ where: { id } })
+
+    // Phase 5 Part D — Auto-Meta dirty marking: the match just transitioned to COMPLETED, so its
+    // two confirmed builds (and transitively their three parts each) are stale in the win-rate
+    // cache. Marked AFTER the transaction below (Redis, best-effort — a Redis failure must not
+    // fail the already-persisted score). ADDITIVE side effect on the completion path only —
+    // replay, 409-conflict and lost-race requests never reach it, so idempotency is preserved.
+
+    // Advance the result through the stage — format-aware (Phase 5 Part C2):
+    //   SINGLE_ELIMINATION — winner into the next round's slot within this stage (unchanged Part C
+    //     behavior, now stage-scoped).
+    //   DOUBLE_ELIMINATION — winner into the next WB/LB slot or the grand final; the LOSER also
+    //     propagates: a WB match's loser drops into a specific LB slot (lib/doubleElimination.ts's
+    //     drop-in mapping), an LB match's loser is eliminated (StageStanding.eliminated = true, no
+    //     further propagation). Grand-final reset wiring + stuck-bye resolution happen inside.
+    //   SWISS / ROUND_ROBIN — no bracket slots at all (standings-based ranking, not bracket
+    //     propagation): both players' StageStanding rows are updated (wins/losses/opponentIds +
+    //     buchholz recompute). Swiss re-pairs its next round from them; Round Robin has no next
+    //     round — the fixture list was generated in one shot.
+    // Idempotent throughout: re-running for the same winner writes the same values. [RC2 #41]
+    // The completion + ALL propagation run in this ONE transaction — a crash mid-completion no
+    // longer leaves the match COMPLETED with diverged Standings/Bracket/Elo, and the steps are
+    // repeatable (slot writes are conditional updateManies writing the same values; standings
+    // increments run exactly once, under the claim above).
+    if (completed && winnerId) {
+      if (match.stage.format === 'SWISS' || match.stage.format === 'ROUND_ROBIN') {
+        const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
+        await recordSwissResult(match.stageId, winnerId, loserId, tx)
+      } else if (match.stage.format === 'DOUBLE_ELIMINATION') {
+        // The bracket shape depends on slots (nextPow2 of the pool), which the stage's own max
+        // round reveals: maxRound = 3R−1 → R = (maxRound + 1) / 3.
+        const R = (maxRound + 1) / 3
+        await propagateEliminationResult(match, winnerId, 2 ** R, tx)
+      } else {
+        const slot = match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
+        const nextRound = match.round + 1
+        const nextBracketOrder = Math.floor(match.bracketOrder / 2)
+        await tx.match.updateMany({
+          where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
+          data: { [slot]: winnerId },
+        })
+        // Phase 18 item 2 — "Dein nächstes Match beginnt": self-guarded by notifyMatchReady
+        // (no-op unless this write was the SECOND slot filled). Best-effort.
+        const nextMatch = await tx.match.findFirst({
+          where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
+          select: { id: true },
+        })
+        if (nextMatch) {
+          try {
+            await notifyMatchReady(nextMatch.id)
+          } catch (err) {
+            console.error(`[score] notifyMatchReady(${nextMatch.id}) failed:`, err)
+          }
+        }
+      }
+
+      // Phase 7 — the match just freed its arena: hand the number to the next waiting match in
+      // this stage (lib/arenaAssign.ts). No-op when arena management is off (arenaNumber null).
+      await assignFreedArena(row, tx)
+
+      // Phase 14 — Elo update. Gated on the tournament's own rankedEligible flag AND an ACTIVE
+      // season existing (a fresh install with no season created yet must not throw — ratings
+      // simply don't accrue until an admin creates one). Idempotency is inherited from the
+      // conditional claim above: this block only runs once per real COMPLETED transition, never
+      // on a replayed clientEventId or a lost race.
+      if (match.tournament.rankedEligible && match.player1Id && match.player2Id) {
+        const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
+        const activeSeason = await getActiveSeason(tx)
+        if (activeSeason) {
+          await applyMatchResultToRatings(tx, activeSeason.id, winnerId, loserId)
+        }
+      }
+    }
+
+    return row
   })
 
-  // Phase 5 Part D — Auto-Meta dirty marking: the match just transitioned to COMPLETED, so its
-  // two confirmed builds (and transitively their three parts each) are stale in the win-rate
-  // cache. Mark them dirty in Redis; the periodic recompute pass
-  // (POST /api/internal/recompute-meta, same external scheduler as cleanup-notifications)
-  // recomputes exactly those ids. ADDITIVE side effect on the completion path only — replay
-  // and 409-conflict requests returned above never reach this, so idempotency is preserved.
-  // Best-effort: a Redis failure here must not fail an already-persisted score (the miss only
-  // delays the aggregate until the next completion touches these ids).
+  // [RC2 #41] Lost the race: a concurrent submission claimed the row between our read and our
+  // conditional write. Re-read and answer with the same contract the sequential paths above
+  // use — a completed match surfaces the conflict, an in-progress one returns stored state.
+  if (!updated) {
+    const current = await prisma.match.findUnique({ where: { id } })
+    if (!current) return Response.json({ error: 'not_found' }, { status: 404 })
+    if (current.status === 'COMPLETED') {
+      return Response.json(
+        {
+          error: 'conflict',
+          serverVersion: {
+            clientEventId: current.clientEventId,
+            scorePlayer1: current.scorePlayer1,
+            scorePlayer2: current.scorePlayer2,
+            winnerId: current.winnerId,
+            status: current.status,
+          },
+          clientVersion: { clientEventId, ...body },
+        },
+        { status: 409 }
+      )
+    }
+    return Response.json({
+      id: current.id,
+      status: current.status,
+      scorePlayer1: current.scorePlayer1,
+      scorePlayer2: current.scorePlayer2,
+      winnerId: current.winnerId,
+      clientEventId: current.clientEventId,
+      targetPoints: target,
+      rematch,
+    })
+  }
+
+  // Phase 5 Part D — Auto-Meta dirty marking (moved out of the transaction: Redis, best-effort —
+  // a Redis failure here must not fail an already-persisted score; the miss only delays the
+  // aggregate until the next completion touches these ids). Only the race winner reaches this,
+  // so dirty marks are written exactly once per completion.
   if (completed) {
     try {
       const completedBuildIds = [updated.player1BuildId, updated.player2BuildId].filter((v): v is string => Boolean(v))
@@ -334,68 +454,6 @@ export async function POST(req: Request, { params }: Ctx) {
       }
     } catch {
       // documented degradation — see comment above
-    }
-  }
-
-  // Advance the result through the stage — format-aware (Phase 5 Part C2):
-  //   SINGLE_ELIMINATION — winner into the next round's slot within this stage (unchanged Part C
-  //     behavior, now stage-scoped).
-  //   DOUBLE_ELIMINATION — winner into the next WB/LB slot or the grand final; the LOSER also
-  //     propagates: a WB match's loser drops into a specific LB slot (lib/doubleElimination.ts's
-  //     drop-in mapping), an LB match's loser is eliminated (StageStanding.eliminated = true, no
-  //     further propagation). Grand-final reset wiring + stuck-bye resolution happen inside.
-  //   SWISS / ROUND_ROBIN — no bracket slots at all (standings-based ranking, not bracket
-  //     propagation): both players' StageStanding rows are updated (wins/losses/opponentIds +
-  //     buchholz recompute). Swiss re-pairs its next round from them; Round Robin has no next
-  //     round — the fixture list was generated in one shot.
-  // Idempotent throughout: re-running for the same winner writes the same values.
-  if (completed && winnerId) {
-    if (match.stage.format === 'SWISS' || match.stage.format === 'ROUND_ROBIN') {
-      const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
-      await recordSwissResult(match.stageId, winnerId, loserId)
-    } else if (match.stage.format === 'DOUBLE_ELIMINATION') {
-      // The bracket shape depends on slots (nextPow2 of the pool), which the stage's own max
-      // round reveals: maxRound = 3R−1 → R = (maxRound + 1) / 3.
-      const R = (maxRound + 1) / 3
-      await propagateEliminationResult(match, winnerId, 2 ** R)
-    } else {
-      const slot = match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
-      const nextRound = match.round + 1
-      const nextBracketOrder = Math.floor(match.bracketOrder / 2)
-      await prisma.match.updateMany({
-        where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
-        data: { [slot]: winnerId },
-      })
-      // Phase 18 item 2 — "Dein nächstes Match beginnt": self-guarded by notifyMatchReady
-      // (no-op unless this write was the SECOND slot filled). Best-effort.
-      const nextMatch = await prisma.match.findFirst({
-        where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
-        select: { id: true },
-      })
-      if (nextMatch) {
-        try {
-          await notifyMatchReady(nextMatch.id)
-        } catch (err) {
-          console.error(`[score] notifyMatchReady(${nextMatch.id}) failed:`, err)
-        }
-      }
-    }
-
-    // Phase 7 — the match just freed its arena: hand the number to the next waiting match in
-    // this stage (lib/arenaAssign.ts). No-op when arena management is off (arenaNumber null).
-    await assignFreedArena(updated)
-
-    // Phase 14 — Elo update. Gated on the tournament's own rankedEligible flag AND an ACTIVE
-    // season existing (a fresh install with no season created yet must not throw — ratings
-    // simply don't accrue until an admin creates one). Idempotency is inherited from the
-    // early-return replay/409-conflict checks above: this block only runs once per real
-    // COMPLETED transition, never on a replayed clientEventId.
-    if (match.tournament.rankedEligible && match.player1Id && match.player2Id) {
-      const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
-      const activeSeason = await getActiveSeason(prisma)
-      if (activeSeason) {
-        await applyMatchResultToRatings(prisma, activeSeason.id, winnerId, loserId)
-      }
     }
   }
 
