@@ -40,12 +40,15 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
   // Phase 11 (item 6): "nur meine Teile" — a build is available when the caller owns (via
   // CollectionItem, any sourceBuildId or none) ALL THREE of its constituent parts. One query
   // for the owned-part-id set, then a pure in-memory filter/annotate over this page's builds.
+  // [RC5 #58] Only the id column, DISTINCT: a large collection (many rows per part from
+  // repeated purchases/set provenance) previously shipped every duplicate row across the wire.
   // Known tradeoff: filtering happens AFTER cursor pagination, so a page can return fewer than
   // `take` results (or zero) even when more available builds exist further in — acceptable at
   // this catalog's realistic size; a DB-level filter would need a raw-SQL subquery.
   const owned = await prisma.collectionItem.findMany({
     where: { userId: opts.onlyMineUserId },
     select: { partOrBeyId: true },
+    distinct: ['partOrBeyId'],
   })
   const ownedIds = new Set(owned.map((o) => o.partOrBeyId))
   const withAvailability = page.map((b) => ({
