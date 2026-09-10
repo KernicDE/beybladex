@@ -82,7 +82,7 @@ export default async function CollectionItemPage({ params }: PageProps<'/collect
           <p className="text-sm text-current/60">
             {[
               item.merchant,
-              item.boughtAt ? `Gekauft am ${new Date(item.boughtAt).toLocaleDateString('de-DE')}` : null,
+              item.boughtAt ? `Gekauft am ${new Date(item.boughtAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : null,
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -104,7 +104,7 @@ export default async function CollectionItemPage({ params }: PageProps<'/collect
             <ul className="space-y-1 text-sm">
               {item.pricePoints.map((p) => (
                 <li key={p.id} className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="text-current/60">{new Date(p.recordedAt).toLocaleDateString('de-DE')}</span>
+                  <span className="text-current/60">{new Date(p.recordedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                   <PriceDisplay price={p.price} currency={p.currency} target={target} rates={fx.rates} stale={fx.stale} />
                 </li>
               ))}
