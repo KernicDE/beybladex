@@ -155,6 +155,21 @@ export async function propagateEliminationResult(
         where: { stageId: match.stageId, round: match.round, bracketOrder: 1 },
         data: { player1Id: loserId, player2Id: winnerId },
       })
+      // [REVIEW-FIX P18-3] this write populates BOTH slots in one updateMany — unlike every
+      // other slot fill in this file, it never went through writeSlot (which notifies), so the
+      // single most important "your next match begins" moment of a double-elimination
+      // tournament fired nothing. Fetch the reset match's id and notify directly.
+      const reset = await prisma.match.findFirst({
+        where: { stageId: match.stageId, round: match.round, bracketOrder: 1 },
+        select: { id: true },
+      })
+      if (reset) {
+        try {
+          await notifyMatchReady(reset.id)
+        } catch (err) {
+          console.error(`[stageFlow] notifyMatchReady(${reset.id}) failed (grand-final reset):`, err)
+        }
+      }
     } else {
       await prisma.match.deleteMany({
         where: { stageId: match.stageId, round: match.round, bracketOrder: 1 },

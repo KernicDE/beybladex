@@ -137,6 +137,13 @@ export async function POST(req: Request, { params }: Ctx) {
       await prisma.stageStanding.createMany({ data: pool.map((p) => ({ stageId, userId: p.userId })) })
       await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
       await assignArenas()
+      // [REVIEW-FIX P18-5, documented scope decision] Round Robin creates its ENTIRE schedule
+      // (every round) in one shot, all with both players resolved — notifying every future
+      // round immediately would mean players getting "your next match begins" for matches
+      // days/weeks away, which is spam, not a useful signal. Deliberately scoped to round 1
+      // only, matching the same "only what's immediately actionable" principle the elimination
+      // branch below already applies (it only notifies the rounds generation itself can
+      // populate with both players, never rounds further out). Not an oversight.
       const readyMatches = await prisma.match.findMany({ where: { stageId, round: 1 }, select: { id: true } })
       for (const m of readyMatches) await notifyReady(m.id)
       return Response.json({ created: rows.length }, { status: 201 })
@@ -192,9 +199,13 @@ export async function POST(req: Request, { params }: Ctx) {
     }
     await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
     await assignArenas()
-    // Round 1 only — later rounds' slots fill in as earlier matches complete (that path is
-    // notified from lib/stageFlow.ts's writeSlot / the score route's own slot-fill instead).
-    const readyMatches = await prisma.match.findMany({ where: { stageId, round: 1 }, select: { id: true } })
+    // Round 1, PLUS round 2 — [REVIEW-FIX P18-2] the bye-advancement loop just above can leave
+    // a round-2 match with BOTH players resolved already (two byes feeding the same next-round
+    // match — lib/bracket.ts places byes contiguously at orders 0..byes-1, and orders 2k/2k+1
+    // both feed round-2 match k), which was previously never notified at all. Later rounds
+    // beyond round 2 still can't have both players yet at generation time, so this stays bounded
+    // to exactly the rounds generation itself can populate.
+    const readyMatches = await prisma.match.findMany({ where: { stageId, round: { in: [1, 2] } }, select: { id: true } })
     for (const m of readyMatches) await notifyReady(m.id)
     return Response.json({ created: rows.length }, { status: 201 })
   }

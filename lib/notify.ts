@@ -45,11 +45,22 @@ export type NotifyCategory = 'default' | 'matchLifecycle'
 // outcomes). Reuses the same durable row + per-user pub/sub channel as the radius blast;
 // email honors the minor ceiling (no email to isMinor users, in-app always reaches them) for
 // BOTH categories. Push does NOT carry the same ceiling (documented judgment call, Phase 18
-// item 3): unlike email — sent unprompted to any address on file — a push subscription only
-// exists after the user's own explicit OS permission grant + explicit subscribe action, and its
-// content here is the same time-sensitive operational tournament info already reaching a minor
-// in-app; the minor-protection concern behind the email ceiling (unsolicited third-party-relay
-// contact) doesn't apply the same way to a device-local, opt-in-gated channel.
+// item 3, revised after review). The decision rests on CONSENT POSTURE, not on where delivery
+// physically transits — Web Push notifications DO pass through the browser vendor's own push
+// service (Mozilla/Google/Apple), so "device-local" is not the load-bearing argument here (an
+// earlier version of this comment leaned on it; lib/webPush.ts's own header comment correctly
+// says so). The actual reason: unlike email — sent unprompted to any address already on file —
+// a push subscription can only come into existence after the user's own DELIBERATE subscribe
+// action on the settings page PLUS an OS-level permission grant on their own device; nothing
+// about a User row alone can cause a push send the way `notifyEmail: true` + a stored address
+// can cause an email send. That dual opt-in is a materially different consent posture than
+// email-to-address-on-file, and the content is identical to what an in-app row (always on,
+// reaching a minor regardless) already shows — push only adds OS-level salience, not new
+// information. `notifyMatchLifecycle` defaults to `true`, so this is a real, deliberate
+// decision about minors, not an oversight: if a stricter posture is ever wanted, the
+// conservative compromise is defaulting push (not the in-app row) to off for `isMinor` users,
+// which would be a small, isolated change here — not implemented, since the opt-in argument
+// above was judged sufficient at implementation time.
 export async function notifyUser(
   userId: string,
   content: { title: string; message: string; link?: string },
@@ -165,18 +176,43 @@ export async function notifyArenaAssigned(matchId: string, arenaNumber: number):
   )
 }
 
-/** "Dein nächstes Match beginnt" — fired whenever a bracket/pairing write leaves a PENDING
- *  match with BOTH players resolved (round-1 generation, Round Robin fixtures, each Swiss
- *  round's pairing, and mid-bracket slot fills as earlier rounds complete) — to both players. */
+/** "Dein nächstes Match beginnt" (+ "Gehe zu Arena N" if applicable) — the combined post-write
+ *  check every bracket/pairing/slot-fill call site runs after touching a match. Fires "Dein
+ *  nächstes Match beginnt" whenever this read finds a PENDING match with BOTH players resolved
+ *  (round-1 generation, Round Robin fixtures, each Swiss round's pairing, mid-bracket slot fills
+ *  as earlier rounds complete, no-show auto-advances, and grand-final reset population).
+ *
+ *  [REVIEW-FIX P18-1] ALSO fires "Gehe zu Arena N" here, in the SAME read, when the match
+ *  already carries a non-null arenaNumber — closing a real gap the Phase 18 review found:
+ *  lib/arenaAssign.ts's generation-time pass (assignArenasAtGeneration) can assign an arena to
+ *  a match that has NO PLAYERS yet (later elimination rounds), so notifyArenaAssigned's own
+ *  null-player filter silently drops it and no later write ever re-fires it — only the DYNAMIC
+ *  pass (assignFreedArena, which only touches unassigned matches) re-notifies. This read is the
+ *  first point where "this match now has both players AND an arena" can be observed together,
+ *  so it's the natural place to catch that combination. Call sites that assign an arena directly
+ *  (lib/arenaAssign.ts itself) still call notifyArenaAssigned separately for the normal case
+ *  (arena assigned to an already-both-players match) — this is strictly the catch-up path.
+ *
+ *  KNOWN, ACCEPTED RACE (Phase 18 review, not fixed): two matches whose winners feed the SAME
+ *  next match, scored concurrently, can each independently re-read the parent match as "both
+ *  slots now filled" and both call this function — a rare double notification, never a
+ *  correctness issue (no double-counted score, no duplicate DB state beyond an extra
+ *  Notification row). No transition token/transaction guards this; low probability (requires
+ *  two adjacent matches completing at the same instant), low impact, so left undone rather than
+ *  adding transactional complexity for a cosmetic duplicate push. */
 export async function notifyMatchReady(matchId: string): Promise<void> {
   const match = await prisma.match.findUnique({
     where: { id: matchId },
-    select: { status: true, player1Id: true, player2Id: true, tournamentId: true },
+    select: { status: true, player1Id: true, player2Id: true, tournamentId: true, arenaNumber: true },
   })
   if (!match || match.status !== 'PENDING' || !match.player1Id || !match.player2Id) return
   const link = `/tournaments/${match.tournamentId}`
-  const content = { title: 'Dein nächstes Match beginnt', message: 'Dein Gegner steht fest — bereite dich vor.', link }
-  await Promise.all(
-    [match.player1Id, match.player2Id].map((userId) => notifyUser(userId, content, { category: 'matchLifecycle' }))
-  )
+  const players = [match.player1Id, match.player2Id]
+  const readyContent = { title: 'Dein nächstes Match beginnt', message: 'Dein Gegner steht fest — bereite dich vor.', link }
+  await Promise.all(players.map((userId) => notifyUser(userId, readyContent, { category: 'matchLifecycle' })))
+
+  if (match.arenaNumber !== null) {
+    const arenaContent = { title: `Gehe zu Arena ${match.arenaNumber}`, message: `Dein Match ist an Arena ${match.arenaNumber} dran.`, link }
+    await Promise.all(players.map((userId) => notifyUser(userId, arenaContent, { category: 'matchLifecycle' })))
+  }
 }

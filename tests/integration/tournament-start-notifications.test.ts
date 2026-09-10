@@ -44,12 +44,18 @@ describe('tournament-start notifications', () => {
     const res = await START(req(), { params: Promise.resolve({ id: tournament.id }) })
     expect(res.status).toBe(200)
 
+    // [REVIEW-FIX] scoped by this tournament's link (not just the three seeded userIds) — a
+    // spurious notification to anyone else entirely (e.g. the organizer, who never registered
+    // as a participant) would be caught by the exact-count assertion below, not just silently
+    // missed by an allow-listed userId filter.
     const notifications = await prisma.notification.findMany({
-      where: { userId: { in: [checkedIn.id, notCheckedIn.id, withdrawn.id] }, title: 'Turnier gestartet' },
+      where: { title: 'Turnier gestartet', link: `/tournaments/${tournament.id}` },
     })
+    expect(notifications).toHaveLength(1)
     const notifiedUserIds = notifications.map((n) => n.userId)
     expect(notifiedUserIds).toEqual([checkedIn.id])
     expect(notifiedUserIds).not.toContain(notCheckedIn.id)
     expect(notifiedUserIds).not.toContain(withdrawn.id)
+    expect(notifiedUserIds).not.toContain(owner.id)
   })
 })
