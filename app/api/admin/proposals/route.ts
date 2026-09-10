@@ -6,8 +6,10 @@
 //   tests/integration/catalog-proposal-flow.test.ts).
 //   APPROVE → kind=PART creates the Part row from the validated payload; kind=BUILD creates
 //   any inline-new Part rows plus the official Build (isOfficialSet=true, Set name) in ONE
-//   transaction. Either kind links the proposal's uploaded MediaAsset (Part.imageId /
-//   Build.imageId) and writes an append-only AuditLog row.
+//   transaction — unless the combo (bladeId+ratchetId+bitId) already exists, in which case the
+//   transaction answers 409 combo_exists with the EXISTING Build's id (Phase 20 graceful
+//   pre-check, never a raw unique-constraint 500). Either kind links the proposal's uploaded
+//   MediaAsset (Part.imageId / Build.imageId) and writes an append-only AuditLog row.
 //   REJECT → requires a reviewNote (returned to the submitter); sets status + note.
 //   Either outcome notifies the submitter via lib/notify.ts's notifyUser.
 import { auth } from '@/lib/auth'
@@ -20,6 +22,15 @@ import type { Manufacturer, PartCategory, BeyType, SpinDirection } from '@prisma
 
 const STATUSES = ['APPROVED', 'REJECTED'] as const
 type SettleStatus = (typeof STATUSES)[number]
+
+// Phase 20 — thrown inside the approval transaction when the proposed combo already backs a
+// Build row; the route catches it and answers with the existing Build's id (graceful 409
+// combo_exists) instead of a raw unique-constraint 500 or a second row.
+class ComboExistsError extends Error {
+  constructor(readonly buildId: string) {
+    super('combo_exists')
+  }
+}
 
 type CuratorGate = { error: Response } | { actorId: string }
 
@@ -166,11 +177,18 @@ export async function PATCH(req: Request): Promise<Response> {
             throw new Error(`invalid_slot_${slot}`)
           }
         }
+        // Phase 20 duplicate-combo pre-check: the same three parts must never back two Build
+        // rows. The Set name is curator-entered retail data (required by the payload parser)
+        // and is therefore kept verbatim — never overridden by a canonical derivation.
+        const combo = { bladeId: slotPartIds.blade!, ratchetId: slotPartIds.ratchet!, bitId: slotPartIds.bit! }
+        const existingCombo = await tx.build.findUnique({
+          where: { bladeId_ratchetId_bitId: combo },
+          select: { id: true },
+        })
+        if (existingCombo) throw new ComboExistsError(existingCombo.id)
         const build = await tx.build.create({
           data: {
-            bladeId: slotPartIds.blade!,
-            ratchetId: slotPartIds.ratchet!,
-            bitId: slotPartIds.bit!,
+            ...combo,
             name: payload.name,
             isOfficialSet: true,
             imageId: proposal.imageAssetId,
@@ -208,6 +226,9 @@ export async function PATCH(req: Request): Promise<Response> {
     })
     return Response.json({ id, status, ...result }, { status: 200 })
   } catch (err) {
+    if (err instanceof ComboExistsError) {
+      return Response.json({ error: 'combo_exists', id: err.buildId, existing: true }, { status: 409 })
+    }
     if (err instanceof Error && err.message.startsWith('invalid_slot_')) {
       return Response.json({ error: err.message }, { status: 400 })
     }

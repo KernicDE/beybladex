@@ -54,25 +54,27 @@ export function parseBuildInput(body: unknown, opts: { official: boolean }): { d
 }
 
 /** Verifies that the three referenced parts exist AND sit in the slot's category.
- *  Returns the verified parts or an error token. */
+ *  Returns the verified parts (id → { category, name }) or an error token. The name is
+ *  included so creation call sites can derive the canonical Build name (Phase 20). */
 export async function verifyBuildParts(
   prisma: {
     part: {
       findMany(args: {
         where: { id: { in: string[] } }
-        select: { id: true; category: true }
-      }): Promise<{ id: string; category: string }[]>
+        select: { id: true; category: true; name: true }
+      }): Promise<{ id: string; category: string; name: string }[]>
     }
   },
   input: Pick<BuildInput, 'bladeId' | 'ratchetId' | 'bitId'>,
-): Promise<{ error: string } | { parts: Map<string, string> }> {
+): Promise<{ error: string } | { parts: Map<string, { id: string; category: string; name: string }> }> {
   const ids = [input.bladeId, input.ratchetId, input.bitId]
-  const found = await prisma.part.findMany({ where: { id: { in: ids } }, select: { id: true, category: true } })
-  const byId = new Map(found.map((p) => [p.id, p.category]))
+  const found = await prisma.part.findMany({ where: { id: { in: ids } }, select: { id: true, category: true, name: true } })
+  const byId = new Map(found.map((p) => [p.id, p]))
   for (const slot of BUILD_SLOTS) {
     const id = input[slot]
-    if (!byId.has(id)) return { error: `unknown_${slot}` }
-    if (byId.get(id) !== SLOT_CATEGORY[slot]) return { error: `invalid_${slot}` }
+    const part = byId.get(id)
+    if (!part) return { error: `unknown_${slot}` }
+    if (part.category !== SLOT_CATEGORY[slot]) return { error: `invalid_${slot}` }
   }
   return { parts: byId }
 }
