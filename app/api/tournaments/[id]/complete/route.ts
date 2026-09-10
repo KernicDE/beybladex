@@ -5,12 +5,16 @@
 // column); idempotent — completing an already-completed tournament returns 200 unchanged.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function POST(_req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] idempotent organizer action; 30/min/user.
+  const { allowed } = await rateLimit(`tournament:complete:${session.user.id}`, 30, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true, completedAt: true } })

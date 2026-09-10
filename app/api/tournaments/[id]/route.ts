@@ -9,6 +9,7 @@
 // also deleted explicitly here to match this route's explicit-cleanup style.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -26,6 +27,10 @@ async function loadAuthorized(id: string, userId: string) {
 export async function PATCH(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] organizer edit/cancel of the tournament itself;
+  // 30/min/user.
+  const { allowed } = await rateLimit(`tournament:edit:${session.user.id}`, 30, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const { error } = await loadAuthorized(id, session.user.id)
@@ -66,6 +71,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(_req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] organizer edit/cancel of the tournament itself;
+  // 30/min/user.
+  const { allowed } = await rateLimit(`tournament:edit:${session.user.id}`, 30, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const { error, tournament } = await loadAuthorized(id, session.user.id)

@@ -14,6 +14,7 @@
 //     Live tournament surface → force-dynamic ([REVIEW-FIX: performance P16]).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { parseArenaCount } from '@/lib/arenaAssign'
 
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,9 @@ const FORMATS = new Set(['SINGLE_ELIMINATION', 'DOUBLE_ELIMINATION', 'SWISS', 'R
 export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] organizer stage management; 30/min/user.
+  const { allowed } = await rateLimit(`tournament:stage-create:${session.user.id}`, 30, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true } })

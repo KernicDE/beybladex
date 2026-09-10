@@ -20,6 +20,7 @@
 // further effect).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { assignSeedsToUnseeded, rankUnseededByRating, shuffleOrder } from '@/lib/seeding'
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -37,6 +38,9 @@ async function requireOrganizer(tournamentId: string, userId: string): Promise<R
 export async function PATCH(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] organizer seeding action; 60/min/user.
+  const { allowed } = await rateLimit(`tournament:seed:${session.user.id}`, 60, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const authzError = await requireOrganizer(id, session.user.id)

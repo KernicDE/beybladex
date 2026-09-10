@@ -7,6 +7,7 @@
 // ADMIN role (matching the existing per-match judge-assign route's same invariant).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -21,6 +22,13 @@ async function requireOrganizer(id: string, callerId: string): Promise<Response 
   if (tournament.createdById !== callerId && caller?.role !== 'ADMIN') {
     return Response.json({ error: 'forbidden' }, { status: 403 })
   }
+  return null
+}
+
+// [REVIEW-FIX: backend-security #37] judge-roster edits; 60/min/user.
+async function limitJudgeRoster(userId: string): Promise<Response | null> {
+  const { allowed } = await rateLimit(`tournament:judges:${userId}`, 60, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   return null
 }
 
@@ -41,6 +49,8 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
 
   const authz = await requireOrganizer(id, session.user.id)
   if (authz) return authz
+  const limited = await limitJudgeRoster(session.user.id)
+  if (limited) return limited
 
   let body: Record<string, unknown>
   try {
@@ -76,6 +86,8 @@ export async function DELETE(req: Request, { params }: Ctx): Promise<Response> {
 
   const authz = await requireOrganizer(id, session.user.id)
   if (authz) return authz
+  const limited = await limitJudgeRoster(session.user.id)
+  if (limited) return limited
 
   const url = new URL(req.url)
   let targetUserId = url.searchParams.get('userId')

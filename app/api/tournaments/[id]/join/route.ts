@@ -16,6 +16,7 @@
 // - DELETE: only the participant themselves; withdraws up until Tournament.startDate (409 after).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { validateDeckForFormat } from '@/lib/deckValidation'
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -63,6 +64,10 @@ async function validateDeckAgainstTournamentFormat(
 export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] cap a (compromised) session's request rate; 60/min/user is
+  // far above any legitimate join / deck-edit / withdraw usage.
+  const { allowed } = await rateLimit(`tournament:join:${session.user.id}`, 60, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const tournament = await prisma.tournament.findUnique({
@@ -113,6 +118,10 @@ export async function POST(req: Request, { params }: Ctx) {
 export async function PATCH(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] cap a (compromised) session's request rate; 60/min/user is
+  // far above any legitimate join / deck-edit / withdraw usage.
+  const { allowed } = await rateLimit(`tournament:join:${session.user.id}`, 60, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const tournament = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true, startedAt: true } })
@@ -159,6 +168,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(_req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] cap a (compromised) session's request rate; 60/min/user is
+  // far above any legitimate join / deck-edit / withdraw usage.
+  const { allowed } = await rateLimit(`tournament:join:${session.user.id}`, 60, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const tournament = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true } })
