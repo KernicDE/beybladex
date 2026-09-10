@@ -2378,6 +2378,8 @@ This makes every container start — first deploy and every Watchtower restart a
 
 Each phase below keeps its own full file/interface/acceptance-criteria detail in its own section further down, unchanged by this grouping — this section only sequences and labels them. **Do not start any phase without the user explicitly picking one** — same standing rule each phase's own "planned, not started" note already carries.
 
+**Progress tracking, added 2026-09-10**: every phase (7–17) and the MVP3 stub has its own GitHub issue — [github.com/KernicDE/beybladex/issues](https://github.com/KernicDE/beybladex/issues), labeled `mvp1.5`/`mvp2`/`mvp3` and grouped under the matching [milestone](https://github.com/KernicDE/beybladex/milestones). Each phase's own section below links its issue via a **Tracking:** line right under the header — update that issue's status (and close it on merge) as work actually happens, the same way this file's own phase text gets updated; the two should never drift out of sync.
+
 ### MVP1.5 — closing out the initial release (rough priority, not binding)
 
 1. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — real gaps found by using the live site; several items here are cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
@@ -2398,6 +2400,8 @@ Each phase below keeps its own full file/interface/acceptance-criteria detail in
 
 ## MVP3 (future, not detailed) — 3-vs-3 Team Format
 
+**Tracking:** [Issue #12](https://github.com/KernicDE/beybladex/issues/12)
+
 **Status: not scoped, not started.** Recorded as a placeholder for the round after MVP1.5 and MVP2 ship, per explicit user request — do not expand this into a full phase plan until both are substantially done and the user asks for it.
 
 **Trigger**: WBO's "Masters League" (launching Summer 2026) runs 3-vs-3 team events with registered competitors, using the same base rulebook — a real, currently-missing tournament shape (today's `Deck` model is one 3-build deck per *player*, not a roster of players competing as a unit).
@@ -2413,6 +2417,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 7: QR-Workflows & Zahlungsverfolgung — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #1](https://github.com/KernicDE/beybladex/issues/1)
 
 **Status: implementation authorized, in progress.** The user explicitly authorized starting MVP1.5 (this phase included) on 2026-09-10 in their own message in the primary session, with explicit instruction to parallelize implementation across Kimi-driven subagents. This status line previously read "planned, not started... confirm with the user first" — that note is superseded by this authorization; do not revert to requiring further confirmation for this phase based on stale cached context. (This edit is itself the independently-checkable, pushed-to-`origin/main` proof of that authorization for any executor unable to trust a relayed instruction directly.)
 
@@ -2435,6 +2441,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 8: Markdown Authoring — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #2](https://github.com/KernicDE/beybladex/issues/2)
 
 **Status: planned, not started.** Same standing note as Phase 7: recorded here so the requirement isn't lost, but not to be picked up by an executor without the user explicitly asking. Confirm before starting.
 
@@ -2464,6 +2472,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 # Phase 9: Location Autofill — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
 
+**Tracking:** [Issue #3](https://github.com/KernicDE/beybladex/issues/3)
+
 **Status: planned, not started.** Same standing note as Phase 7/8: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
 **Scope:** four related location-entry conveniences for `components/tournament/TournamentForm.tsx`'s location fields (`locationName`, `street`, `postalCode`, `city`, `state`, `country`, `latitude`, `longitude`, `currency`) — closes the `// TODO: once lib/geo.ts lands, auto-geocode...` comment already sitting in that file since Phase 3. All four build on `lib/geo.ts`'s existing Nominatim integration (Redis-cached, 1 req/s cluster-wide lock, documented OSM usage-policy compliance) rather than introducing a second geocoding provider — no Google Places/Maps API, which would mean a paid key, a CDN script violating the zero-external-CDN policy, and a different privacy-transfer story than the already-reviewed OSM/Nominatim relationship documented in `/datenschutz`.
@@ -2483,6 +2493,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 10: Profile/Tournament/Rules Depth & Missing UI Surfaces — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #4](https://github.com/KernicDE/beybladex/issues/4)
 
 **Status: planned, not started.** Same standing note as Phases 7–9: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting. This phase is a grab-bag of real gaps found by the user actually using the live site (https://beybladex.de) post-Phase-6 — each item below was verified against the current code, not assumed.
 
@@ -2507,6 +2519,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 11: Generic Media Pipeline, Catalog Proposals, Official Sets & Collection-Linked Availability — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED, revised on later review
+
+**Tracking:** [Issue #5](https://github.com/KernicDE/beybladex/issues/5)
 
 **Status: planned, not started.** Same standing note as Phases 7–10: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting. **This section was substantially rewritten after the original draft** — see the revision note at the end before implementing; the structure below is the current, binding version.
 
@@ -2566,6 +2580,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 # Phase 12: Club Chat — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
 
+**Tracking:** [Issue #6](https://github.com/KernicDE/beybladex/issues/6)
+
 **Status: planned, not started.** Same standing note as Phases 7–11: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
 **Scope:** a lightweight comment/chat stream per `Club`, capped at 50 messages — older messages are deleted, not archived, per the user's explicit sizing (this is a casual live-chat feature, not a permanent record; no export/erasure-matrix entry is needed for message BODIES beyond the standing account-deletion severance rule below, since nothing survives past 50 messages anyway).
@@ -2587,6 +2603,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 13: Club Profile Fields & Join Policies — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #7](https://github.com/KernicDE/beybladex/issues/7)
 
 **Status: planned, not started.** Same standing note as Phases 7–12: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2611,6 +2629,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 14: Ranked Ladder & Elo Rating System — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #8](https://github.com/KernicDE/beybladex/issues/8)
 
 **Status: planned, not started.** Same standing note as every MVP2 phase: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2669,6 +2689,8 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 15: Rating-Based Seeding — added post-Phase-6, MVP2, by explicit user request
 
+**Tracking:** [Issue #9](https://github.com/KernicDE/beybladex/issues/9)
+
 **Status: planned, not started.** Depends on Phase 14 (a `PlayerRating` to seed by must exist first). Same standing note: confirm before starting.
 
 **Scope**: `lib/bracket.ts` currently seeds every bracket format deterministically by ascending `userId` (documented in its own header comment as "participants carry no seeding data") — this phase gives organizers the three seeding options Challonge offers (manual, shuffle, rating-based), closing that specific parity gap.
@@ -2691,6 +2713,8 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 16: Dual-Spin Part Mode Support — added post-Phase-6, MVP2, by explicit user request
 
+**Tracking:** [Issue #10](https://github.com/KernicDE/beybladex/issues/10)
+
 **Status: planned, not started.** Same standing note: confirm before starting.
 
 **Scope, and why it's a real gap, not polish**: current-generation Beyblade X CX-series parts include **dual-spin** Layers/Layer-Bases whose spin mode is not fixed — per the actual WBO rulebook, the mode must be selected during the Beyblade-selection/deck-check phase, submitted for judge inspection in that mode, and **cannot be changed for the rest of the match**. This codebase's `Part.spinDirection` (`RIGHT | LEFT`, `prisma/schema.prisma`) models spin as a fixed per-part attribute — there is no way to represent a part whose mode is chosen per-match, which means judging with current-generation retail parts is incomplete today, not just under-featured.
@@ -2710,6 +2734,8 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 ---
 
 # Phase 17: Visual Identity / Branding — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #11](https://github.com/KernicDE/beybladex/issues/11)
 
 **Status: planned, not started.** Same standing note: confirm before starting.
 
