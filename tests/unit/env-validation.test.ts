@@ -19,7 +19,7 @@ function baseEnv(overrides: Record<string, string | undefined> = {}) {
     TOTP_ENCRYPTION_KEY: VALID_KEY,
     INTERNAL_CRON_SECRET: 'cron-secret',
     ...overrides,
-  } as NodeJS.ProcessEnv
+  }
 }
 
 afterEach(() => {
@@ -101,6 +101,6 @@ describe('getTotpEncryptionKey (the lib/totpEncryption accessor)', () => {
     const getKey = await freshAccessor()
     // The error names the variable and the fix; encryptSecret would never be reached with a
     // silently-undefined key the way the old module-level process.env read allowed.
-    expect(() => getKey({} as NodeJS.ProcessEnv)).toThrow(/TOTP_ENCRYPTION_KEY/)
+    expect(() => getKey({})).toThrow(/TOTP_ENCRYPTION_KEY/)
   })
 })

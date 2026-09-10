@@ -51,7 +51,7 @@ export interface ServerEnvReport {
 }
 
 /** Validates the environment. Throws with a clear, complete message on fatal problems. */
-export function validateServerEnv(env: NodeJS.ProcessEnv = process.env): void {
+export function validateServerEnv(env: Record<string, string | undefined> = process.env): void {
   const { fatal, warnings } = inspectServerEnv(env)
   for (const w of warnings) console.warn(`[env] warning: ${w}`)
   if (fatal.length > 0) {
@@ -60,7 +60,7 @@ export function validateServerEnv(env: NodeJS.ProcessEnv = process.env): void {
 }
 
 /** Pure validation (no logging/throwing) — used by tests and validateServerEnv. */
-export function inspectServerEnv(env: NodeJS.ProcessEnv = process.env): ServerEnvReport {
+export function inspectServerEnv(env: Record<string, string | undefined> = process.env): ServerEnvReport {
   const fatal: string[] = []
   const warnings: string[] = []
 
@@ -94,7 +94,7 @@ export function inspectServerEnv(env: NodeJS.ProcessEnv = process.env): ServerEn
 let cachedTotpKey: Buffer | undefined
 
 /** The decoded TOTP_ENCRYPTION_KEY (32 bytes). Throws a clear error if unset/invalid. */
-export function getTotpEncryptionKey(env: NodeJS.ProcessEnv = process.env): Buffer {
+export function getTotpEncryptionKey(env: Record<string, string | undefined> = process.env): Buffer {
   if (cachedTotpKey) return cachedTotpKey
   const raw = env.TOTP_ENCRYPTION_KEY
   const fatal: string[] = []
