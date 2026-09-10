@@ -8,7 +8,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-<<<<<<< HEAD
 # Deployment & Versionierung (issue #77)
 
 ## Deploy-Flow
@@ -44,13 +43,17 @@ Supportfälle referenzieren die Version aus dem Footer oder `https://beybladex.d
 - **Neuer Build / GoLive findet erst statt, wenn ein Milestone vollständig
   abgeschlossen ist** (alle seine Issues geschlossen und auf `main` gemerged).
   Dazwischen keine Releases und keine GoLives.
-- Vor dem Bearbeiten eines Issues dessen Kommentare prüfen, ob es bereits von
-  einem anderen Agenten geclaimt ist (Claim enthält eine UUID). Geclaimt →
-  auswählen. Ungeclaimt → Claim-Kommentar mit eigener UUID posten, dann bearbeiten.
+- **Sobald ein Issue bearbeitet wird, wird es `KernicDE` zugewiesen**
+  (`gh issue edit <nr> --add-assignee KernicDE`) — der Assignee zeigt, wer
+  gerade daran arbeitet. Es wird allein gearbeitet; ein Claimen per
+  Kommentar-UUID ist nicht nötig.
 - Vor dem Anlegen neuer Issues prüfen, ob ein offenes Issue das Thema bereits
   abdeckt — Duplikate vermeiden.
 - Es wird niemals lokal Docker gestartet. Workflow: entwickeln → Typecheck/Tests
-  lokal → PR → CI grün → mergen. Deployment übernimmt die CI/Watchtower-Pipeline
-  automatisch; danach auf dem Server verifizieren.
+  lokal → PR → CI grün → mergen. **GoLive manuell auf dem Server**: in
+  `/opt/docker/beybladex/app-beybladex` → `docker compose pull app && docker
+  compose up -d app` (Watchtower allein zieht nur nachts um 3). Danach auf dem
+  Server verifizieren (Container healthy, keine Pending Migrations,
+  `/api/health`, `/api/version` passt zum Merge-Commit).
 
 <!-- END:beybladex-release-workflow -->
