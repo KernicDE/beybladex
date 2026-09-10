@@ -9,7 +9,10 @@ function retryStrategy(times: number) {
   return Math.min(times * 200, 5000)
 }
 
-function createRedisClient(url: string, options: RedisOptions = {}) {
+// Exported so tests can exercise the error-handling behavior on a throwaway client instead of
+// emitting synthetic errors on the shared singletons below (which would corrupt their real
+// connection state for every other test sharing this module).
+export function createRedisClient(url: string, options: RedisOptions = {}) {
   const client = new Redis(url, {
     retryStrategy,
     maxRetriesPerRequest: 3,

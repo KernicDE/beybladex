@@ -5,8 +5,12 @@
 // ioredis clients created without an 'error' listener turn every connection hiccup into an
 // uncaughtException. Vitest itself would abort the run if that happened here, so simply
 // reaching the assertions below (without the process dying) is the proof.
-import { describe, it, expect, vi } from 'vitest'
-import { redis, redisSubscriber } from '@/lib/redis'
+//
+// IMPORTANT: never emit a synthetic 'error' on the shared `redis`/`redisSubscriber` singletons
+// here — that mutates their real connection state for the rest of the suite (other test files
+// import the same cached instances). Exercise `createRedisClient` on a throwaway client instead.
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { redis, redisSubscriber, createRedisClient } from '@/lib/redis'
 
 describe('redis clients', () => {
   it('have an error listener registered so a connection error does not crash the process', () => {
@@ -14,23 +18,25 @@ describe('redis clients', () => {
     expect(redisSubscriber.listenerCount('error')).toBeGreaterThan(0)
   })
 
-  it('logs instead of throwing when the command connection emits an error', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      expect(() => redis.emit('error', new Error('ECONNREFUSED (simulated)'))).not.toThrow()
-      expect(errorSpy).toHaveBeenCalled()
-    } finally {
-      errorSpy.mockRestore()
-    }
-  })
+  describe('createRedisClient', () => {
+    let client: ReturnType<typeof createRedisClient> | undefined
 
-  it('logs instead of throwing when the subscriber connection emits an error', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      expect(() => redisSubscriber.emit('error', new Error('ECONNREFUSED (simulated)'))).not.toThrow()
-      expect(errorSpy).toHaveBeenCalled()
-    } finally {
-      errorSpy.mockRestore()
-    }
+    afterEach(() => {
+      client?.disconnect()
+      client = undefined
+    })
+
+    it('logs instead of throwing when the connection emits an error', () => {
+      // lazyConnect: true so constructing this client never attempts a real connection.
+      client = createRedisClient(process.env.REDIS_URL!, { lazyConnect: true })
+
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        expect(() => client!.emit('error', new Error('ECONNREFUSED (simulated)'))).not.toThrow()
+        expect(errorSpy).toHaveBeenCalled()
+      } finally {
+        errorSpy.mockRestore()
+      }
+    })
   })
 })
