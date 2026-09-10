@@ -46,13 +46,19 @@ ARG WEBAUTHN_RP_ID="localhost"
 # arg/CI secret either way). Supplied by .github/workflows/deploy.yml's build-args from a repo
 # secret; an empty value here still builds (client code checks for it and no-ops the UI).
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+# issue #77 — deploy version "YYYY.MM.DD+shortsha". Computed by deploy.yml (UTC merge
+# date + short SHA of the exact commit CI verified) and baked into the image as ENV so
+# /api/version and the footer can report which build is running. The local-dev default
+# is a deliberate non-prod marker, NOT a version to bump by hand.
+ARG APP_VERSION="0.0.0-dev+local"
 ENV DATABASE_URL=$DATABASE_URL \
     REDIS_URL=$REDIS_URL \
     NEXTAUTH_URL=$NEXTAUTH_URL \
     NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
     TOTP_ENCRYPTION_KEY=$TOTP_ENCRYPTION_KEY \
     WEBAUTHN_RP_ID=$WEBAUTHN_RP_ID \
-    NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY \
+    APP_VERSION=$APP_VERSION
 RUN npm run build
 # Shrink node_modules to production deps only; the runner stage copies this
 # pruned tree wholesale (see note there).
