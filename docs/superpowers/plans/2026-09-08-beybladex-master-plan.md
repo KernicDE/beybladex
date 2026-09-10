@@ -2853,6 +2853,30 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 ---
 
+# Phase 21: User Avatars & Upload — added mid-MVP2, by explicit user request (Issue #15, pre-existing)
+
+**Tracking:** [Issue #15](https://github.com/KernicDE/beybladex/issues/15)
+
+**Status: planned, not started (assigned to Kimi via tmux delegation).**
+
+**Scope**: `User.avatarImageId String?` (additive FK to `MediaAsset`, `onDelete: SetNull`) — a user's uploaded profile photo, replacing the generic initial-letter circle placeholder everywhere it currently renders (`app/profile/[username]/page.tsx`, `components/layout/UserMenu.tsx`, anywhere else a per-user avatar shows). Reuse the EXISTING generic media pipeline (`lib/media.ts`'s `processAndStoreImage`) verbatim — no new upload machinery — with a new `AVATAR_TARGET: MediaTarget = { width: 256, height: 256, fit: 'cover' }` constant alongside `PART_IMAGE_TARGET`/`EVENT_HEADER_TARGET`. Serving is already generic (`GET /api/media/[id]`) — no new route needed there.
+
+**1. Upload/replace.** `POST /api/profile/avatar` (session-required, self-only — a user only ever sets their OWN avatar, no target-user param), modeled directly on `app/api/tournaments/[id]/header-image/route.ts`'s exact shape (formData `image` field, `processAndStoreImage(file, AVATAR_TARGET, session.user.id)`, then `prisma.user.update({ where: { id: session.user.id }, data: { avatarImageId: asset.id } })`). Replacing an existing avatar leaves the old `MediaAsset` row/file orphaned (same documented tradeoff as the header-image and admin-parts-image routes — do not add cleanup machinery beyond what those already (don't) have).
+
+**2. Delete (fall back to generic).** `DELETE /api/profile/avatar` — self-only, sets `avatarImageId: null`. Per the issue's explicit acceptance criteria, this must actually be reachable from the settings UI, not just the API.
+
+**3. Settings UI.** A new "Avatar" section on `app/settings/profile/page.tsx` (or its own subsection) — current avatar preview (or the placeholder if none), a file picker + upload button, and a "Entfernen" button that only renders when an avatar is currently set. Follow `components/tournament/HeaderImageUpload.tsx`'s existing client-component pattern (the direct precedent for this exact upload-preview-remove shape).
+
+**4. Render everywhere the placeholder currently is.** `app/profile/[username]/page.tsx`'s avatar circle: render `<Image src={`/api/media/${view.avatarImageId}`} .../>` when set (note: `resolveVisibleFields`/`SubjectUser` needs `avatarImageId` added to its selected/passed-through fields — this is a new field flowing through the SAME privacy-projection path every other profile field already uses, gated by `profileVisibility` like the rest, not a hardcoded-always-public exception), falling back to today's initial-letter circle when null OR the subject isn't visible to the viewer. `components/layout/UserMenu.tsx`'s own-account avatar (always the viewer's own — no privacy gate needed there, matching how it already renders the session's own username unconditionally).
+
+**5. GDPR note (privacy-by-default carryover, not a new decision).** An avatar is real biometric-adjacent personal data (a photo of the person) — unlike a Part/Set catalog image or an event header banner, it has no value to anyone but its owner. `avatarImageId`'s `onDelete: SetNull` means account erasure (`lib/accountErasure.ts`) severs the reference automatically at the DB level when the User row's FK constraint fires — but per the Cross-Phase Regression Guard's standing rule that a new `User`-owned upload needs its own explicit erasure-matrix entry (mirroring `CatalogProposal`'s treatment of `MediaAsset`), erasure should ALSO delete the `MediaAsset` row + its on-volume file for the avatar specifically (it is proposal-free, personal-only data — no other user has a legitimate interest in an erased user's old photo surviving, unlike a club chat message or a catalog image). Add this explicitly to `eraseOrAnonymizeUser`, do not rely on the FK's `SetNull` alone leaving an orphaned file.
+
+**Tests:** `tests/integration/profile-avatar.test.ts` (session-required negative-authz test on both POST and DELETE; upload sets `avatarImageId`; delete clears it back to the placeholder path; account erasure removes both the `avatarImageId` reference and the underlying `MediaAsset` row).
+
+**Acceptance criteria (verbatim from Issue #15):** there is an update-avatar setting in user settings; a user can upload a new avatar to overwrite the generic or a previously-uploaded one; a user can delete the uploaded avatar to fall back to the generic placeholder.
+
+---
+
 ## Cross-Phase Regression Guard
 
 Every phase's TDD sub-plan must re-run, not just skip:
