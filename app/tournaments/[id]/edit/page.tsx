@@ -30,7 +30,7 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
       id: true, title: true, description: true, startDate: true, endDate: true,
       locationName: true, street: true, postalCode: true, city: true, state: true, country: true,
       latitude: true, longitude: true, entryFeeCent: true, currency: true, isRecurring: true,
-      recurringDays: true, rulesetId: true, clubId: true, createdById: true,
+      recurringDays: true, rulesetId: true, clubId: true, createdById: true, rankedEligible: true,
     },
   })
   if (!tournament) notFound()
@@ -67,6 +67,7 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
     currency: tournament.currency,
     isRecurring: tournament.isRecurring,
     recurringDays: tournament.recurringDays === null ? '' : String(tournament.recurringDays),
+    rankedEligible: tournament.rankedEligible,
     rulesetId: tournament.rulesetId,
     clubId: tournament.clubId ?? '',
   }

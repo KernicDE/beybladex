@@ -38,6 +38,9 @@ export type TournamentInputData = {
   recurringDays?: number | null
   rulesetId?: string
   clubId?: string | null
+  // Phase 14 — opts a casual/friendly/test event out of Elo impact; omitted on POST defaults
+  // to the schema's `true` (ranked), matching the organizer's common case.
+  rankedEligible?: boolean
 }
 
 export type TournamentInput = {
@@ -198,6 +201,14 @@ export function parseTournamentInput(body: unknown, partial: boolean): Tournamen
       result.errors.push('invalid_boolean')
     } else {
       result.data.isRecurring = fields.isRecurring
+    }
+  }
+
+  if (fields.rankedEligible !== undefined) {
+    if (typeof fields.rankedEligible !== 'boolean') {
+      result.errors.push('invalid_boolean')
+    } else {
+      result.data.rankedEligible = fields.rankedEligible
     }
   }
 
