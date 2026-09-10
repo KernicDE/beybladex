@@ -218,6 +218,74 @@ export async function POST(req: Request, { params }: Ctx) {
   const player1BuildId = buildId(body.player1BuildId)
   const player2BuildId = buildId(body.player2BuildId)
 
+  // Phase 16 item 6 — once a tournament has been started with a locked-decks ruleset, every
+  // registered participant's TournamentParticipant.lockedBuildIds is the authoritative build
+  // list for their matches: a build confirmation for a build outside that snapshot is rejected.
+  // An empty lockedBuildIds (tournament not started yet, or its ruleset doesn't lock decks)
+  // means no restriction — the live deck keeps being read as before this phase.
+  const tournamentId = match.tournamentId
+  async function assertBuildIsLocked(playerId: string | null, buildIdToConfirm: string | undefined): Promise<Response | null> {
+    if (!buildIdToConfirm || !playerId) return null
+    const participant = await prisma.tournamentParticipant.findUnique({
+      where: { tournamentId_userId: { tournamentId, userId: playerId } },
+      select: { lockedBuildIds: true },
+    })
+    if (participant && participant.lockedBuildIds.length > 0 && !participant.lockedBuildIds.includes(buildIdToConfirm)) {
+      return Response.json({ error: 'build_not_locked' }, { status: 400 })
+    }
+    return null
+  }
+  const player1LockError = await assertBuildIsLocked(match.player1Id, player1BuildId)
+  if (player1LockError) return player1LockError
+  const player2LockError = await assertBuildIsLocked(match.player2Id, player2BuildId)
+  if (player2LockError) return player2LockError
+
+  // Phase 16 item 1-2 — dual-spin mode. Locked at the same moment the build is confirmed;
+  // immutable once the match has left PENDING. [REVIEW-FIX P16-1] the original version here
+  // only rejected a DIFFERENT value than an already-stored one — a null→value transition (i.e.
+  // setting a spin mode for the first time on a request AFTER match start) slipped through
+  // uncaught, contradicting "locked at match start". Fixed: once status !== PENDING, ANY
+  // submitted value must exactly equal what's already stored (including "nothing stored yet" —
+  // a still-undefined field can never be set post-start); only an exact-match resubmit (e.g. a
+  // replayed non-idempotent-key request) is a no-op, everything else is 409.
+  const spinMode = (v: unknown): 'RIGHT' | 'LEFT' | undefined => (v === 'RIGHT' || v === 'LEFT' ? v : undefined)
+  const player1SpinMode = spinMode(body.player1SpinMode)
+  const player2SpinMode = spinMode(body.player2SpinMode)
+  if (match.status !== 'PENDING') {
+    if (player1SpinMode !== undefined && player1SpinMode !== match.player1SpinMode) {
+      return Response.json({ error: 'spin_mode_locked' }, { status: 409 })
+    }
+    if (player2SpinMode !== undefined && player2SpinMode !== match.player2SpinMode) {
+      return Response.json({ error: 'spin_mode_locked' }, { status: 409 })
+    }
+  }
+
+  // [REVIEW-FIX P16-2] a spin mode may only ever be recorded for a build that actually contains
+  // a dualSpin part — otherwise an authorized caller (any assigned judge) could attach a
+  // meaningless spin mode to an ordinary build, silently feeding a fake entry into the Auto-Meta
+  // per-mode buckets (lib/meta.ts). Checked against whichever build is EFFECTIVE for this
+  // request (the one just confirmed, or the already-stored one if none is being confirmed here).
+  async function assertBuildIsDualSpin(effectiveBuildId: string | undefined): Promise<boolean> {
+    if (!effectiveBuildId) return false
+    const build = await prisma.build.findUnique({
+      where: { id: effectiveBuildId },
+      select: { blade: { select: { dualSpin: true } }, ratchet: { select: { dualSpin: true } }, bit: { select: { dualSpin: true } } },
+    })
+    return build !== null && (build.blade.dualSpin || build.ratchet.dualSpin || build.bit.dualSpin)
+  }
+  if (player1SpinMode !== undefined) {
+    const effectiveBuildId = player1BuildId ?? match.player1BuildId ?? undefined
+    if (!(await assertBuildIsDualSpin(effectiveBuildId))) {
+      return Response.json({ error: 'not_dual_spin_build' }, { status: 400 })
+    }
+  }
+  if (player2SpinMode !== undefined) {
+    const effectiveBuildId = player2BuildId ?? match.player2BuildId ?? undefined
+    if (!(await assertBuildIsDualSpin(effectiveBuildId))) {
+      return Response.json({ error: 'not_dual_spin_build' }, { status: 400 })
+    }
+  }
+
   // Win threshold: finals (the stage's last round) use finalsTargetPoints, earlier rounds
   // targetPoints — read from the Ruleset, never hardcoded. Phase 5 Part C2: the round lookup is
   // scoped to THIS match's STAGE, and a SWISS or ROUND_ROBIN stage never uses finalsTargetPoints
@@ -239,6 +307,8 @@ export async function POST(req: Request, { params }: Ctx) {
       clientEventId,
       ...(player1BuildId ? { player1BuildId } : {}),
       ...(player2BuildId ? { player2BuildId } : {}),
+      ...(player1SpinMode ? { player1SpinMode } : {}),
+      ...(player2SpinMode ? { player2SpinMode } : {}),
     },
   })
 

@@ -49,6 +49,10 @@ export interface CompletedMatchRow {
   winnerId: string | null
   player1BuildId: string | null
   player2BuildId: string | null
+  // Phase 16 item 3 — only meaningful when the confirmed build on that side contains a
+  // dualSpin part; undefined/null on legacy rows and non-dual-spin builds alike.
+  player1SpinMode?: 'RIGHT' | 'LEFT' | null
+  player2SpinMode?: 'RIGHT' | 'LEFT' | null
 }
 
 export interface BuildPartsRow {
@@ -90,19 +94,43 @@ function finalize<T extends { appearances: number; wins: number; losses: number;
  * @param allPartIds  Optional catalog-wide part ids: every one is seeded with a zero-stats
  *                  entry so full-catalog surfaces (the /meta page, computePartWinRates) can
  *                  distinguish "no data" from "not in result". Omit in unit tests.
+ * @param dualSpinPartIds  Phase 16 item 3 — part ids that are dual-spin. For these (and ONLY
+ *                  these — non-dual-spin parts are completely unaffected, per the acceptance
+ *                  criterion), an ADDITIONAL composite entry keyed `${partId}:${mode}` is
+ *                  populated alongside the normal bare-partId entry, so a RIGHT-mode and
+ *                  LEFT-mode use of the same physical part never get silently averaged
+ *                  together into one misleading number. The bare-partId entry keeps
+ *                  aggregating across both modes too (an "overall regardless of mode" figure
+ *                  other, mode-agnostic consumers — the build/search pages — keep reading
+ *                  unchanged); the /meta leaderboard is what actually renders the composite,
+ *                  never-conflated per-mode entries for these parts (see app/meta/page.tsx).
  */
 export function aggregateWinRates(
   matches: CompletedMatchRow[],
   buildParts: Map<string, BuildPartsRow>,
   allPartIds?: string[],
+  dualSpinPartIds: Set<string> = new Set(),
 ): WinRateAggregation {
   const builds = new Map<string, BuildMetaStats>()
   const parts = new Map<string, PartMetaStats>()
 
   for (const id of buildParts.keys()) builds.set(id, zeroBuildStats(id))
-  for (const id of allPartIds ?? []) parts.set(id, zeroPartStats(id))
+  for (const id of allPartIds ?? []) {
+    parts.set(id, zeroPartStats(id))
+    if (dualSpinPartIds.has(id)) {
+      parts.set(`${id}:RIGHT`, zeroPartStats(`${id}:RIGHT`))
+      parts.set(`${id}:LEFT`, zeroPartStats(`${id}:LEFT`))
+    }
+  }
 
   const partIdsOf = (row: BuildPartsRow): string[] => [row.bladeId, row.ratchetId, row.bitId]
+
+  const bump = (key: string, won: boolean) => {
+    const p = parts.get(key) ?? zeroPartStats(key)
+    if (won) p.wins += 1
+    else p.losses += 1
+    parts.set(key, p)
+  }
 
   for (const m of matches) {
     // Defensive draw/no-decision handling: winner must be one of the two players.
@@ -110,9 +138,9 @@ export function aggregateWinRates(
     const side2Won = m.winnerId !== null && m.winnerId === m.player2Id
     if (!side1Won && !side2Won) continue
 
-    const sides: Array<{ buildId: string | null; won: boolean }> = [
-      { buildId: m.player1BuildId, won: side1Won },
-      { buildId: m.player2BuildId, won: side2Won },
+    const sides: Array<{ buildId: string | null; won: boolean; spinMode: 'RIGHT' | 'LEFT' | null | undefined }> = [
+      { buildId: m.player1BuildId, won: side1Won, spinMode: m.player1SpinMode },
+      { buildId: m.player2BuildId, won: side2Won, spinMode: m.player2SpinMode },
     ]
     for (const side of sides) {
       if (!side.buildId) continue // no confirmed build on this side — nothing to attribute
@@ -123,10 +151,13 @@ export function aggregateWinRates(
       else b.losses += 1
       builds.set(side.buildId, b)
       for (const partId of partIdsOf(bp)) {
-        const p = parts.get(partId) ?? zeroPartStats(partId)
-        if (side.won) p.wins += 1
-        else p.losses += 1
-        parts.set(partId, p)
+        bump(partId, side.won) // bare key: always aggregated, mode-agnostic (unchanged behavior)
+        // Composite key: ONLY for dual-spin parts with a KNOWN mode on this side — a legacy
+        // row or an unset mode simply doesn't contribute to either per-mode bucket, rather
+        // than guessing.
+        if (dualSpinPartIds.has(partId) && side.spinMode) {
+          bump(`${partId}:${side.spinMode}`, side.won)
+        }
       }
     }
   }
@@ -144,6 +175,8 @@ const MATCH_ROW_SELECT = {
   winnerId: true,
   player1BuildId: true,
   player2BuildId: true,
+  player1SpinMode: true,
+  player2SpinMode: true,
 } as const
 
 async function loadBuildPartsMap(buildIds?: string[]): Promise<Map<string, BuildPartsRow>> {
@@ -165,14 +198,16 @@ export async function computeBuildWinRates(): Promise<BuildMetaStats[]> {
   return [...builds.values()]
 }
 
-/** Full-table recompute wrapper. Returns one entry per catalog Part (zero entries included). */
+/** Full-table recompute wrapper. Returns one entry per catalog Part (zero entries included),
+ *  plus a `${partId}:RIGHT`/`${partId}:LEFT` pair for every dual-spin part (Phase 16 item 3). */
 export async function computePartWinRates(): Promise<PartMetaStats[]> {
   const buildParts = await loadBuildPartsMap()
-  const allParts = await prisma.part.findMany({ select: { id: true } })
+  const allParts = await prisma.part.findMany({ select: { id: true, dualSpin: true } })
   const matches = await prisma.match.findMany({
     where: { status: 'COMPLETED', winnerId: { not: null } },
     select: MATCH_ROW_SELECT,
   })
-  const { parts } = aggregateWinRates(matches, buildParts, allParts.map((p) => p.id))
+  const dualSpinPartIds = new Set(allParts.filter((p) => p.dualSpin).map((p) => p.id))
+  const { parts } = aggregateWinRates(matches, buildParts, allParts.map((p) => p.id), dualSpinPartIds)
   return [...parts.values()]
 }

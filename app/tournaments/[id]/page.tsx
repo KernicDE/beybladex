@@ -222,6 +222,7 @@ export default async function TournamentBracketPage({
           })}
           judges={judges}
           completedAt={tournament.completedAt?.toISOString() ?? null}
+          startedAt={tournament.startedAt?.toISOString() ?? null}
           tournamentJudges={tournamentJudges}
           entryFeeCent={tournament.entryFeeCent}
           headerImageId={tournament.headerImageId}

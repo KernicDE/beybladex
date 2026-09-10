@@ -45,7 +45,13 @@ export type ScoreEventType =
   | 'EXTERNAL_DISTURBANCE'
   | 'AERIAL_CONTACT'
 
-export type PadPlayer = { id: string; name: string; builds: { id: string; label: string }[] }
+export type PadPlayer = {
+  id: string
+  name: string
+  // Phase 16 — dualSpin/suggestedSpinMode drive the spin-mode picker below: only shown when the
+  // CONFIRMED build contains at least one dual-spin part.
+  builds: { id: string; label: string; dualSpin: boolean; suggestedSpinMode: 'RIGHT' | 'LEFT' }[]
+}
 
 type PadStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 
@@ -81,6 +87,8 @@ export function JudgeScorePad({
     winnerId: string | null
     player1BuildId: string | null
     player2BuildId: string | null
+    player1SpinMode: 'RIGHT' | 'LEFT' | null
+    player2SpinMode: 'RIGHT' | 'LEFT' | null
   }
   targetPoints: number
   pointValues: Record<ScoreEventType, number>
@@ -91,6 +99,14 @@ export function JudgeScorePad({
   const [winnerId, setWinnerId] = useState<string | null>(initial.winnerId)
   const [build1, setBuild1] = useState<string | null>(initial.player1BuildId)
   const [build2, setBuild2] = useState<string | null>(initial.player2BuildId)
+  // Phase 16 — dual-spin mode CONFIRMATION state. null means "not yet explicitly confirmed by
+  // the judge" — NEVER preselected from the build's suggestion (a preselected value that the
+  // judge simply never touches would submit silently, which is exactly what the WBO's real
+  // "submitted for inspection in that mode" step is meant to prevent: an actual tap is
+  // required). Once set here (an explicit tap on one of the two mode buttons below), it's
+  // locked alongside the build at match start and immutable after (server-enforced 409).
+  const [spinMode1, setSpinMode1] = useState<'RIGHT' | 'LEFT' | null>(initial.player1SpinMode)
+  const [spinMode2, setSpinMode2] = useState<'RIGHT' | 'LEFT' | null>(initial.player2SpinMode)
   const [pendingConfirm, setPendingConfirm] = useState<{ type: ScoreEventType; player: 1 | 2 } | null>(null)
   const [undoLeftMs, setUndoLeftMs] = useState<number | null>(null)
   const [queueDepth, setQueueDepth] = useState(0)
@@ -124,6 +140,8 @@ export function JudgeScorePad({
       setWinnerId(snap.state.winnerId ?? null)
       setBuild1(snap.state.player1BuildId ?? null)
       setBuild2(snap.state.player2BuildId ?? null)
+      setSpinMode1(snap.state.player1SpinMode ?? null)
+      setSpinMode2(snap.state.player2SpinMode ?? null)
       setHydratedOffline(true)
     })
     return () => {
@@ -175,6 +193,8 @@ export function JudgeScorePad({
       setWinnerId(state.winnerId ?? null)
       if (state.player1BuildId) setBuild1(state.player1BuildId)
       if (state.player2BuildId) setBuild2(state.player2BuildId)
+      if (state.player1SpinMode) setSpinMode1(state.player1SpinMode)
+      if (state.player2SpinMode) setSpinMode2(state.player2SpinMode)
       if (entry) {
         entriesRef.current = [...entriesRef.current, entry]
         // "Undo last entry" affordance, visible for 5 seconds ([REVIEW-FIX: I5]).
@@ -268,6 +288,19 @@ export function JudgeScorePad({
     return () => clearTimeout(t)
   }, [undoLeftMs])
 
+  // Phase 16 — the selected build's dual-spin status + suggested mode, derived at render time
+  // (no effect needed: this is a pure function of build1/build2 + the player prop). The
+  // suggestion is shown as a HINT next to the two mode buttons, never as a preselected value —
+  // see spinMode1/spinMode2's own comment on why.
+  const effectiveBuild1 = build1 ?? player1?.builds[0]?.id ?? null
+  const effectiveBuild2 = build2 ?? player2?.builds[0]?.id ?? null
+  const selectedBuild1 = player1?.builds.find((b) => b.id === effectiveBuild1) ?? null
+  const selectedBuild2 = player2?.builds.find((b) => b.id === effectiveBuild2) ?? null
+  // A dual-spin build whose mode the judge has NOT yet explicitly confirmed blocks match start —
+  // "Match starten" stays disabled rather than silently defaulting to the suggestion.
+  const spinMode1Unconfirmed = Boolean(selectedBuild1?.dualSpin) && spinMode1 === null
+  const spinMode2Unconfirmed = Boolean(selectedBuild2?.dualSpin) && spinMode2 === null
+
   const startMatch = useCallback(() => {
     commit(
       {
@@ -277,10 +310,13 @@ export function JudgeScorePad({
         status: 'IN_PROGRESS',
         player1BuildId: build1 ?? undefined,
         player2BuildId: build2 ?? undefined,
+        // Only ever the judge's own explicit tap (spinMode1/2) — never a suggestion fallback.
+        player1SpinMode: selectedBuild1?.dualSpin && spinMode1 ? spinMode1 : undefined,
+        player2SpinMode: selectedBuild2?.dualSpin && spinMode2 ? spinMode2 : undefined,
       },
       null
     )
-  }, [commit, score1, score2, build1, build2])
+  }, [commit, score1, score2, build1, build2, selectedBuild1, selectedBuild2, spinMode1, spinMode2])
 
   const needsBuilds = status === 'PENDING' && (build1 === null || build2 === null) && (player1 !== null || player2 !== null)
   const name1 = player1?.name ?? 'Spieler 1'
@@ -372,6 +408,40 @@ export function JudgeScorePad({
               </Select>
             </label>
           )}
+          {/* Phase 16 items 1-2 — dual-spin mode: only shown when the SELECTED build contains a
+              dual-spin part. NEITHER button starts active — the judge must explicitly tap one
+              (matches the WBO rule's "submitted for inspection in that mode" step: a real
+              confirmation, not a preselected default the judge could just never touch). The
+              part's suggested mode is shown as a hint label only. "Match starten" stays
+              disabled until every dual-spin build present has an explicit tap. */}
+          {player1 && selectedBuild1?.dualSpin && (
+            <div className="space-y-1 text-sm">
+              <span className="block truncate">
+                {name1} Spinrichtung
+                {spinMode1 === null && (
+                  <span className="ml-2 text-xs text-zinc-400">(Vorschlag: {selectedBuild1.suggestedSpinMode === 'LEFT' ? 'Linksdrehend' : 'Rechtsdrehend'} — bitte bestätigen)</span>
+                )}
+              </span>
+              <div className="flex gap-2" role="group" aria-label={`Spinrichtung für ${name1} bestätigen`}>
+                <Button
+                  type="button"
+                  variant={spinMode1 === 'RIGHT' ? 'primary' : 'secondary'}
+                  className="flex-1"
+                  onClick={() => setSpinMode1('RIGHT')}
+                >
+                  Rechtsdrehend
+                </Button>
+                <Button
+                  type="button"
+                  variant={spinMode1 === 'LEFT' ? 'primary' : 'secondary'}
+                  className="flex-1"
+                  onClick={() => setSpinMode1('LEFT')}
+                >
+                  Linksdrehend
+                </Button>
+              </div>
+            </div>
+          )}
           {player2 && (
             <label className="flex items-center gap-2 text-sm">
               <span className="w-28 truncate">{name2}</span>
@@ -388,9 +458,40 @@ export function JudgeScorePad({
               </Select>
             </label>
           )}
-          <Button className="w-full" size="lg" onClick={startMatch}>
+          {player2 && selectedBuild2?.dualSpin && (
+            <div className="space-y-1 text-sm">
+              <span className="block truncate">
+                {name2} Spinrichtung
+                {spinMode2 === null && (
+                  <span className="ml-2 text-xs text-zinc-400">(Vorschlag: {selectedBuild2.suggestedSpinMode === 'LEFT' ? 'Linksdrehend' : 'Rechtsdrehend'} — bitte bestätigen)</span>
+                )}
+              </span>
+              <div className="flex gap-2" role="group" aria-label={`Spinrichtung für ${name2} bestätigen`}>
+                <Button
+                  type="button"
+                  variant={spinMode2 === 'RIGHT' ? 'primary' : 'secondary'}
+                  className="flex-1"
+                  onClick={() => setSpinMode2('RIGHT')}
+                >
+                  Rechtsdrehend
+                </Button>
+                <Button
+                  type="button"
+                  variant={spinMode2 === 'LEFT' ? 'primary' : 'secondary'}
+                  className="flex-1"
+                  onClick={() => setSpinMode2('LEFT')}
+                >
+                  Linksdrehend
+                </Button>
+              </div>
+            </div>
+          )}
+          <Button className="w-full" size="lg" onClick={startMatch} disabled={spinMode1Unconfirmed || spinMode2Unconfirmed}>
             Match starten
           </Button>
+          {(spinMode1Unconfirmed || spinMode2Unconfirmed) && (
+            <p className="text-center text-xs text-zinc-400">Bitte zuerst die Spinrichtung bestätigen.</p>
+          )}
         </section>
       )}
 

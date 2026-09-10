@@ -45,6 +45,15 @@ export default async function JudgePage({
   })
   if (!tournament) notFound()
 
+  // Phase 16 item 6 — once a locked-decks tournament has started, a participant's
+  // lockedBuildIds SNAPSHOT (not their live deck) is authoritative: it may reference builds no
+  // longer in their currently-editable Deck.builds, so it's fetched separately by id.
+  const lockedBuildIds = [...new Set(tournament.participants.flatMap((p) => p.lockedBuildIds))]
+  const lockedBuilds = lockedBuildIds.length
+    ? await prisma.build.findMany({ where: { id: { in: lockedBuildIds } }, include: { blade: true, ratchet: true, bit: true } })
+    : []
+  const lockedBuildById = new Map(lockedBuilds.map((b) => [b.id, b]))
+
   // Phase 5 Part C2: matches live on stages; the judge pad works on one flattened list.
   const matches = tournament.stages.flatMap((s) => s.matches)
   const stageOf = (matchId: string) => tournament.stages.find((s) => s.matches.some((m) => m.id === matchId))
@@ -91,16 +100,31 @@ export default async function JudgePage({
     stage.format === 'SWISS'
       ? `Swiss-Runde ${match.swissRound ?? '?'}`
       : eliminationRoundLabel(match.round, wbRounds)
+  // Phase 16 items 1-2 — a build's dual-spin status and suggested mode: true/suggested if ANY
+  // of its three parts is dualSpin (priority blade → ratchet → bit for the suggestion, an
+  // arbitrary but deterministic tie-break when more than one part is dual-spin).
+  function dualSpinInfo(build: { blade: { dualSpin: boolean; spinDirection: 'RIGHT' | 'LEFT' }; ratchet: { dualSpin: boolean; spinDirection: 'RIGHT' | 'LEFT' }; bit: { dualSpin: boolean; spinDirection: 'RIGHT' | 'LEFT' } }) {
+    const dualPart = [build.blade, build.ratchet, build.bit].find((p) => p.dualSpin)
+    return { dualSpin: dualPart !== undefined, suggestedSpinMode: dualPart?.spinDirection ?? build.blade.spinDirection }
+  }
+
   const padPlayer = (userId: string | null): PadPlayer | null => {
     if (userId === null) return null
     const participant = tournament.participants.find((p) => p.userId === userId)
     if (!participant) return { id: userId, name: 'Unbekannt', builds: [] }
+    // Phase 16 item 6 — a non-empty lockedBuildIds snapshot (tournament started, locked-decks
+    // ruleset) is authoritative over the live deck; see this file's own comment above.
+    const buildRows =
+      participant.lockedBuildIds.length > 0
+        ? participant.lockedBuildIds.map((buildId) => lockedBuildById.get(buildId)).filter((b) => b !== undefined)
+        : (participant.deck?.builds ?? []).map((db) => db.build)
     return {
       id: userId,
       name: participant.user.displayName ?? participant.user.username,
-      builds: (participant.deck?.builds ?? []).map((db) => ({
-        id: db.buildId,
-        label: `${db.build.blade.name} · ${db.build.ratchet.name} · ${db.build.bit.name}`,
+      builds: buildRows.map((build) => ({
+        id: build.id,
+        label: `${build.blade.name} · ${build.ratchet.name} · ${build.bit.name}`,
+        ...dualSpinInfo(build),
       })),
     }
   }
@@ -132,6 +156,8 @@ export default async function JudgePage({
         winnerId: match.winnerId,
         player1BuildId: match.player1BuildId,
         player2BuildId: match.player2BuildId,
+        player1SpinMode: match.player1SpinMode,
+        player2SpinMode: match.player2SpinMode,
       }}
       targetPoints={r.targetPoints}
       pointValues={pointValues}

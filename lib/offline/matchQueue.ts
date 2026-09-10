@@ -29,6 +29,9 @@ export type MatchScoreState = {
   winnerId?: string | null
   player1BuildId?: string
   player2BuildId?: string
+  // Phase 16 — dual-spin mode, locked at the same moment the build is confirmed.
+  player1SpinMode?: 'RIGHT' | 'LEFT'
+  player2SpinMode?: 'RIGHT' | 'LEFT'
 }
 
 export type QueueStatus = 'pending' | 'sending' | 'failed'

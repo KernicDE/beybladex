@@ -343,6 +343,11 @@ model Tournament {
 
   // Phase 5 Part C — "Turnier abschließen" from the organizer console; null while running.
   completedAt DateTime?
+  // Phase 16 — "Turnier starten", a one-way organizer action distinct from completedAt and
+  // NOT inferred from startDate (explicit user decision). When set, and the linked Ruleset has
+  // lockedDecks: true, every participant's deck builds are snapshotted into
+  // TournamentParticipant.lockedBuildIds in the same transaction — see that field's own comment.
+  startedAt   DateTime?
 
   // Phase 11 — event header image via the generic media pipeline (item 0); rendered full-width
   // on the detail page and as a list-card thumbnail on /events.
@@ -405,27 +410,34 @@ model PlayerRating {
 }
 
 model TournamentParticipant {
-  id           String     @id @default(uuid())
-  tournamentId String
-  tournament   Tournament @relation(fields: [tournamentId], references: [id])
-  userId       String
-  user         User       @relation(fields: [userId], references: [id])
-  deckId       String?
-  deck         Deck?      @relation(fields: [deckId], references: [id])
-  checkedIn    Boolean    @default(false)
+  id             String     @id @default(uuid())
+  tournamentId   String
+  tournament     Tournament @relation(fields: [tournamentId], references: [id])
+  userId         String
+  user           User       @relation(fields: [userId], references: [id])
+  deckId         String?
+  deck           Deck?      @relation(fields: [deckId], references: [id])
+  checkedIn      Boolean    @default(false)
   // Phase 5 Part C — no-show handling from the organizer console: a withdrawn participant is
   // skipped by bracket generation and, if their match already exists, the opponent is
   // auto-advanced.
-  withdrawn    Boolean    @default(false)
+  withdrawn      Boolean    @default(false)
   // Phase 7 — Zahlungsverfolgung: null = entry fee unpaid; timestamp lets the organizer
   // console show when the payment was recorded.
-  paidAt       DateTime?
+  paidAt         DateTime?
   // Phase 15 — bracket seeding. null = "use the organizer's chosen auto method" (rating-based
   // or shuffle); a lower number is a better bracket position (seed 1 = top seed). A manually-
   // set seed always wins over auto-assignment for that participant (mixed manual+auto is a
   // real, supported case). Only consulted by the FIRST stage's generation — later stages seed
   // from their own qualification order, not this field (see lib/seeding.ts's own comment).
-  seed         Int?
+  seed           Int?
+  // Phase 16 — populated from Deck.builds at the moment Tournament.startedAt is set (only when
+  // the tournament's Ruleset has lockedDecks: true) — a SNAPSHOT, not a live reference. The
+  // live Deck stays freely editable by its owner afterward (it's a personal, reusable object
+  // that may be registered for other, not-yet-started tournaments); this array is what becomes
+  // authoritative for THIS tournament's matches from that point on. Empty = no snapshot taken
+  // (tournament not yet started, or its ruleset doesn't lock decks).
+  lockedBuildIds String[]   @default([])
 
   @@unique([tournamentId, userId])
 }
@@ -501,6 +513,10 @@ model Part {
   category      PartCategory
   beyType       BeyType?
   spinDirection SpinDirection
+  // Phase 16 — current-gen CX-series dual-spin parts: when true, `spinDirection` above is only
+  // the SUGGESTED/default mode — the actual in-match mode is chosen per match (Match.player1SpinMode
+  // / player2SpinMode) and locked at build confirmation, per the real WBO rulebook procedure.
+  dualSpin      Boolean       @default(false)
   weightGrams   Float?
   imageId       String?
   image         MediaAsset?   @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
@@ -565,6 +581,9 @@ model Build {
   // Phase 11 — provenance for collection rows created by "Set als gekauft markieren".
   sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBuild")
 
+  // Phase 20 — the same three parts can never back two Build rows; every creation path
+  // pre-checks the combo and returns the existing Build's id gracefully.
+  @@unique([bladeId, ratchetId, bitId])
   @@index([bladeId])
   @@index([ratchetId])
   @@index([bitId])
@@ -609,12 +628,18 @@ model Match {
   // Phase 5 Part C — nullable (documented additive deviation from spec §3's required form):
   // empty future-round bracket slots are persisted at generation time and filled when the
   // predecessor match completes (score route propagates the winner) or via no-show auto-advance.
-  player1Id      String?
-  player2Id      String?
-  player1BuildId String?
-  player1Build   Build?  @relation("Player1Build", fields: [player1BuildId], references: [id])
-  player2BuildId String?
-  player2Build   Build?  @relation("Player2Build", fields: [player2BuildId], references: [id])
+  player1Id       String?
+  player2Id       String?
+  player1BuildId  String?
+  player1Build    Build?         @relation("Player1Build", fields: [player1BuildId], references: [id])
+  player2BuildId  String?
+  player2Build    Build?         @relation("Player2Build", fields: [player2BuildId], references: [id])
+  // Phase 16 — only meaningful when the confirmed build for that player contains at least one
+  // dualSpin part; locked at the same moment player1BuildId/player2BuildId are confirmed
+  // (match start, before the first score) and immutable after — the score route rejects (409)
+  // any attempt to change it once status is IN_PROGRESS or later.
+  player1SpinMode SpinDirection?
+  player2SpinMode SpinDirection?
 
   scorePlayer1 Int     @default(0)
   scorePlayer2 Int     @default(0)
