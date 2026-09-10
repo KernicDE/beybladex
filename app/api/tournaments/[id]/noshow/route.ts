@@ -21,16 +21,34 @@ import { prisma } from '@/lib/db'
 import { assignFreedArena } from '@/lib/arenaAssign'
 import { winnerPropagation } from '@/lib/doubleElimination'
 import { markEliminated, recordSwissResult, resolveStuckByes } from '@/lib/stageFlow'
+import { notifyMatchReady } from '@/lib/notify'
 
 type Ctx = { params: Promise<{ id: string }> }
+
+// [REVIEW-FIX P18-4] this route's own slot fills (single-elimination propagateWinner below, and
+// the double-elimination inline updateMany calls further down) never notified — lib/stageFlow.ts's
+// own header comment says the score route AND this route "must agree on the exact rules", but
+// only the score route's slot fills went through writeSlot (which notifies). Best-effort: a
+// notification hiccup must never fail an already-persisted auto-advance.
+async function notifyReady(matchId: string): Promise<void> {
+  try {
+    await notifyMatchReady(matchId)
+  } catch (err) {
+    console.error(`[noshow] notifyMatchReady(${matchId}) failed:`, err)
+  }
+}
 
 async function propagateWinner(stageId: string, round: number, bracketOrder: number, winnerId: string | null) {
   if (round < 1 || winnerId === null) return
   const slot = bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
+  const nextRound = round + 1
+  const nextBracketOrder = Math.floor(bracketOrder / 2)
   await prisma.match.updateMany({
-    where: { stageId, round: round + 1, bracketOrder: Math.floor(bracketOrder / 2) },
+    where: { stageId, round: nextRound, bracketOrder: nextBracketOrder },
     data: { [slot]: winnerId },
   })
+  const next = await prisma.match.findFirst({ where: { stageId, round: nextRound, bracketOrder: nextBracketOrder }, select: { id: true } })
+  if (next) await notifyReady(next.id)
 }
 
 export async function POST(req: Request, { params }: Ctx) {
@@ -119,11 +137,19 @@ export async function POST(req: Request, { params }: Ctx) {
             where: { stageId: m.stageId, round: wp.target.round, bracketOrder: wp.target.bracketOrder },
             data: { [wp.target.slot]: opponent },
           })
+          const next = await prisma.match.findFirst({
+            where: { stageId: m.stageId, round: wp.target.round, bracketOrder: wp.target.bracketOrder },
+            select: { id: true },
+          })
+          if (next) await notifyReady(next.id)
         } else if (wp.type === 'grand-final') {
+          const gfRound = Math.max(0, ...((stage?.matches.map((x) => x.round)) ?? [0]))
           await prisma.match.updateMany({
-            where: { stageId: m.stageId, round: Math.max(0, ...((stage?.matches.map((x) => x.round)) ?? [0])), bracketOrder: 0 },
+            where: { stageId: m.stageId, round: gfRound, bracketOrder: 0 },
             data: { [wp.slot]: opponent },
           })
+          const gf = await prisma.match.findFirst({ where: { stageId: m.stageId, round: gfRound, bracketOrder: 0 }, select: { id: true } })
+          if (gf) await notifyReady(gf.id)
         }
         await resolveStuckByes(m.stageId, 2 ** rFor(m.stageId))
       } else {

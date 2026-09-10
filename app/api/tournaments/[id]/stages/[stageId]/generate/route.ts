@@ -37,6 +37,19 @@ import { generateSingleEliminationBracket } from '@/lib/bracket'
 import { generateDoubleEliminationBracket } from '@/lib/doubleElimination'
 import { pairSwissRound, computeBuchholz, type SwissPlayer } from '@/lib/swiss'
 import { generateRoundRobinPairings } from '@/lib/roundRobin'
+import { notifyMatchReady } from '@/lib/notify'
+
+// Phase 18 item 2 — best-effort "Dein nächstes Match beginnt" fan-out for every newly-created
+// match that already has both players (round-robin/Swiss pairings, and round-1 of an
+// elimination bracket minus its byes). A notification-delivery hiccup must never fail an
+// already-successful generation.
+async function notifyReady(matchId: string): Promise<void> {
+  try {
+    await notifyMatchReady(matchId)
+  } catch (err) {
+    console.error(`[generate] notifyMatchReady(${matchId}) failed:`, err)
+  }
+}
 import type { Prisma } from '@prisma/client'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
@@ -124,6 +137,15 @@ export async function POST(req: Request, { params }: Ctx) {
       await prisma.stageStanding.createMany({ data: pool.map((p) => ({ stageId, userId: p.userId })) })
       await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
       await assignArenas()
+      // [REVIEW-FIX P18-5, documented scope decision] Round Robin creates its ENTIRE schedule
+      // (every round) in one shot, all with both players resolved — notifying every future
+      // round immediately would mean players getting "your next match begins" for matches
+      // days/weeks away, which is spam, not a useful signal. Deliberately scoped to round 1
+      // only, matching the same "only what's immediately actionable" principle the elimination
+      // branch below already applies (it only notifies the rounds generation itself can
+      // populate with both players, never rounds further out). Not an oversight.
+      const readyMatches = await prisma.match.findMany({ where: { stageId, round: 1 }, select: { id: true } })
+      for (const m of readyMatches) await notifyReady(m.id)
       return Response.json({ created: rows.length }, { status: 201 })
     }
 
@@ -177,6 +199,14 @@ export async function POST(req: Request, { params }: Ctx) {
     }
     await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
     await assignArenas()
+    // Round 1, PLUS round 2 — [REVIEW-FIX P18-2] the bye-advancement loop just above can leave
+    // a round-2 match with BOTH players resolved already (two byes feeding the same next-round
+    // match — lib/bracket.ts places byes contiguously at orders 0..byes-1, and orders 2k/2k+1
+    // both feed round-2 match k), which was previously never notified at all. Later rounds
+    // beyond round 2 still can't have both players yet at generation time, so this stays bounded
+    // to exactly the rounds generation itself can populate.
+    const readyMatches = await prisma.match.findMany({ where: { stageId, round: { in: [1, 2] } }, select: { id: true } })
+    for (const m of readyMatches) await notifyReady(m.id)
     return Response.json({ created: rows.length }, { status: 201 })
   }
 
@@ -245,9 +275,10 @@ export async function POST(req: Request, { params }: Ctx) {
         data: { wins: { increment: 1 }, byes: { increment: 1 } },
       })
     } else {
-      await prisma.match.create({
+      const created = await prisma.match.create({
         data: { tournamentId: id, stageId, round: 0, swissRound: nextRound, player1Id: p.player1Id, player2Id: p.player2Id, status: 'PENDING' },
       })
+      await notifyReady(created.id)
     }
   }
   await prisma.tournamentStage.update({ where: { id: stageId }, data: { swissRoundsDone: nextRound, status: 'ACTIVE' } })

@@ -47,6 +47,13 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       INTERNAL_CRON_SECRET: ${INTERNAL_CRON_SECRET}
+      # Phase 18 — Web Push (lib/webPush.ts). NEXT_PUBLIC_VAPID_PUBLIC_KEY must be a BUILD-time
+      # value (Next.js inlines NEXT_PUBLIC_* vars into the client bundle at build, not read at
+      # container start) — this runtime injection only affects the server-side private key/
+      # subject; the public key is baked into the image at build time via the same ${...} var.
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
       # MediaAsset files (Phase 11's generic upload pipeline) live on the bind-mounted volume
       # below — the container FS is ephemeral (Watchtower recreates on every deploy).
       MEDIA_UPLOADS_DIR: /app/media_uploads
