@@ -42,6 +42,7 @@ const COPY: Record<string, string> = {
   challenge_user_mismatch: 'Der Passkey passt nicht zum angemeldeten Konto.',
   // profile
   invalid_country: 'Das angegebene Land ist ungültig.',
+  displayname_taken: 'Dieser Anzeigename ist bereits vergeben.',
   // rulesets
   invalid_title: 'Der Titel ist ungültig (1–100 Zeichen).',
   invalid_description: 'Die Beschreibung ist zu lang (maximal 1000 Zeichen).',
