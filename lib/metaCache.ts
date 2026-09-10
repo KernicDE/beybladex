@@ -156,11 +156,26 @@ export async function recomputeDirtyMeta(): Promise<{ parts: number; builds: num
       } satisfies PartMetaStats))
     }
   }
+  // [RC2 #54] The dirty sets were already drained by popDirty. A failed cache write must NOT
+  // lose that work: restore the popped ids (SADD back, best-effort) so the next pass recomputes
+  // them — otherwise a Redis hiccup would silently drop every pending recompute. Per-command
+  // errors count as failure too: ioredis' exec() RESOLVES with [err, result] tuples instead of
+  // rejecting when individual commands fail.
+  const restoreDirty = async (): Promise<void> => {
+    try {
+      if (dirtyBuilds.length > 0) await redis.sadd(DIRTY_BUILDS_KEY, ...dirtyBuilds)
+      if (dirtyParts.length > 0) await redis.sadd(DIRTY_PARTS_KEY, ...dirtyParts)
+    } catch {
+      // Restore is best-effort too — same documented degradation as below.
+    }
+  }
   try {
-    await pipeline.exec()
+    const results = await pipeline.exec()
+    if (results?.some(([err]) => err !== null)) await restoreDirty()
   } catch {
-    // Redis down: results are discarded, dirty sets already drained — a completion will
-    // re-mark; pages meanwhile fall back to direct computation (getBuildStats/getPartStats).
+    await restoreDirty()
+    // Redis down: results are discarded, dirty sets restored for the next pass — pages
+    // meanwhile fall back to direct computation (getBuildStats/getPartStats).
   }
   return { parts: dirtyParts.length, builds: dirtyBuilds.length }
 }
