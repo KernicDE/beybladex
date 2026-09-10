@@ -8,6 +8,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+<<<<<<< HEAD
 # Deployment & Versionierung (issue #77)
 
 ## Deploy-Flow
@@ -30,3 +31,26 @@ Merge nach `main` → `ci.yml` (Tests + Docker-Boot-Test) → `deploy.yml` (baut
 ## Bugreports
 
 Supportfälle referenzieren die Version aus dem Footer oder `https://beybladex.de/api/version` — daran ist Datum und exakter Commit des laufenden Deploys ablesbar.
+
+<!-- BEGIN:beybladex-release-workflow -->
+
+# Release-Workflow: Milestone für Milestone
+
+- Offene Arbeit ist in GitHub-Milestones organisiert: **RC0 → RC15**, jeweils ein
+  thematisches Paket (~5 Issues) für einen Agenten. Übersicht:
+  `gh api repos/KernicDE/beybladex/milestones`
+- **Die Reihenfolge ist bindend:** ein Milestone nach dem anderen, beginnend mit
+  dem niedrigsten noch offenen RC. Nicht parallel in mehreren Milestones arbeiten.
+- **Neuer Build / GoLive findet erst statt, wenn ein Milestone vollständig
+  abgeschlossen ist** (alle seine Issues geschlossen und auf `main` gemerged).
+  Dazwischen keine Releases und keine GoLives.
+- Vor dem Bearbeiten eines Issues dessen Kommentare prüfen, ob es bereits von
+  einem anderen Agenten geclaimt ist (Claim enthält eine UUID). Geclaimt →
+  auswählen. Ungeclaimt → Claim-Kommentar mit eigener UUID posten, dann bearbeiten.
+- Vor dem Anlegen neuer Issues prüfen, ob ein offenes Issue das Thema bereits
+  abdeckt — Duplikate vermeiden.
+- Es wird niemals lokal Docker gestartet. Workflow: entwickeln → Typecheck/Tests
+  lokal → PR → CI grün → mergen. Deployment übernimmt die CI/Watchtower-Pipeline
+  automatisch; danach auf dem Server verifizieren.
+
+<!-- END:beybladex-release-workflow -->
