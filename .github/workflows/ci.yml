@@ -27,7 +27,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ci-test-secret-not-for-production
-      TOTP_ENCRYPTION_KEY: dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ==
+      TOTP_ENCRYPTION_KEY: 6RtKQgoaU7k17jd5O5WRuLx8iTgnUdZ9Vnf0vLO86Ts=
       WEBAUTHN_RP_ID: localhost
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ci-test-secret-not-for-production
-      TOTP_ENCRYPTION_KEY: dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ==
+      TOTP_ENCRYPTION_KEY: 6RtKQgoaU7k17jd5O5WRuLx8iTgnUdZ9Vnf0vLO86Ts=
       WEBAUTHN_RP_ID: localhost
       # Reachable from INSIDE the app container (bridge network, see note below)
       # — same services, addressed via the Docker-provided host gateway alias.
@@ -153,7 +153,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ci-test-secret-not-for-production
-      TOTP_ENCRYPTION_KEY: dGVzdC1rZXktMzItYnl0ZXMtcGFkZGVkLTEyMzQ1Njc4OQ==
+      TOTP_ENCRYPTION_KEY: 6RtKQgoaU7k17jd5O5WRuLx8iTgnUdZ9Vnf0vLO86Ts=
       WEBAUTHN_RP_ID: localhost
     steps:
       - uses: actions/checkout@v4
