@@ -12,7 +12,9 @@ const CHALLENGE_TTL_SECONDS = 120
 
 export async function GET(req: Request) {
   const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
-  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60)
+  // [RC3 #49] fail-closed: passkey registration mints new credentials — no working limiter, no
+  // registration while Redis is down.
+  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const session = await auth()
@@ -32,13 +34,27 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
-  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60)
+  // [RC3 #49] fail-closed: passkey registration mints new credentials — no working limiter, no
+  // registration while Redis is down.
+  const { allowed } = await rateLimit(`webauthn-reg:${ip}`, 10, 60, { onRedisError: 'closed' })
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
-  const { nonce, response } = await req.json()
+  let parsedBody: unknown
+  try {
+    parsedBody = await req.json()
+  } catch {
+    return Response.json({ error: 'invalid_json' }, { status: 400 })
+  }
+  if (typeof parsedBody !== 'object' || parsedBody === null) {
+    return Response.json({ error: 'invalid_body' }, { status: 400 })
+  }
+  const { nonce, response } = parsedBody as {
+    nonce?: unknown
+    response: Parameters<typeof verifyRegistration>[1]
+  }
   const raw = await redis.get(`webauthn-reg-challenge:${nonce}`)
   if (!raw) return Response.json({ error: 'challenge_expired_or_used' }, { status: 400 })
   await redis.del(`webauthn-reg-challenge:${nonce}`) // single-use: delete before verifying, not after

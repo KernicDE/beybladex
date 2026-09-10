@@ -20,6 +20,7 @@ const COPY: Record<string, string> = {
   privacy_policy_not_accepted:
     'Bitte lies und akzeptiere die Datenschutzerklärung.',
   invalid_birth_date: 'Das Geburtsdatum ist ungültig.',
+  invalid_email: 'Die E-Mail-Adresse ist ungültig.',
   parental_consent_email_required:
     'Für Nutzer:innen unter 16 Jahren ist die E-Mail-Adresse der Eltern erforderlich.',
   registration_failed: 'Die Registrierung ist fehlgeschlagen. Bitte versuche es erneut.',

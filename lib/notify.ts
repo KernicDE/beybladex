@@ -70,7 +70,15 @@ export async function notifyUser(
   const row = await prisma.notification.create({
     data: { userId, title: content.title, message: content.message, link: content.link ?? null },
   })
-  await redis.publish(notifyChannel(userId), JSON.stringify(row))
+  // [RC3 #51] The Redis publish only feeds the live SSE/pub-sub stream. The durable row above is
+  // the source of truth: the inbox read path serves it regardless, so a failing publish must not
+  // abort the caller (radius blast, admin proposal review, match lifecycle) nor turn a committed
+  // action into a 500. Log and continue, exactly like the email/push sends below.
+  try {
+    await redis.publish(notifyChannel(userId), JSON.stringify(row))
+  } catch (err) {
+    console.error(`[notify] redis publish for ${userId} failed:`, err)
+  }
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
