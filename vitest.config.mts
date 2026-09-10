@@ -18,6 +18,12 @@ export default defineConfig({
       TOTP_ENCRYPTION_KEY: 'EYNd27+y+waQG7aQScKAHypWJevMkS1wUMcwXHJNhWg=',
     },
     // Playwright e2e specs (tests/e2e) run via `npx playwright test`, not vitest.
-    exclude: ['**/node_modules/**', 'tests/e2e/**', '.worktrees/**'],
+    // Both `.worktrees/**` (this repo's own manual-worktree convention) AND
+    // `.claude/worktrees/**` (the harness's own Agent-tool worktree isolation, a separate
+    // path found the hard way — a leftover agent worktree there duplicated test files and
+    // node_modules, causing 28 spurious failures/double React instances on `npm test` until
+    // this was added) must be excluded — a nested worktree under either path is not this
+    // checkout's own test suite.
+    exclude: ['**/node_modules/**', 'tests/e2e/**', '.worktrees/**', '.claude/worktrees/**'],
   },
 })

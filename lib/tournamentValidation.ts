@@ -5,9 +5,9 @@
 // (null = no club); whether the caller may actually attach THAT club is the route's authz job
 // (owner/admin ClubMember.isAdmin or a global ORGANIZER/ADMIN role).
 import type { Country } from '@prisma/client'
+import { TOURNAMENT_DESCRIPTION_MAX as DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 
 const TITLE_MAX = 100
-const DESCRIPTION_MAX = 2000
 const LOCATION_MAX = 200
 const POSTAL_CODE_MAX = 10
 const CITY_MAX = 100

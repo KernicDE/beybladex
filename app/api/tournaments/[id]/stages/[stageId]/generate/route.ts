@@ -23,8 +23,16 @@
 // PARTICIPANT POOL: stage order === 1 reads all checked-in, non-withdrawn TournamentParticipants
 // (Phase 5 Part C behavior); any later stage reads the previous stage's qualifiedUserIds, which
 // the stage-complete route populated — this is what gates stage-to-stage qualification.
+//
+// Phase 7 — ARENA MANAGEMENT: the organizer may pass `arenaCount` (integer 1..64, anything else
+// is ignored) in the JSON body. It persists on the tournament (Tournament.arenaCount — the venue
+// has one arena pool across all its stages, not one per stage) and, after this stage's matches
+// are created, lib/arenaAssign.ts's assignArenasAtGeneration hands out arenaNumber 1..arenaCount
+// per round group. If the body omits arenaCount, the tournament's stored value is used, so a
+// stage created via POST .../stages with arenaCount keeps it without repeating it here.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { assignArenasAtGeneration, parseArenaCount } from '@/lib/arenaAssign'
 import { generateSingleEliminationBracket } from '@/lib/bracket'
 import { generateDoubleEliminationBracket } from '@/lib/doubleElimination'
 import { pairSwissRound, computeBuchholz, type SwissPlayer } from '@/lib/swiss'
@@ -33,16 +41,23 @@ import type { Prisma } from '@prisma/client'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
 
-export async function POST(_req: Request, { params }: Ctx) {
+export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id, stageId } = await params
+
+  let body: Record<string, unknown> = {}
+  try {
+    body = await req.json()
+  } catch {
+    // no/invalid body is fine — arenaCount is optional
+  }
 
   const stage = await prisma.tournamentStage.findUnique({
     where: { id: stageId },
     include: {
       matches: { select: { id: true, round: true, bracketOrder: true, status: true, swissRound: true } },
-      tournament: { select: { createdById: true } },
+      tournament: { select: { createdById: true, arenaCount: true } },
     },
   })
   if (!stage || stage.tournamentId !== id) return Response.json({ error: 'not_found' }, { status: 404 })
@@ -51,6 +66,16 @@ export async function POST(_req: Request, { params }: Ctx) {
     return Response.json({ error: 'forbidden' }, { status: 403 })
   }
   if (stage.status === 'COMPLETED') return Response.json({ error: 'stage_completed' }, { status: 409 })
+
+  // Phase 7 — a valid body value overrides/persists; otherwise the stored tournament value applies.
+  const bodyArenaCount = parseArenaCount(body.arenaCount)
+  if (bodyArenaCount !== null) {
+    await prisma.tournament.update({ where: { id }, data: { arenaCount: bodyArenaCount } })
+  }
+  const arenaCount = bodyArenaCount ?? stage.tournament.arenaCount
+  const assignArenas = async () => {
+    if (arenaCount !== null) await assignArenasAtGeneration(stageId, arenaCount)
+  }
 
   // Participant pool: first stage = checked-in & present; later stages = previous stage's
   // qualifiers only (stage-to-stage qualification gate).
@@ -96,6 +121,7 @@ export async function POST(_req: Request, { params }: Ctx) {
       await prisma.match.createMany({ data: rows })
       await prisma.stageStanding.createMany({ data: pool.map((userId) => ({ stageId, userId })) })
       await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
+      await assignArenas()
       return Response.json({ created: rows.length }, { status: 201 })
     }
 
@@ -148,6 +174,7 @@ export async function POST(_req: Request, { params }: Ctx) {
       })
     }
     await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
+    await assignArenas()
     return Response.json({ created: rows.length }, { status: 201 })
   }
 
@@ -212,5 +239,6 @@ export async function POST(_req: Request, { params }: Ctx) {
     }
   }
   await prisma.tournamentStage.update({ where: { id: stageId }, data: { swissRoundsDone: nextRound, status: 'ACTIVE' } })
+  await assignArenas()
   return Response.json({ created: pairings.length, round: nextRound }, { status: 201 })
 }

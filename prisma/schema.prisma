@@ -156,6 +156,7 @@ model User {
   ownedClubs           Club[]         @relation("ClubOwner")
   clubMemberships      ClubMember[]
   organizedTournaments Tournament[]   @relation("TournamentOrganizer")
+  judgedTournaments    TournamentJudge[]
   ratings              Rating[]
   // Phase 11: submitted catalog proposals die with the account (Cascade);
   // reviewedById is SetNull so a reviewer's erasure never takes their reviews with them.
@@ -208,28 +209,69 @@ model Notification {
   createdAt DateTime @default(now())
 }
 
+// Phase 13: join policies. OPEN = today's behavior (immediate join); APPLICATION = self-service
+// POST creates a PENDING_APPLICATION row an admin must approve; INVITE_ONLY = no self-service
+// join at all — only owner/admins create PENDING_INVITE rows, and only the invitee may accept.
+enum ClubJoinPolicy {
+  OPEN
+  APPLICATION
+  INVITE_ONLY
+}
+
+// Phase 13: mirrors Friendship's PENDING/ACCEPTED shape. Default ACTIVE keeps every existing
+// ClubMember row behaviorally unchanged; pending rows must never inflate counts, rosters, or
+// isAdmin authz checks (every query filters to ACTIVE).
+enum ClubMemberStatus {
+  ACTIVE
+  PENDING_APPLICATION
+  PENDING_INVITE
+}
+
 model Club {
-  id          String       @id @default(uuid())
-  name        String       @unique
-  slug        String       @unique
+  id          String         @id @default(uuid())
+  name        String         @unique
+  slug        String         @unique
   description String?
+  websiteUrl  String? // Phase 13 — optional profile links
+  discordUrl  String?
+  joinPolicy  ClubJoinPolicy @default(OPEN) // Phase 13 — OPEN preserves pre-Phase-13 behavior
   ownerId     String
-  owner       User         @relation("ClubOwner", fields: [ownerId], references: [id])
+  owner       User           @relation("ClubOwner", fields: [ownerId], references: [id])
   members     ClubMember[]
   tournaments Tournament[]
-  createdAt   DateTime     @default(now())
+  // Phase 12: capped chat stream (max 50 messages, enforced synchronously on insert) —
+  // messages die with the club (onDelete: Cascade).
+  messages    ClubMessage[]
+  createdAt   DateTime       @default(now())
 }
 
 model ClubMember {
+  id        String           @id @default(uuid())
+  clubId    String
+  club      Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAdmin   Boolean          @default(false)
+  status    ClubMemberStatus @default(ACTIVE) // Phase 13 — see the enum's audit note
+  joinedAt  DateTime         @default(now())
+
+  @@unique([clubId, userId])
+}
+
+// Phase 12: club chat message. authorId is a plain String, NOT a User FK (same reasoning as
+// AuditLog.actorId): a message must survive its author's account erasure (Art. 17), showing an
+// anonymized "gelöschter Nutzer" attribution instead of breaking — never cascade-delete a
+// user's messages on account deletion (that would let a user retroactively erase chat history
+// other members already read).
+model ClubMessage {
   id        String   @id @default(uuid())
   clubId    String
   club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  isAdmin   Boolean  @default(false)
-  joinedAt  DateTime @default(now())
+  authorId  String
+  body      String   // bio-convention free-text cap (500), enforced in the route
+  createdAt DateTime @default(now())
 
-  @@unique([clubId, userId])
+  @@index([clubId, createdAt])
 }
 
 model Ruleset {
@@ -296,9 +338,16 @@ model Tournament {
   // on the detail page and as a list-card thumbnail on /events.
   headerImageId   String?
   headerImage     MediaAsset?             @relation("TournamentHeaderImage", fields: [headerImageId], references: [id], onDelete: SetNull)
+  // Phase 7 — QR-Workflows & Zahlungsverfolgung: organizer-configured count of physical
+  // arenas/stadiums at the venue; null = no arena management (matches get no arenaNumber).
+  arenaCount      Int?
+  // Phase 7 — server-issued, event-scoped token for the QR self-service check-in. The bare
+  // tournament id must never be accepted as a check-in credential, hence a per-event uuid.
+  checkInToken    String                  @unique @default(uuid())
 
   participants    TournamentParticipant[]
   matches         Match[]
+  judges          TournamentJudge[]
   // Phase 5 Part C2 — the tournament's ordered stages (each with its own format/bracket).
   stages          TournamentStage[]
 }
@@ -316,8 +365,24 @@ model TournamentParticipant {
   // skipped by bracket generation and, if their match already exists, the opponent is
   // auto-advanced.
   withdrawn    Boolean    @default(false)
+  // Phase 7 — Zahlungsverfolgung: null = entry fee unpaid; timestamp lets the organizer
+  // console show when the payment was recorded.
+  paidAt       DateTime?
 
   @@unique([tournamentId, userId])
+}
+
+// Phase 7 — additional judges for a tournament (besides the creator): the QR check-in /
+// arena-console flows accept judge actions from any user in this join. Composite PK mirrors
+// TournamentParticipant's @@unique([tournamentId, userId]).
+model TournamentJudge {
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@id([tournamentId, userId])
 }
 
 // Phase 5 Part C2 — a tournament stage: one ordered, independently-formatted segment of a
@@ -509,6 +574,14 @@ model Match {
   // Idempotency key for offline-synced scores: one client-generated UUID per judge action, unique
   // DB-wide — a replayed POST with the same clientEventId is a server-side no-op.
   clientEventId  String?     @unique
+
+  // Phase 7 — arena/stadium assignment: which physical arena the match plays on (1..arenaCount);
+  // null = unassigned (waiting for the dynamic pass after another match frees its arena).
+  arenaNumber    Int?
+  // Phase 7 — QR self-service check-in: when each player scanned the arena QR and confirmed
+  // their presence; null until checked in.
+  player1ArenaCheckedInAt DateTime?
+  player2ArenaCheckedInAt DateTime?
 
   @@index([tournamentId, round, bracketOrder])
   @@index([stageId, round, bracketOrder])

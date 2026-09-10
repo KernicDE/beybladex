@@ -1,6 +1,7 @@
 // lib/partValidation.ts (Phase 5 Part A)
 // Shared input parsing for the parts-catalog curation API (POST/PATCH /api/admin/parts).
 // Everything is validated here so both methods enforce exactly the same shape.
+
 const NAME_MAX = 120
 
 const MANUFACTURERS = ['TT', 'HASBRO'] as const
@@ -88,3 +89,6 @@ export function parsePartInput(body: unknown, partial: boolean): { data?: Partia
 
   return errors.length > 0 ? { errors } : { data }
 }
+
+// parsePartRequestInput (the old "request missing part" free-text validator) is gone —
+// PartRequest was replaced by CatalogProposal in Phase 11; see lib/proposalValidation.ts.

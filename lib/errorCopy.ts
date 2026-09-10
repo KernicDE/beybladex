@@ -78,8 +78,20 @@ const COPY: Record<string, string> = {
   already_member: 'Du bist bereits Mitglied dieses Clubs.',
   not_member: 'Dieses Mitglied existiert nicht.',
   invalid_member: 'Das Mitglied ist ungültig.',
+  // clubs — Phase 13 join policies
+  join_requires_invite: 'Dieser Club ist nur auf Einladung beitretbar.',
+  invalid_join_policy: 'Die angegebene Beitrittsregel ist ungültig.',
+  invalid_club_url: 'Der angegebene Link ist ungültig (maximal 200 Zeichen).',
+  invalid_action: 'Die angegebene Aktion ist ungültig.',
+  invalid_transition: 'Diese Änderung ist für den aktuellen Status nicht möglich.',
   // admin
   invalid_role: 'Die angegebene Rolle ist ungültig.',
+  // tournaments — Phase 7 QR/Zahlungsverfolgung
+  token_mismatch: 'Dieser QR-Code ist ungültig oder abgelaufen.',
+  already_checked_in: 'Bereits eingecheckt.',
+  invalid_arena_count: 'Die Anzahl der Arenen muss zwischen 1 und 64 liegen.',
+  not_a_player: 'Du bist keine:r der beiden Spieler:innen dieses Matches.',
+  already_judge: 'Diese Person ist bereits als Judge für dieses Turnier eingetragen.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).

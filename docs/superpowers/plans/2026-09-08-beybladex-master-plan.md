@@ -2378,6 +2378,8 @@ This makes every container start — first deploy and every Watchtower restart a
 
 Each phase below keeps its own full file/interface/acceptance-criteria detail in its own section further down, unchanged by this grouping — this section only sequences and labels them. **Do not start any phase without the user explicitly picking one** — same standing rule each phase's own "planned, not started" note already carries.
 
+**Progress tracking, added 2026-09-10**: every phase (7–17) and the MVP3 stub has its own GitHub issue — [github.com/KernicDE/beybladex/issues](https://github.com/KernicDE/beybladex/issues), labeled `mvp1.5`/`mvp2`/`mvp3` and grouped under the matching [milestone](https://github.com/KernicDE/beybladex/milestones). Each phase's own section below links its issue via a **Tracking:** line right under the header — update that issue's status (and close it on merge) as work actually happens, the same way this file's own phase text gets updated; the two should never drift out of sync.
+
 ### MVP1.5 — closing out the initial release (rough priority, not binding)
 
 1. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — real gaps found by using the live site; several items here are cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
@@ -2391,12 +2393,17 @@ Each phase below keeps its own full file/interface/acceptance-criteria detail in
 
 1. **Phase 14 — Ranked Ladder & Elo Rating System** — the single biggest identity/competitive gap found by the research: neither a cross-tournament player ranking nor any rating model exists today. This is the platform's answer to WBO's ranked leaderboard and to Challonge's paid "Seed by Rating" tier — free, DACH-specific, tied to real judge-confirmed matches rather than crowd-sourced self-reports.
 2. **Phase 15 — Rating-Based Seeding** — depends on Phase 14; closes the "manual/shuffle/rating seeding" gap versus Challonge (`lib/bracket.ts` currently only sorts by `userId`).
-3. **Phase 16 — Dual-Spin Part Mode Support** — a rules-accuracy gap: current-generation Beyblade X CX-series parts include dual-spin layers whose mode must be locked at deck-check per the actual WBO rulebook; today's `Part.spinDirection` is a fixed value with no per-match mode selection at all.
+3. **Phase 16 — Dual-Spin Part Mode Support & Ruleset-Driven Deck Rules** — a rules-accuracy gap: current-generation Beyblade X CX-series parts include dual-spin layers whose mode must be locked at deck-check per the actual WBO rulebook (today's `Part.spinDirection` is a fixed value with no per-match mode selection at all); extended to also close a related gap found on later review — `Ruleset.deckFormat`/`lockedDecks` exist in the schema but are purely decorative, with deck validation hardcoded to one format and no actual lock-in at tournament start.
 4. **Phase 17 — Visual Identity / Branding** — the platform's current PWA icons are unstyled placeholders (1–4 KB generic files); a real, distinctive mark is what makes BeybladeX.de recognizable next to WBO's forum and Challonge's generic bracket pages rather than blending in as "another Beyblade tool."
+5. **Phase 18 — Push Notifications & Event/Match Lifecycle Triggers** — neither real OS-level push notifications nor participant-facing lifecycle triggers ("Turnier gestartet," "Gehe zu Arena N") exist today; the only real-time mechanism is an open-tab SSE stream, and the only `notifyUser` call sites in the whole codebase are club-membership events. Depends on Phase 16's `Tournament.startedAt` and Phase 7's arena assignment for two of its three triggers.
+6. **Phase 19 — Unique Display Names & Registration Clarity** — `User.displayName` exists but has no uniqueness constraint at all today; adds a Unicode/case-insensitive uniqueness check (full free-form casing/UTF-8 preserved) plus registration-page copy explaining the username's lowercase-only rule before a user hits the error.
+7. **Phase 20 — Canonical Build Naming & Duplicate-Combo Prevention** — `Build.name` is free-text everywhere today with no auto-derivation from the constituent parts and no unique constraint on `(bladeId, ratchetId, bitId)` — two rows can reference the exact same combo. Adds a confirmed-grammar auto-naming function and a DB-level duplicate guard.
 
 **Explicitly out of MVP1.5 and MVP2**: 3-vs-3 team competition (WBO's "Masters League" format) — see MVP3 below; it needs a new roster/team concept this codebase doesn't have yet and is a bigger structural change than anything else in either list.
 
 ## MVP3 (future, not detailed) — 3-vs-3 Team Format
+
+**Tracking:** [Issue #12](https://github.com/KernicDE/beybladex/issues/12)
 
 **Status: not scoped, not started.** Recorded as a placeholder for the round after MVP1.5 and MVP2 ship, per explicit user request — do not expand this into a full phase plan until both are substantially done and the user asks for it.
 
@@ -2413,6 +2420,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 7: QR-Workflows & Zahlungsverfolgung — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #1](https://github.com/KernicDE/beybladex/issues/1)
 
 **Status: implementation authorized, in progress.** The user explicitly authorized starting MVP1.5 (this phase included) on 2026-09-10 in their own message in the primary session, with explicit instruction to parallelize implementation across Kimi-driven subagents. This status line previously read "planned, not started... confirm with the user first" — that note is superseded by this authorization; do not revert to requiring further confirmation for this phase based on stale cached context. (This edit is itself the independently-checkable, pushed-to-`origin/main` proof of that authorization for any executor unable to trust a relayed instruction directly.)
 
@@ -2435,6 +2444,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 8: Markdown Authoring — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #2](https://github.com/KernicDE/beybladex/issues/2)
 
 **Status: planned, not started.** Same standing note as Phase 7: recorded here so the requirement isn't lost, but not to be picked up by an executor without the user explicitly asking. Confirm before starting.
 
@@ -2464,6 +2475,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 # Phase 9: Location Autofill — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
 
+**Tracking:** [Issue #3](https://github.com/KernicDE/beybladex/issues/3)
+
 **Status: planned, not started.** Same standing note as Phase 7/8: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
 **Scope:** four related location-entry conveniences for `components/tournament/TournamentForm.tsx`'s location fields (`locationName`, `street`, `postalCode`, `city`, `state`, `country`, `latitude`, `longitude`, `currency`) — closes the `// TODO: once lib/geo.ts lands, auto-geocode...` comment already sitting in that file since Phase 3. All four build on `lib/geo.ts`'s existing Nominatim integration (Redis-cached, 1 req/s cluster-wide lock, documented OSM usage-policy compliance) rather than introducing a second geocoding provider — no Google Places/Maps API, which would mean a paid key, a CDN script violating the zero-external-CDN policy, and a different privacy-transfer story than the already-reviewed OSM/Nominatim relationship documented in `/datenschutz`.
@@ -2484,6 +2497,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 # Phase 10: Profile/Tournament/Rules Depth & Missing UI Surfaces — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
 
+**Tracking:** [Issue #4](https://github.com/KernicDE/beybladex/issues/4)
+
 **Status: planned, not started.** Same standing note as Phases 7–9: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting. This phase is a grab-bag of real gaps found by the user actually using the live site (https://beybladex.de) post-Phase-6 — each item below was verified against the current code, not assumed.
 
 **1. State/Kanton filter as a dropdown.** `app/events/page.tsx`'s state filter (`filter-state`) is currently a free-text `<Input placeholder="z. B. Bayern">` — replace with a `<Select>` populated from a canonical DACH region list (16 German Bundesländer, 9 Austrian Bundesländer, 26 Swiss Kantone), filtered to the currently-selected `country`'s list; with no country selected, the control is disabled/shows "Land auswählen" (the user's exact wording) rather than an empty or unfiltered dropdown. **Binding dependency on Phase 9**: the canonical region-name list used here MUST be the same one Phase 9's state-autofill (item 4 there) writes into `Tournament.state` — if Phase 9 ships first and writes Nominatim's raw region names, and this phase later hardcodes a different canonical list, filter values won't match stored data and the dropdown will silently return zero results for real tournaments. Whichever phase ships first defines the canonical list (`lib/dachRegions.ts` or similar, shared by both); the other must consume it, not invent a second one.
@@ -2496,17 +2511,28 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 **5. Tournament date entry: one date + start/end TIME, not two independent date+time pickers.** `components/tournament/TournamentForm.tsx` currently exposes `startDate`/`endDate` as two separate `<Input type="datetime-local">` fields ("Von [Datum+Uhrzeit] – bis [Datum+Uhrzeit]") — verified this session. The user's explicit correction: this should be **one date field, plus a start-time and an end-time field** ("Datum / Von–Bis Uhrzeit," not "Von (Datum, Uhrzeit) – bis (Datum, Uhrzeit)") — matching the overwhelming common case (a Beyblade tournament runs within a single day). No schema change needed: `Tournament.startDate`/`endDate` stay full `DateTime` columns; the FORM combines the one shared date with each time field into the two `DateTime` values it already sends today (`new Date(date + 'T' + startTime)`, `new Date(date + 'T' + endTime)`). Explicitly out of scope for this simplification: genuine multi-day events — if one comes up, the organizer's only option under this simpler form is to run it as two linked single-day tournaments, OR a later, separate phase adds a "multi-day" toggle back in; do not silently reintroduce the two-independent-dates picker to "handle" this edge case without the user asking for multi-day support specifically.
 
+**6a. Real bug, found on later review: the "nearby tournament" notification radius can never actually fire.** `lib/notify.ts`'s `notifyUsersInRadius` filters candidates to `user.latitude != null && user.longitude != null`, and `/settings/notifications` lets a user set `notifyRadiusKm` — but nothing in the entire codebase ever geocodes a `User.postalCode` into `User.latitude`/`longitude` (verified: `app/api/profile/route.ts`'s PATCH saves `postalCode` as a plain string only; `Tournament` locations are geocoded via `lib/geo.ts`, a `User`'s own location never is; no client-side `navigator.geolocation` capture exists either). The setting is visible and saveable, but silently has zero effect for any real user — a genuine functional bug, not a missing-UI gap like the rest of this phase. Fix: geocode `postalCode` (+ existing `country`) into `latitude`/`longitude` in the same PATCH that saves it, reusing `lib/geo.ts`'s existing `geocodePostalCode` function (already used for tournament locations — no new geocoding logic needed, just wiring the existing one into the profile save path). Add a migration-adjacent note: existing users who already set a `postalCode` before this fix ships will have `latitude`/`longitude` still `null` until they re-save their profile — consider a one-time backfill pass over existing `User` rows with a set `postalCode` and unset `latitude` at implementation time, not just fixing the path going forward.
+
 **6. Tournament detail page: richer participant list, and the bracket visible without a click-through.** Two related, verified gaps on `app/events/[id]/page.tsx` (the public event page — Task 13's binding IA decision keeps `/tournaments/[id]` as the separate competitive/operational surface, unchanged by this item):
    - The participant list (`<ul>` of `{p.user.displayName ?? p.user.username}` + an organizer-only check-in badge, nothing else) needs real substance: club affiliation (if any), and — respecting existing deck-visibility rules — a link to their registered deck, not just a bare name. This is the "Beschreibung über die Teilnehmer" the user asked for: participants as people with context, not a name list.
    - **When a bracket exists** (the tournament has one or more `TournamentStage`s with generated `Match` rows), show a compact bracket/standings preview directly on `/events/[id]` too — today the only way to see it is the "Turnierbaum & Judge-Bereich →" text link through to `/tournaments/[id]`. Reuse `components/judge/JudgeBracketView.tsx` (already format-aware: bracket graph for elimination formats, standings table for Swiss/Round-Robin — Phase 5 Part C2/C3) in a read-only, non-organizer-console context on the public page, keeping the existing link to `/tournaments/[id]` for the full operational view (judge scoring, organizer console) rather than duplicating that surface — this is "also show it here," not "move it here."
 
 **7. Events list card layout.** `app/events/page.tsx`'s list card currently crams title, date, location, price, and participant count into one wrapped paragraph under the title. Restructure to two clear lines per the user's exact spec: **line 1** — date, start time, en-dash, title, price (`{date} {startTime} – {title}, {price}`); **line 2** — country, state/canton, city, participant count (`{country}, {state}, {city} · {participants} Teilnehmer`). Depends on item 5 existing (a distinct start-TIME value to show on line 1, rather than a combined datetime) — sequence this after item 5 if both ship in the same pass, or format `startDate`'s time portion directly if item 5 hasn't landed yet. **Cross-reference, added on later review**: once Phase 11's event header image (Phase 11 item 5) exists, this card layout gains a right-aligned thumbnail column (a cropped excerpt of the header image) alongside the two text lines — a card with no header image keeps today's text-only layout unchanged. Build the two-line text layout here first either way; the thumbnail column is additive on top of it, not a redesign.
 
+**8. Date-range filter on the tournament list, added on later review.** `app/events/page.tsx`'s filter bar (`country`/`state`/`q` via `searchParams`) has no date filtering at all today — verified via the route's `searchParams` type, which doesn't carry a date field, and its Prisma `where` clause, which never touches `startDate`. Add two optional date inputs, "Von" and "Bis" (`searchParams.from`/`searchParams.to`, `YYYY-MM-DD`), filtering `Tournament.startDate` with `gte`/`lte` respectively — either bound may be set alone (an open-ended range), both together, or neither (today's unfiltered behavior, unchanged). Same filter-bar row as the item 1 Bundesland/Kanton dropdown; combine cleanly with the existing `country`/`state`/`q` filters (all `AND`ed together in the `where` clause, matching the existing filters' composition). Invalid/unparseable date input is ignored (falls back to no bound on that side) rather than erroring the whole list — a mistyped date must not 500 the page.
+
+**9. Friend requests are invisible — no notification, no inbox, added on later review.** User question: is "Anfrage senden" on a profile actually a friend request, and where do you see one you've received? Verified: yes, it creates a `Friendship` row (`status: PENDING`) — but `POST /api/friends` never calls `notifyUser`, and there is no page anywhere listing incoming (or outgoing) pending requests; `/profile/[username]/friends` only shows `ACCEPTED` friendships. Today, the ONLY way to discover an incoming request is to independently revisit the requester's own profile page, where `FriendButton` happens to render "Annehmen"/"Ablehnen" from the recipient's perspective — pure chance discovery, no signal at all. Three closely-related fixes:
+   - **Clearer label**: `FriendButton.tsx`'s "Anfrage senden" → "Freundschaftsanfrage senden" (and "Angefragt" → "Freundschaftsanfrage gesendet"), removing the ambiguity that prompted the question.
+   - **Notify on request**: `app/api/friends/route.ts`'s `POST` calls `notifyUser` (reuse, no second mechanism) on successful creation — recipient gets an in-app/email notification linking to the requester's profile.
+   - **Visibility**: no new dedicated page needed — the existing notification inbox (`app/notifications/page.tsx`) already becomes the "where do I see it" answer once the notification above exists; a notification's `link` field already takes the viewer to the requester's profile where the existing Annehmen/Ablehnen buttons work as today. Revisit a dedicated pending-requests list only if the notification-inbox route turns out to be an unsatisfying UX once this ships.
+
 **When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. Note the explicit dependencies above: item 1 needs Phase 9's canonical region list (or defines it first), item 3's full depth needs Phase 8's Markdown authoring (though its toggle-to-prose template is independent and can ship without Phase 8), item 7 reads more naturally after item 5.
 
 ---
 
 # Phase 11: Generic Media Pipeline, Catalog Proposals, Official Sets & Collection-Linked Availability — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED, revised on later review
+
+**Tracking:** [Issue #5](https://github.com/KernicDE/beybladex/issues/5)
 
 **Status: planned, not started.** Same standing note as Phases 7–10: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting. **This section was substantially rewritten after the original draft** — see the revision note at the end before implementing; the structure below is the current, binding version.
 
@@ -2566,6 +2592,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 # Phase 12: Club Chat — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
 
+**Tracking:** [Issue #6](https://github.com/KernicDE/beybladex/issues/6)
+
 **Status: planned, not started.** Same standing note as Phases 7–11: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
 **Scope:** a lightweight comment/chat stream per `Club`, capped at 50 messages — older messages are deleted, not archived, per the user's explicit sizing (this is a casual live-chat feature, not a permanent record; no export/erasure-matrix entry is needed for message BODIES beyond the standing account-deletion severance rule below, since nothing survives past 50 messages anyway).
@@ -2587,6 +2615,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 13: Club Profile Fields & Join Policies — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+
+**Tracking:** [Issue #7](https://github.com/KernicDE/beybladex/issues/7)
 
 **Status: planned, not started.** Same standing note as Phases 7–12: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2611,6 +2641,8 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 ---
 
 # Phase 14: Ranked Ladder & Elo Rating System — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #8](https://github.com/KernicDE/beybladex/issues/8)
 
 **Status: planned, not started.** Same standing note as every MVP2 phase: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
 
@@ -2669,6 +2701,8 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 15: Rating-Based Seeding — added post-Phase-6, MVP2, by explicit user request
 
+**Tracking:** [Issue #9](https://github.com/KernicDE/beybladex/issues/9)
+
 **Status: planned, not started.** Depends on Phase 14 (a `PlayerRating` to seed by must exist first). Same standing note: confirm before starting.
 
 **Scope**: `lib/bracket.ts` currently seeds every bracket format deterministically by ascending `userId` (documented in its own header comment as "participants carry no seeding data") — this phase gives organizers the three seeding options Challonge offers (manual, shuffle, rating-based), closing that specific parity gap.
@@ -2689,7 +2723,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 ---
 
-# Phase 16: Dual-Spin Part Mode Support — added post-Phase-6, MVP2, by explicit user request
+# Phase 16: Dual-Spin Part Mode Support & Ruleset-Driven Deck Rules — added post-Phase-6, MVP2, by explicit user request, extended on later review
+
+**Tracking:** [Issue #10](https://github.com/KernicDE/beybladex/issues/10)
 
 **Status: planned, not started.** Same standing note: confirm before starting.
 
@@ -2703,13 +2739,29 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 **Tests:** `tests/integration/spin-mode-lock.test.ts` (setting the spin mode at match start succeeds; a second attempt to change it after `IN_PROGRESS` is rejected with 409), `tests/unit/meta-spin-mode-grouping.test.ts` (a dual-spin part's win rate is computed separately per mode; a fixed-spin part's aggregation is unaffected by this change).
 
-**Acceptance criteria:** a judge scoring a match involving a dual-spin part must explicitly confirm its mode before the match starts, that mode cannot be silently or accidentally changed mid-match, and the Meta leaderboard never conflates a dual-spin part's two modes into one misleading number.
+**Acceptance criteria (items 1-3):** a judge scoring a match involving a dual-spin part must explicitly confirm its mode before the match starts, that mode cannot be silently or accidentally changed mid-match, and the Meta leaderboard never conflates a dual-spin part's two modes into one misleading number.
 
-**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+---
+
+**Extension, added on later review: Ruleset-driven deck rules and tournament-start lock-in.** A second, related gap found by re-reading `Ruleset`/`Deck` together: `Ruleset.deckFormat` (`WBO_COUNTERDECK`/`THREE_ON_THREE`/`PICK_THREE_CHOOSE_ONE`/`ONE_ON_ONE`) and `Ruleset.lockedDecks` exist in the schema and render on the rules pages/PDF export, but neither is actually READ by any validation or enforcement logic — `lib/deckValidation.ts`'s `validateNoDuplicateParts` (no shared blade/ratchet/bit across a deck's builds) and `app/api/decks/route.ts`'s `MAX_BUILDS = 3` constant are hardcoded to the WBO-counterdeck shape regardless of which `Ruleset` a `Deck` ever gets registered under — and a `Deck` has no relation to `Ruleset` at all; only `TournamentParticipant.deckId` links a deck to a tournament, at registration time, with no re-validation against that tournament's ruleset. `lockedDecks` is decorative text only — nothing currently stops a player from editing a registered deck's builds mid-tournament.
+
+**4. Deck-format-aware validation.** `lib/deckValidation.ts` and `app/api/decks/route.ts`'s build-count/no-duplicate-parts checks become a function of `DeckFormat`, not a hardcoded constant — `validateNoDuplicateParts(builds, format: DeckFormat)`. `WBO_COUNTERDECK`/`THREE_ON_THREE` keep today's behavior (exactly 3 builds, no shared part across them) since that's the only format this codebase currently implements correctly; `ONE_ON_ONE` requires exactly 1 build (the no-duplicate-parts check is vacuous with only one build to compare). **Open design question, deliberately not resolved here**: the exact registration/pick rule for `PICK_THREE_CHOOSE_ONE` (e.g. whether its 3 registered builds may share parts, since only one is fielded per match) needs a quick confirmation with the user against the actual WBO/BLG ruleset text before implementation — do not silently invent a rule for this format; ask first.
+
+**5. Ruleset↔Deck linkage at tournament registration.** `app/api/tournaments/[id]/join/route.ts` (Phase 5 Part C's join route) re-validates the participant's chosen `Deck` against the tournament's linked `Ruleset.deckFormat` at registration time — using item 4's format-aware validator — rejecting (400) a deck that doesn't match the tournament's format (e.g. a 1-build deck registering for a `WBO_COUNTERDECK` event). This is a genuinely new check, not a relaxation of an existing one: today, `join` accepts any `deckId` belonging to the caller with no format cross-check at all.
+
+**6. Lock-in at tournament start — explicit user decision: the lock point is tournament start, and the tournament is started explicitly by the organizer, not inferred from `startDate`.** Add `Tournament.startedAt DateTime?` (additive, nullable — mirrors the established "timestamp not boolean" convention already used for `TournamentParticipant.paidAt`). A new organizer-console action, **"Turnier starten"** (owner/`ADMIN`-only, standing negative-authz-test rule), sets `startedAt = now()` — a one-way transition (no "un-start"), separate from and typically preceding "Bracket generieren" for the first stage (an organizer may want to lock the field before generating the opening bracket). Once `startedAt` is set for a tournament whose `Ruleset.lockedDecks` is `true` (the common case, `@default(true)`): every `TournamentParticipant` row for that tournament gets its registered deck's build selection **snapshotted**, not just referenced — add `TournamentParticipant.lockedBuildIds String[] @default([])`, populated from `Deck.builds` at the moment of `startedAt`, in the same transaction as the start action. **Why a snapshot, not just locking the `Deck` row itself**: a `Deck` is a personal, reusable object (a user may register the same deck for multiple tournaments over time) — locking the `Deck` model globally the instant any one tournament starts would incorrectly block the user from editing it for an unrelated, not-yet-started event. The snapshot is what becomes authoritative for this tournament's matches from `startedAt` onward (Phase 5 Part C's per-match build-confirmation step, already reading `Match.player1BuildId`, is constrained to only accept a build from the snapshot once one exists) — the live `Deck.builds` remains freely editable by the owner for everything else. If `Ruleset.lockedDecks` is `false` for a given tournament, no snapshot is taken and the live deck keeps being read match-by-match as today.
+
+**Tests (extension):** `tests/unit/deck-validation-by-format.test.ts` (WBO_COUNTERDECK/THREE_ON_THREE unchanged; ONE_ON_ONE accepts exactly one build and rejects two), `tests/integration/tournament-join-deck-format.test.ts` (a deck with the wrong build count for the tournament's ruleset is rejected at join with 400), `tests/integration/tournament-start-lock.test.ts` (organizer-only negative-authz test on "Turnier starten"; after start, every registered participant's `lockedBuildIds` is populated and matches their deck's builds at that moment; a subsequent edit to the live `Deck` does not change the snapshot; a tournament whose ruleset has `lockedDecks: false` takes no snapshot).
+
+**Acceptance criteria (extension):** a deck's build-count/no-duplicate-parts rule matches the `DeckFormat` of whichever ruleset it's being validated against, not a single hardcoded shape; joining a tournament with a format-incompatible deck is rejected before registration succeeds; only the tournament's organizer (or an admin) can start it, and doing so is a one-way action that snapshots every registered participant's deck builds so later edits to the live deck cannot retroactively change what's legal in that tournament's matches.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. Confirm the `PICK_THREE_CHOOSE_ONE` open question (item 4) with the user before writing that format's validator.
 
 ---
 
 # Phase 17: Visual Identity / Branding — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #11](https://github.com/KernicDE/beybladex/issues/11)
 
 **Status: planned, not started.** Same standing note: confirm before starting.
 
@@ -2728,6 +2780,72 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 **Tests:** re-run `tests/unit/no-external-resources.test.ts` (the new OG-image generation and any new fonts/icons stay vendored/self-hosted per the standing zero-CDN guard) — no new automated tests beyond the existing regression guard; this phase is primarily asset/design work, not new application logic.
 
 **When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. **Step 1 (artwork direction) should happen in conversation with the user before any file is touched.**
+
+---
+
+# Phase 18: Push Notifications & Event/Match Lifecycle Triggers — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #13](https://github.com/KernicDE/beybladex/issues/13)
+
+**Status: planned, not started.** Same standing note: confirm before starting.
+
+**Scope, and why it's a real gap, not an extension of something that exists**: user question — are email/push notifications for event participants ("Turnier gestartet", "Gehe zu Arena X") planned or already implemented, and are they configurable in settings? Investigated: **neither half exists.** `lib/notify.ts`'s only real-time mechanism is a per-user Redis pub/sub channel feeding an SSE stream (`app/api/notifications/stream/route.ts`) — this only reaches a client with an open tab/connection, which is not a push notification in the OS/browser sense (no Web Push API, no VAPID keys, no service-worker push handler, no `PushSubscription` model anywhere in the codebase). Email exists but only for two trigger cases (the new-tournament radius blast, Phase 13's club application/invite notifications) — there is no "your match starts now," "go to Arena N," or "the tournament you registered for just started" trigger anywhere; the only `notifyUser` call sites in the entire codebase are club-membership events. `app/settings/notifications/page.tsx` exposes exactly three fields (`notifyRadiusKm`, `notifyRecurring`, a single blanket `notifyEmail` toggle) — no per-notification-type granularity, no push opt-in at all.
+
+**1. Web Push infrastructure, additive.** `web-push` (npm-bundled server-side library — VAPID key pairs generated once and stored as env vars, matching the existing `.env.example` convention; the Push API itself is a browser-native API, no client-side CDN dependency, consistent with the zero-external-CDN policy). `PushSubscription` model (`userId`, `endpoint`, `keys` (p256dh/auth), `createdAt`) — a user may have multiple subscriptions (multiple devices/browsers). `app/api/push/subscribe/route.ts` (`POST`, session-required, upserts by `endpoint`) and `app/api/push/unsubscribe/route.ts` (`DELETE`, self-only). `public/sw.js` gains a `push` event listener (append, not replace — mirrors Phase 5 Part C's own precedent of appending a second `fetch` listener rather than rewriting the judge-offline one) rendering a native OS notification via `self.registration.showNotification`, and a `notificationclick` handler that focuses/opens the relevant `link`.
+
+**2. Lifecycle notification triggers, additive — the actual participant-facing events named in the request.** Extend `lib/notify.ts` with typed trigger functions (reusing the existing `notifyUser(userId, { title, message, link })` shape, now also fanning out to Web Push alongside the existing DB-row + SSE + email paths):
+   - **"Turnier gestartet"** — fired from the new "Turnier starten" organizer action (Phase 16's extension, `Tournament.startedAt`) to every checked-in, non-withdrawn `TournamentParticipant`.
+   - **"Gehe zu Arena N"** — fired from Phase 7's arena-assignment pass (`lib/arenaAssign.ts`'s `assignArenasAtGeneration`/`assignFreedArena`) to both players of a match the moment it receives a non-null `arenaNumber`, reusing Phase 7's own item-3 design (which already names "notify the assigned judge" as a precedent for this exact trigger point — extended here to the two competing players, not just the judge).
+   - **"Dein nächstes Match beginnt"** — fired when a bracket/pairing generation pass creates a `PENDING` match with both players resolved (elimination formats, Swiss pairing, Round Robin fixtures alike).
+   Each trigger is a plain function call from the route that already causes the state change (no new polling/cron mechanism, matching the codebase's standing "trigger on the write path, not a scheduler" pattern from Phase 3/5's notification and meta-recompute precedents).
+
+**3. Granular, per-type settings — closes the "configurable?" half of the question.** `app/settings/notifications/page.tsx` gains toggles per trigger category (tournament-nearby radius blast, club activity, match/arena lifecycle) crossed with per-channel opt-in (in-app is always on — it's just the existing inbox; email and push are each independently toggleable per category, not one blanket switch). Additive `User` fields, e.g. `notifyMatchLifecycle Boolean @default(true)` (in-app/push; matches are time-sensitive, default-on makes sense) — **respect the existing privacy-by-default posture from Phase 1's Global Constraints**: any new default must be decided deliberately, not copy-pasted as `true` without the same conservative-default reasoning `notifyRecurring`/`locationVisibility` already went through; email specifically keeps the existing minor-ceiling rule (never emailed to an `isMinor` user) — push notifications, being device-local rather than a third-party mail relay, need their own explicit privacy-review judgment call on whether the same ceiling applies, documented at implementation time rather than assumed either way.
+
+**Tests:** `tests/integration/push-subscribe.test.ts` (session-required, self-only unsubscribe — negative-authz test), `tests/unit/notify-triggers.test.ts` (each new trigger function calls `notifyUser` with the right recipients — e.g. an arena assignment notifies exactly the two match players, not the whole tournament), `tests/integration/tournament-start-notifications.test.ts` (starting a tournament notifies every checked-in participant, not withdrawn ones).
+
+**Acceptance criteria:** a participant can opt into real OS-level push notifications (not just an open-tab SSE stream) for match/arena lifecycle events specifically, independent of their email preference for the unrelated "new tournament nearby" case; starting a tournament, assigning a match to an arena, and generating a new round/bracket each fire the correct, precisely-scoped notification without a polling/cron mechanism.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. Sequencing note: trigger 1 depends on Phase 16's `Tournament.startedAt` extension existing; trigger 2 depends on Phase 7's arena assignment; neither blocks building the Web Push infrastructure (item 1) or the settings UI (item 3) first.
+
+---
+
+# Phase 19: Unique Display Names & Registration Clarity — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #14](https://github.com/KernicDE/beybladex/issues/14)
+
+**Status: planned, not started.** Same standing note: confirm before starting.
+
+**Scope, verified against current code first**: `User.displayName` already exists (`String?`, no uniqueness constraint at all — confirmed via `prisma/schema.prisma`) and is already used everywhere as the human-facing name (`displayName ?? username` is the standing fallback pattern across the whole app). `User.username` is the strict, already-unique identifier (`/^[a-z0-9_]{3,20}$/`, lowercase-only, enforced in `app/api/register/route.ts`). Two gaps, both explicit user requests:
+
+**1. `displayName` gets a Unicode/case-insensitive uniqueness constraint, while staying free-form.** Unlike `username`, `displayName` should allow full UTF-8, mixed case, spaces — but two users must not be able to hold what reads as the same name (e.g. "MaxMustermann" and "maxmustermann", or two visually-identical names differing only in casing). Postgres unique constraints are exact-match; the standard pattern for "display-preserving but collision-checked on a normalized form" is a second, generated column. Add `User.displayNameNormalized String? @unique` (additive) — computed at every write to `displayName` as `displayName.trim().toLowerCase().normalize('NFKC')` (`NFKC` folds Unicode compatibility/look-alike forms, not just casing) and stored alongside it in the same write. A `null` `displayName` (the common case for most existing users, who never set one) produces a `null` `displayNameNormalized` — Postgres unique indexes permit multiple `NULL`s, so users who never set a display name never collide with each other. Every write path (profile edit's `PATCH /api/profile`, and registration if it's ever extended to collect one) computes and stores both columns together; **check-then-write for a clean `displayname_taken` 409, with the DB unique constraint as the actual race-proof backstop** — the same pattern already used for `Club.name`/`username` elsewhere in this codebase, not a new one.
+
+**2. Registration form clarifies the username's lowercase-only constraint, and that a differently-cased display name can be set later.** `app/(auth)/register/page.tsx`'s username field currently has no hint text at all (verified — a bare `<input>`, `minLength`/`maxLength` only, no explanatory copy) despite the strict `/^[a-z0-9_]{3,20}$/` rule already enforced server-side (`lib/errorCopy.ts`'s existing `invalid_username` copy: "3–20 Zeichen: Kleinbuchstaben, Zahlen, Unterstrich" — the copy exists, it's just never shown proactively, only after a failed submission). Add inline hint text under the field, e.g. "Nur Kleinbuchstaben, Zahlen und Unterstrich — einen Anzeigenamen mit normaler Schreibweise kannst du später in den Profileinstellungen festlegen," so the constraint and the workaround are both visible before the user hits the error, not just after.
+
+**Tests:** `tests/unit/display-name-normalize.test.ts` (the normalization function: case-folding, NFKC on a couple of real look-alike/diacritic examples, `null` handling), `tests/integration/display-name-uniqueness.test.ts` (two users cannot both set display names that normalize to the same value — second write gets 409 `displayname_taken`; a `null` display name never collides with another `null`; changing an existing display name to a still-unique value succeeds).
+
+**Acceptance criteria:** two users can never hold display names that are visually/case-identical after Unicode normalization, while `displayName` itself keeps full free-form Unicode/casing; the registration page explains the username's lowercase-only rule and the display-name alternative before a user has to fail submission to learn it.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
+# Phase 20: Canonical Build Naming & Duplicate-Combo Prevention — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #16](https://github.com/KernicDE/beybladex/issues/16)
+
+**Status: planned, not started.** Same standing note: confirm before starting.
+
+**Scope, verified against current code first**: the user's expectation — a `Build`'s name is auto-derived from its parts as `"<Blade> <Ratchet><Bit-short>"` (their worked example: Blade "Circle Ghost" + Ratchet "6-40" + Bit "LR" (low orb) → "Circle Ghost 4-60LR" — note the ratchet number in a real product name is the blade's own stat suffix convention, not a literal concatenation; the exact WBO/retail naming grammar needs confirming against real product names at implementation time, not assumed from one example) — is NOT implemented. `Build.name` is free-text, typed by hand in every creation path (the admin direct-create form, the `CatalogProposalForm`'s Set-name field) — nothing derives it from the constituent parts' names. Worse, there is no unique constraint on `(bladeId, ratchetId, bitId)` at all (verified: no `@@unique` on `Build` covering those three columns) — two rows can reference the exact same three parts today, and the only place that ever concatenates part names into a build-like label is `app/meta/page.tsx`'s display-only `${blade.name} ${ratchet.name} ${bit.name}`, never stored or used for deduplication.
+
+**1. Canonical name generation.** A pure function (`lib/buildNaming.ts`, unit-testable) `canonicalBuildName(blade: string, ratchet: string, bit: string): string` implementing the real WBO/retail naming convention — **confirm the exact grammar with the user against real product names before implementing** (the worked example alone under-specifies edge cases: bits with multi-letter short codes, ratchets whose retail-name segment isn't simply their own DB name, dual-spin/CX-series naming quirks from Phase 16). Called automatically wherever a `Build` is created without an explicit official name (admin direct-create, `CatalogProposal` BUILD approval, `POST /api/builds`'s personal-combo path) — an official Set's curator-entered name (the actual retail box name, which may differ cosmetically) is NOT overridden by this, since that's genuine product-name data, not a placeholder.
+
+**2. Duplicate-combo prevention, using the canonical name as the mechanism.** Add `@@unique([bladeId, ratchetId, bitId])` to `Build` (additive migration) so the DB itself rejects a second row for the same three parts — the canonical name from item 1 is what makes a collision immediately legible to a curator/user ("this combo already exists as X") rather than silently allowing a near-duplicate with a differently-typed name. `POST /api/builds` and the `CatalogProposal` BUILD-approval transaction both need a pre-check (existing-combo lookup, return the existing `Build.id` instead of erroring past a raw unique-constraint 500) so hitting an existing combo is a graceful "here's the build that already exists," not a database error.
+
+**Tests:** `tests/unit/build-naming.test.ts` (the canonical-name function against several real retail combos, once the grammar is confirmed), `tests/integration/duplicate-build-combo.test.ts` (creating a second `Build` for the same three parts returns the existing build, not a duplicate row or a 500).
+
+**Acceptance criteria:** every newly created non-official-Set `Build` gets a name automatically derived from its parts using the confirmed real naming convention; the same three parts can never produce two separate `Build` rows, and attempting to create a duplicate surfaces the existing build rather than erroring.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. **Confirm the exact naming grammar with the user first** (item 1) — do not implement from the single worked example alone.
 
 ---
 

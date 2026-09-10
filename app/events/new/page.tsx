@@ -21,8 +21,9 @@ export default async function NewEventPage({
   if (!session?.user?.id) redirect('/login')
 
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+  // Phase 13: ACTIVE only — a pending application/invite must not surface the club here.
   const memberships = await prisma.clubMember.findMany({
-    where: { userId: session.user.id, isAdmin: true },
+    where: { userId: session.user.id, isAdmin: true, status: 'ACTIVE' },
     select: { club: { select: { id: true, name: true } } },
     orderBy: { joinedAt: 'asc' },
   })

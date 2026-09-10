@@ -11,7 +11,9 @@ import { prisma } from '@/lib/db'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { JoinPanel } from '@/components/tournament/JoinPanel'
+import { EventShareQR } from '@/components/tournament/EventShareQR'
 
 export const revalidate = 60 // public, frequently-mutated content [REVIEW-FIX: performance P16]
 
@@ -116,6 +118,8 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         </p>
       </Card>
 
+      <EventShareQR tournamentId={tournament.id} />
+
       {/* Join flow — guests get the sign-in prompt instead of the join button (Task 13 convention). */}
       {!me ? (
         <Link
@@ -168,7 +172,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           <h2 id="description-heading" className="text-lg font-semibold">
             Beschreibung
           </h2>
-          <p className="whitespace-pre-wrap text-sm text-current/80">{tournament.description}</p>
+          <MarkdownContent className="text-sm text-current/80">{tournament.description}</MarkdownContent>
         </section>
       )}
     </main>

@@ -3,15 +3,18 @@
 // AUTHZ RULE (standing Global-Constraints requirement; negative test in
 // tests/integration/stage-authz.test.ts): only the tournament's creator (createdById) or a user
 // with the ADMIN role may CREATE a stage; anyone else gets 403.
-//   POST — body { name, format, order?, swissRounds?, roundRobinRepeats?, qualifyCount? }: creates
-//     a TournamentStage. `order` defaults to the next 1-based sequence slot; SWISS requires
-//     swissRounds ≥ 1; ROUND_ROBIN accepts optional roundRobinRepeats (1, 2, or 3 — anything else
-//     is a 400).
+//   POST — body { name, format, order?, swissRounds?, roundRobinRepeats?, qualifyCount?,
+//     arenaCount? }: creates a TournamentStage. `order` defaults to the next 1-based sequence
+//     slot; SWISS requires swissRounds ≥ 1; ROUND_ROBIN accepts optional roundRobinRepeats
+//     (1, 2, or 3 — anything else is a 400). Phase 7: optional arenaCount (integer 1..64, other
+//     values ignored) persists on the TOURNAMENT (one arena pool per venue) — the generate route
+//     uses it when handing out Match.arenaNumber after creating the stage's matches.
 //   GET  — lists the tournament's stages, ordered. Deliberately unbounded: a tournament has a
 //     handful of stages by design (standing pagination rule's documented small-collection case).
 //     Live tournament surface → force-dynamic ([REVIEW-FIX: performance P16]).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { parseArenaCount } from '@/lib/arenaAssign'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +73,11 @@ export async function POST(req: Request, { params }: Ctx) {
       swissRounds, roundRobinRepeats, qualifyCount,
     },
   })
+  // Phase 7 — optional arena pool size for the venue (tournament-scoped, see header comment).
+  const arenaCount = parseArenaCount(body.arenaCount)
+  if (arenaCount !== null) {
+    await prisma.tournament.update({ where: { id }, data: { arenaCount } })
+  }
   return Response.json({ id: stage.id, order: stage.order }, { status: 201 })
 }
 

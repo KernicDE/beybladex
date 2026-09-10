@@ -7,10 +7,10 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { calculateAge, MINOR_CONSENT_AGE_THRESHOLD } from '@/lib/age'
+import { BIO_MAX } from '@/lib/markdownFieldCaps'
 
 // Free-text length caps — the bio/displayName convention every later phase's forms follow.
 const DISPLAY_NAME_MAX = 50
-const BIO_MAX = 500
 const LOCATION_MAX = 100
 const POSTAL_CODE_MAX = 10
 const DISCORD_TAG_MAX = 100

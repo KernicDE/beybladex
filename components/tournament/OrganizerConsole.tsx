@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 
-export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean }
+export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean; paidAt: string | null }
 export type ConsoleMatch = {
   id: string
   stageId: string
@@ -54,12 +54,18 @@ export function OrganizerConsole({
   stages,
   judges,
   completedAt,
+  tournamentJudges,
+  entryFeeCent,
 }: {
   tournamentId: string
   participants: ConsoleParticipant[]
   stages: ConsoleStage[]
   judges: ConsoleJudge[]
   completedAt: string | null
+  /** Phase 7 — users granted per-tournament check-in/arena/payment staff authority. */
+  tournamentJudges: ConsoleJudge[]
+  /** Phase 7 — the payment section only renders when the event actually charges an entry fee. */
+  entryFeeCent: number
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -70,6 +76,8 @@ export function OrganizerConsole({
   const [stageSwissRounds, setStageSwissRounds] = useState(3)
   const [stageRoundRobinRepeats, setStageRoundRobinRepeats] = useState(1)
   const [stageQualifyCount, setStageQualifyCount] = useState('')
+  const [newJudgeId, setNewJudgeId] = useState('')
+  const [arenaCount, setArenaCount] = useState('')
 
   const base = `/api/tournaments/${tournamentId}`
   const call = async (fn: () => Promise<Response>, successMessage?: string) => {
@@ -108,6 +116,7 @@ export function OrganizerConsole({
             ...(stageFormat === 'SWISS' ? { swissRounds: stageSwissRounds } : {}),
             ...(stageFormat === 'ROUND_ROBIN' ? { roundRobinRepeats: stageRoundRobinRepeats } : {}),
             ...(stageQualifyCount !== '' ? { qualifyCount: Number(stageQualifyCount) } : {}),
+            ...(arenaCount !== '' ? { arenaCount: Number(arenaCount) } : {}),
           }),
         }),
       'ok'
@@ -180,13 +189,27 @@ export function OrganizerConsole({
                 className="mt-1 block w-20 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
               />
             </label>
+            <label className="text-xs text-current/60">
+              Arenen (optional)
+              <input
+                type="number"
+                min={1}
+                max={64}
+                value={arenaCount}
+                onChange={(e) => setArenaCount(e.target.value)}
+                placeholder="—"
+                className="mt-1 block w-20 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm text-current"
+              />
+            </label>
             <Button disabled={busy || stageName.trim().length === 0} onClick={() => void createStage()}>
               Stage erstellen
             </Button>
           </div>
           <p className="text-xs text-current/50">
             Die erste Stage (Reihenfolge 1) startet mit allen eingecheckten Teilnehmern; jede
-            weitere Stage startet mit den Qualifikanten der vorherigen Stage.
+            weitere Stage startet mit den Qualifikanten der vorherigen Stage. Arenen: Anzahl der
+            physisch verfügbaren Stadien — Matches werden automatisch zugewiesen, sobald eine
+            Arena frei wird.
           </p>
         </section>
       )}
@@ -325,6 +348,114 @@ export function OrganizerConsole({
           </section>
         )
       })}
+
+      {entryFeeCent > 0 && (
+        <section aria-labelledby="payment-heading" className="space-y-2">
+          <h3 id="payment-heading" className="text-sm font-semibold">
+            Zahlungsverfolgung
+          </h3>
+          <ul className="space-y-1">
+            {participants
+              .filter((p) => !p.withdrawn)
+              .map((p) => (
+                <li key={p.userId} className="flex items-center justify-between gap-2 text-sm">
+                  <span>
+                    {p.name}
+                    {p.paidAt && (
+                      <span className="ml-2 text-xs text-current/50">
+                        bezahlt am {new Date(p.paidAt).toLocaleDateString('de-DE')}
+                      </span>
+                    )}
+                  </span>
+                  <Button
+                    variant={p.paidAt ? 'secondary' : 'primary'}
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void call(() =>
+                        fetch(`/api/tournaments/${tournamentId}/participants/${p.userId}/paid`, {
+                          method: p.paidAt ? 'DELETE' : 'PATCH',
+                        }),
+                        'ok'
+                      )
+                    }
+                  >
+                    {p.paidAt ? 'Als unbezahlt markieren' : 'Als bezahlt markieren'}
+                  </Button>
+                </li>
+              ))}
+          </ul>
+          {participants.filter((p) => !p.withdrawn && p.paidAt).length < participants.filter((p) => !p.withdrawn).length && (
+            <p className="text-xs text-current/50">
+              {participants.filter((p) => !p.withdrawn && p.paidAt).length} von{' '}
+              {participants.filter((p) => !p.withdrawn).length} bezahlt
+            </p>
+          )}
+        </section>
+      )}
+
+      <section aria-labelledby="staff-heading" className="space-y-2">
+        <h3 id="staff-heading" className="text-sm font-semibold">
+          Turnier-Staff (Check-in, Arena, Zahlung)
+        </h3>
+        <p className="text-xs text-current/50">
+          Zusätzlich zu dir dürfen diese Judges Teilnehmer:innen einchecken, Arena-Check-ins
+          bestätigen und Zahlungen erfassen.
+        </p>
+        <ul className="space-y-1">
+          {tournamentJudges.map((j) => (
+            <li key={j.id} className="flex items-center justify-between gap-2 text-sm">
+              <span>{j.name}</span>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void call(
+                    () => fetch(`/api/tournaments/${tournamentId}/judges?userId=${j.id}`, { method: 'DELETE' }),
+                    'ok'
+                  )
+                }
+              >
+                Entfernen
+              </Button>
+            </li>
+          ))}
+        </ul>
+        {judges.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Select value={newJudgeId} onChange={(e) => setNewJudgeId(e.target.value)} className="max-w-xs">
+              <option value="">Judge auswählen…</option>
+              {judges
+                .filter((j) => !tournamentJudges.some((tj) => tj.id === j.id))
+                .map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.name}
+                  </option>
+                ))}
+            </Select>
+            <Button
+              size="sm"
+              disabled={busy || !newJudgeId}
+              onClick={() => {
+                const id = newJudgeId
+                setNewJudgeId('')
+                void call(
+                  () =>
+                    fetch(`/api/tournaments/${tournamentId}/judges`, {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({ userId: id }),
+                    }),
+                  'ok'
+                )
+              }}
+            >
+              Hinzufügen
+            </Button>
+          </div>
+        )}
+      </section>
 
       {bracketGenerated && !completed && (
         <>

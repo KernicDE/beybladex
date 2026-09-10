@@ -10,10 +10,21 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { slugify, uniqueSlug } from '@/lib/slug'
+import { CLUB_DESCRIPTION_MAX as DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 
 const PAGE_SIZE = 24
 const NAME_MAX = 100
-const DESCRIPTION_MAX = 1000
+const URL_MAX = 200
+const JOIN_POLICIES = ['OPEN', 'APPLICATION', 'INVITE_ONLY'] as const
+
+// Phase 13: optional profile links — deliberately NOT a hard format allowlist server-side
+// (a legitimate edge-case URL must never be rejected); the length cap is the only server
+// validation, the "looks like a URL" hint is client-side only.
+function parseOptionalUrl(value: unknown): { ok: boolean; value: string | null } {
+  if (value === undefined || value === null) return { ok: true, value: null }
+  if (typeof value !== 'string' || value.length > URL_MAX) return { ok: false, value: null }
+  return { ok: true, value: value.trim() || null }
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -36,7 +47,7 @@ export async function GET(req: Request) {
       slug: true,
       description: true,
       createdAt: true,
-      _count: { select: { members: true, tournaments: true } },
+      _count: { select: { members: { where: { status: 'ACTIVE' } }, tournaments: true } }, // Phase 13: pending rows never inflate the count
     },
   })
 
@@ -74,6 +85,14 @@ export async function POST(req: Request) {
   if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > DESCRIPTION_MAX)) {
     return Response.json({ error: 'invalid_description' }, { status: 400 })
   }
+  const websiteUrl = parseOptionalUrl(fields.websiteUrl)
+  if (!websiteUrl.ok) return Response.json({ error: 'invalid_club_url' }, { status: 400 })
+  const discordUrl = parseOptionalUrl(fields.discordUrl)
+  if (!discordUrl.ok) return Response.json({ error: 'invalid_club_url' }, { status: 400 })
+  const joinPolicy = fields.joinPolicy ?? 'OPEN'
+  if (typeof joinPolicy !== 'string' || !(JOIN_POLICIES as readonly string[]).includes(joinPolicy)) {
+    return Response.json({ error: 'invalid_join_policy' }, { status: 400 })
+  }
 
   // name is @unique — resolve before the transaction so a taken name is a clean 409,
   // not a mid-transaction unique-constraint abort.
@@ -86,7 +105,14 @@ export async function POST(req: Request) {
 
   const club = await prisma.$transaction(async (tx) => {
     const created = await tx.club.create({
-      data: { name: name.trim(), slug, description: typeof description === 'string' ? description.trim() || null : null, ownerId: userId },
+      data: {
+        name: name.trim(), slug,
+        description: typeof description === 'string' ? description.trim() || null : null,
+        websiteUrl: websiteUrl.value,
+        discordUrl: discordUrl.value,
+        joinPolicy: joinPolicy as (typeof JOIN_POLICIES)[number],
+        ownerId: userId,
+      },
     })
     await tx.clubMember.create({
       data: { clubId: created.id, userId, isAdmin: true },
