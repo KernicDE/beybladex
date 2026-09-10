@@ -2815,9 +2815,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 19: Unique Display Names & Registration Clarity — added post-Phase-6, MVP2, by explicit user request
 
-**Tracking:** [Issue #14](https://github.com/KernicDE/beybladex/issues/14)
+**Tracking:** [Issue #14](https://github.com/KernicDE/beybladex/issues/14) (closed)
 
-**Status: planned, not started.** Same standing note: confirm before starting.
+**Status: DONE — merged to main 2026-09-10 (commit `58b19c8`).** Implemented via Kimi (tmux delegation), reviewed by Claude before merge. `User.displayNameNormalized` (@unique, NFKC-folded), `lib/displayName.ts`, check-then-write with a P2002 race backstop, registration-page hint text. Also fixed a real edge case the plan text didn't anticipate: `lib/accountErasure.ts`'s shared tombstone displayName would have broken a second account erasure under the new unique index — given a per-user-unique normalized value instead. `npx tsc --noEmit` clean, eslint clean, 230/230 unit tests.
 
 **Scope, verified against current code first**: `User.displayName` already exists (`String?`, no uniqueness constraint at all — confirmed via `prisma/schema.prisma`) and is already used everywhere as the human-facing name (`displayName ?? username` is the standing fallback pattern across the whole app). `User.username` is the strict, already-unique identifier (`/^[a-z0-9_]{3,20}$/`, lowercase-only, enforced in `app/api/register/route.ts`). Two gaps, both explicit user requests:
 
