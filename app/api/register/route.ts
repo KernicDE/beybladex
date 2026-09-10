@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { redis } from '@/lib/redis'
 import { calculateAge, MINOR_CONSENT_AGE_THRESHOLD } from '@/lib/age'
+import { getClientIp } from '@/lib/getClientIp'
 
 // [REVIEW-FIX: backend-security #7] username policy: 3-20 chars, ASCII alphanumeric + underscore,
 // case-insensitive uniqueness (stored lowercase, displayName preserves original casing separately
@@ -15,7 +16,7 @@ const RESERVED_USERNAMES = new Set(['admin', 'api', 'root', 'support', 'moderato
 const PRIVACY_POLICY_VERSION = '2026-09-08' // bump whenever /datenschutz's content changes materially
 
 export async function POST(req: Request) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+  const ip = getClientIp(req) // last XFF hop — leftmost entries are client-spoofable (issue #34)
   const { allowed } = await rateLimit(`register:${ip}`, 5, 60 * 15) // 5 registrations / 15min / IP
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 

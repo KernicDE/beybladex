@@ -6,6 +6,7 @@
 import { auth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rateLimit'
 import { searchUsers } from '@/lib/userSearch'
+import { getClientIp } from '@/lib/getClientIp'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
   const session = await auth()
   const viewerId = session?.user?.id ?? null
 
-  const key = viewerId ?? `anon:${req.headers.get('x-forwarded-for') ?? 'unknown'}`
+  const key = viewerId ?? `anon:${getClientIp(req)}` // last XFF hop — spoof-safe bucketing (issue #34)
   const { allowed } = await rateLimit(`search-users:${key}`, 60, 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 

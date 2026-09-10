@@ -5,11 +5,12 @@ import { getAuthenticationOptions, verifyAuthentication } from '@/lib/webauthn'
 import { signIn } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { getClientIp } from '@/lib/getClientIp'
 
 const CHALLENGE_TTL_SECONDS = 120
 
 export async function GET(req: Request) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+  const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
   const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+  const ip = getClientIp(req) // last XFF hop, not the spoofable leftmost entry (issue #34)
   const { allowed } = await rateLimit(`webauthn-auth:${ip}`, 10, 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
