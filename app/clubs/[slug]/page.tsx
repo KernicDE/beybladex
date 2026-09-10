@@ -1,5 +1,6 @@
 // app/clubs/[slug]/page.tsx
-// Club home: profile, roster, club-run tournaments, and the "Neues Club-Event" CTA (shown to
+// Club home: profile, roster, Phase 12 club chat (member-only surface, authz enforced again
+// by the API), club-run tournaments, and the "Neues Club-Event" CTA (shown to
 // the owner, isAdmin members, and global ORGANIZER/ADMIN sessions — the same rule the API
 // enforces; it links to /events/new?clubId= which pre-selects the club in the form).
 // Roster entries render only privacy-projected fields via resolveVisibleFields (the single
@@ -17,6 +18,7 @@ import { Card, CardContent, CardTitle } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { ClubActions, type ClubMemberRow } from '@/components/clubs/ClubActions'
+import { ClubChat } from '@/components/clubs/ClubChat'
 
 export const revalidate = 120 // public, infrequently-mutated content [REVIEW-FIX: performance P16]
 
@@ -99,6 +101,21 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
           />
         </CardContent>
       </Card>
+
+      <section aria-label="Club-Chat" className="space-y-3">
+        <h2 className="text-lg font-semibold">Club-Chat</h2>
+        <Card>
+          <CardContent>
+            {/* Chat is a member surface — the API enforces the same membership authz
+                (403 for non-members), the component just doesn't render it for them. */}
+            {viewerMembership ? (
+              <ClubChat slug={club.slug} viewer={{ userId: viewerId, canManage }} />
+            ) : (
+              <p className="text-sm text-current/60">Nur für Mitglieder des Clubs sichtbar.</p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       <section aria-label="Club-Turniere" className="space-y-3">
         <h2 className="text-lg font-semibold">Club-Turniere</h2>
