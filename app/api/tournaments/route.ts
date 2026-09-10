@@ -134,11 +134,13 @@ export async function POST(req: Request) {
   if (data.clubId) {
     if (!hasGlobalRole) {
       // Club-admins may create events for THEIR club only — verified by query, not by the body.
-      const membership = await prisma.clubMember.findUnique({
-        where: { clubId_userId: { clubId: data.clubId, userId: session.user.id } },
-        select: { isAdmin: true },
+      // Phase 13: the membership must be ACTIVE — a pending application/invite never confers
+      // event-creation rights, even if the row is (mistakenly) flagged isAdmin.
+      const membership = await prisma.clubMember.findFirst({
+        where: { clubId: data.clubId, userId: session.user.id, status: 'ACTIVE', isAdmin: true },
+        select: { id: true },
       })
-      if (!membership?.isAdmin) return Response.json({ error: 'forbidden' }, { status: 403 })
+      if (!membership) return Response.json({ error: 'forbidden' }, { status: 403 })
     }
     const club = await prisma.club.findUnique({ where: { id: data.clubId }, select: { id: true } })
     if (!club) return Response.json({ error: 'invalid_club' }, { status: 400 })

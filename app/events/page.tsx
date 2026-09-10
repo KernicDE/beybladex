@@ -51,9 +51,10 @@ export default async function EventsPage({
     ? await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
     : null
   // Same rule as POST /api/tournaments: global organizer/admin role OR administration of at
-  // least one club (owner or isAdmin member).
+  // least one club (owner or isAdmin member). Phase 13: only ACTIVE memberships count —
+  // a pending application/invite confers no organizer rights.
   const adminClubCount = session?.user?.id
-    ? await prisma.clubMember.count({ where: { userId: session.user.id, isAdmin: true } })
+    ? await prisma.clubMember.count({ where: { userId: session.user.id, isAdmin: true, status: 'ACTIVE' } })
     : 0
   const canCreate = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN' || adminClubCount > 0
 

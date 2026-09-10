@@ -30,6 +30,35 @@ function notificationContent(t: Tournament): { title: string; message: string; l
   }
 }
 
+// Phase 13: single-user notification (club applications/invites, approvals). Reuses the same
+// durable row + per-user pub/sub channel as the radius blast; email honors the same minor
+// ceiling (no email to isMinor users, in-app notification always reaches them).
+export async function notifyUser(
+  userId: string,
+  content: { title: string; message: string; link?: string },
+): Promise<void> {
+  const row = await prisma.notification.create({
+    data: { userId, title: content.title, message: content.message, link: content.link ?? null },
+  })
+  await redis.publish(notifyChannel(userId), JSON.stringify(row))
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { notifyEmail: true, isMinor: true, email: true },
+  })
+  if (user?.notifyEmail && !user.isMinor && user.email) {
+    try {
+      await sendNotificationEmail({
+        to: user.email,
+        subject: content.title,
+        text: `${content.message}\n\nDetails: ${content.link ?? '/'}`,
+      })
+    } catch (err) {
+      console.error(`[notify] email to ${userId} failed:`, err)
+    }
+  }
+}
+
 export async function notifyUsersInRadius(tournament: Tournament): Promise<void> {
   const candidates = await prisma.user.findMany({
     where: {
