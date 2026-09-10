@@ -6,7 +6,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const findUnique = vi.fn()
-const findFirst = vi.fn()
 const findMany = vi.fn()
 const count = vi.fn()
 const createMany = vi.fn()
