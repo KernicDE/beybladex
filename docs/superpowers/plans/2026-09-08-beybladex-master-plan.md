@@ -2646,9 +2646,9 @@ This phase was a grab-bag of real gaps found by the user actually using the live
 
 # Phase 14: Ranked Ladder & Elo Rating System — added post-Phase-6, MVP2, by explicit user request
 
-**Tracking:** [Issue #8](https://github.com/KernicDE/beybladex/issues/8)
+**Tracking:** [Issue #8](https://github.com/KernicDE/beybladex/issues/8) (closed)
 
-**Status: planned, not started.** Same standing note as every MVP2 phase: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting.
+**Status: DONE — merged to main 2026-09-10 (commit `924e26b`).** `Season`/`PlayerRating` schema, `lib/elo.ts` (K=40/20 tiers, exact hand-computed unit tests), the score-route Elo hook (gated on `rankedEligible` + an active season), ADMIN season-lifecycle API+UI with the regression-to-mean rollover, public `/rangliste` leaderboard (5-game minimum), a profile Elo badge, and a `rankedEligible` toggle on `TournamentForm`. `npx tsc --noEmit` clean, eslint clean, 215/215 unit tests. Phase 15 (Rating-Based Seeding) can now proceed — its dependency on `PlayerRating` existing is satisfied.
 
 **Scope, and why it exists**: a 2026-09-10 research pass into the real Beyblade X tournament ecosystem found that neither this platform nor Challonge (outside a paid PRO tier) offers a free, persistent, cross-tournament player rating — while WBO's entire value proposition to competitive bladers IS its ranked leaderboard/season system. This phase builds the DACH equivalent: an Elo-style rating computed from real, judge-confirmed `Match` results (not crowd-sourced self-reports like beywatch.gg), organized into seasons like WBO's.
 
