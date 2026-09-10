@@ -241,18 +241,48 @@ export async function POST(req: Request, { params }: Ctx) {
   if (player2LockError) return player2LockError
 
   // Phase 16 item 1-2 — dual-spin mode. Locked at the same moment the build is confirmed;
-  // immutable once the match has left PENDING (a "change" is only ever a DIFFERENT value than
-  // what's already stored — resubmitting the same value, e.g. a replayed non-idempotent-key
-  // request, is a harmless no-op, not a conflict).
+  // immutable once the match has left PENDING. [REVIEW-FIX P16-1] the original version here
+  // only rejected a DIFFERENT value than an already-stored one — a null→value transition (i.e.
+  // setting a spin mode for the first time on a request AFTER match start) slipped through
+  // uncaught, contradicting "locked at match start". Fixed: once status !== PENDING, ANY
+  // submitted value must exactly equal what's already stored (including "nothing stored yet" —
+  // a still-undefined field can never be set post-start); only an exact-match resubmit (e.g. a
+  // replayed non-idempotent-key request) is a no-op, everything else is 409.
   const spinMode = (v: unknown): 'RIGHT' | 'LEFT' | undefined => (v === 'RIGHT' || v === 'LEFT' ? v : undefined)
   const player1SpinMode = spinMode(body.player1SpinMode)
   const player2SpinMode = spinMode(body.player2SpinMode)
   if (match.status !== 'PENDING') {
-    if (player1SpinMode && match.player1SpinMode && player1SpinMode !== match.player1SpinMode) {
+    if (player1SpinMode !== undefined && player1SpinMode !== match.player1SpinMode) {
       return Response.json({ error: 'spin_mode_locked' }, { status: 409 })
     }
-    if (player2SpinMode && match.player2SpinMode && player2SpinMode !== match.player2SpinMode) {
+    if (player2SpinMode !== undefined && player2SpinMode !== match.player2SpinMode) {
       return Response.json({ error: 'spin_mode_locked' }, { status: 409 })
+    }
+  }
+
+  // [REVIEW-FIX P16-2] a spin mode may only ever be recorded for a build that actually contains
+  // a dualSpin part — otherwise an authorized caller (any assigned judge) could attach a
+  // meaningless spin mode to an ordinary build, silently feeding a fake entry into the Auto-Meta
+  // per-mode buckets (lib/meta.ts). Checked against whichever build is EFFECTIVE for this
+  // request (the one just confirmed, or the already-stored one if none is being confirmed here).
+  async function assertBuildIsDualSpin(effectiveBuildId: string | undefined): Promise<boolean> {
+    if (!effectiveBuildId) return false
+    const build = await prisma.build.findUnique({
+      where: { id: effectiveBuildId },
+      select: { blade: { select: { dualSpin: true } }, ratchet: { select: { dualSpin: true } }, bit: { select: { dualSpin: true } } },
+    })
+    return build !== null && (build.blade.dualSpin || build.ratchet.dualSpin || build.bit.dualSpin)
+  }
+  if (player1SpinMode !== undefined) {
+    const effectiveBuildId = player1BuildId ?? match.player1BuildId ?? undefined
+    if (!(await assertBuildIsDualSpin(effectiveBuildId))) {
+      return Response.json({ error: 'not_dual_spin_build' }, { status: 400 })
+    }
+  }
+  if (player2SpinMode !== undefined) {
+    const effectiveBuildId = player2BuildId ?? match.player2BuildId ?? undefined
+    if (!(await assertBuildIsDualSpin(effectiveBuildId))) {
+      return Response.json({ error: 'not_dual_spin_build' }, { status: 400 })
     }
   }
 

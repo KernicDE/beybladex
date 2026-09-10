@@ -5,6 +5,7 @@
 // change the snapshot; a tournament whose ruleset has lockedDecks: false takes no snapshot.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { POST as START } from '@/app/api/tournaments/[id]/start/route'
+import { POST as JOIN, PATCH as JOIN_PATCH } from '@/app/api/tournaments/[id]/join/route'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 
@@ -115,5 +116,110 @@ describe('tournament start — deck lock-in', () => {
 
     const participant = await prisma.tournamentParticipant.findUnique({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: player.id } } })
     expect(participant?.lockedBuildIds).toEqual([])
+  })
+
+  // [REVIEW-FIX P16-3 regression] concurrent starts: only ONE of two simultaneous POSTs may
+  // succeed and take the snapshot; the loser gets a clean 409, never a silent re-stamp/re-snapshot.
+  it('two concurrent start requests: exactly one succeeds, the other gets 409 (no re-stamp)', async () => {
+    const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    const owner = await seedUser(suffix, 'tsl4ow', 'ORGANIZER')
+    const player = await seedUser(suffix, 'tsl4pl')
+    const { deck, build } = await seedDeck(suffix, 'tsl4', player.id)
+
+    const ruleset = await prisma.ruleset.create({ data: { title: `TSL4 RS ${suffix}`, slug: `tsl4-rs-${suffix}`, createdById: owner.id, lockedDecks: true } })
+    const tournament = await prisma.tournament.create({
+      data: {
+        title: `TSL4 T ${suffix}`, description: '', startDate: new Date(Date.now() + 86400_000), locationName: 'Arena',
+        postalCode: '10115', city: 'Berlin', state: 'Berlin', latitude: 52.52, longitude: 13.405,
+        rulesetId: ruleset.id, createdById: owner.id,
+      },
+    })
+    await prisma.tournamentParticipant.create({ data: { tournamentId: tournament.id, userId: player.id, deckId: deck.id } })
+
+    mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
+    const [first, second] = await Promise.all([
+      START(req(), { params: Promise.resolve({ id: tournament.id }) }),
+      START(req(), { params: Promise.resolve({ id: tournament.id }) }),
+    ])
+    const statuses = [first.status, second.status].sort()
+    expect(statuses).toEqual([200, 409])
+
+    const participant = await prisma.tournamentParticipant.findUnique({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: player.id } } })
+    expect(participant?.lockedBuildIds).toEqual([build.id])
+  })
+
+  // [REVIEW-FIX P16-4 regression] the plan says "every TournamentParticipant row" — a withdrawn
+  // participant with a deck must still get snapshotted, not silently skipped.
+  it('snapshots a withdrawn participant too, per the plan\'s "every" wording', async () => {
+    const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    const owner = await seedUser(suffix, 'tsl5ow', 'ORGANIZER')
+    const player = await seedUser(suffix, 'tsl5pl')
+    const { deck, build } = await seedDeck(suffix, 'tsl5', player.id)
+
+    const ruleset = await prisma.ruleset.create({ data: { title: `TSL5 RS ${suffix}`, slug: `tsl5-rs-${suffix}`, createdById: owner.id, lockedDecks: true } })
+    const tournament = await prisma.tournament.create({
+      data: {
+        title: `TSL5 T ${suffix}`, description: '', startDate: new Date(Date.now() + 86400_000), locationName: 'Arena',
+        postalCode: '10115', city: 'Berlin', state: 'Berlin', latitude: 52.52, longitude: 13.405,
+        rulesetId: ruleset.id, createdById: owner.id,
+      },
+    })
+    await prisma.tournamentParticipant.create({ data: { tournamentId: tournament.id, userId: player.id, deckId: deck.id, withdrawn: true } })
+
+    mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
+    const res = await START(req(), { params: Promise.resolve({ id: tournament.id }) })
+    expect(res.status).toBe(200)
+
+    const participant = await prisma.tournamentParticipant.findUnique({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: player.id } } })
+    expect(participant?.lockedBuildIds).toEqual([build.id])
+  })
+
+  // [REVIEW-FIX P16-5 regression] once Turnier starten has run, joining (or swapping decks) must
+  // be rejected — otherwise a late joiner would end up with an empty lockedBuildIds snapshot,
+  // which every consumer (score route, judge page) treats as "unrestricted", exactly bypassing
+  // the lock every other participant is held to.
+  it('registration and deck-swap are both closed once the tournament has started', async () => {
+    const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    const owner = await seedUser(suffix, 'tsl6ow', 'ORGANIZER')
+    const latecomer = await seedUser(suffix, 'tsl6lc')
+    const already = await seedUser(suffix, 'tsl6al')
+    const { deck: alreadyDeck } = await seedDeck(suffix, 'tsl6al', already.id)
+    const { deck: alreadySecondDeck } = await seedDeck(suffix, 'tsl6al2', already.id)
+    const { deck: latecomerDeck } = await seedDeck(suffix, 'tsl6nd', latecomer.id)
+
+    const ruleset = await prisma.ruleset.create({ data: { title: `TSL6 RS ${suffix}`, slug: `tsl6-rs-${suffix}`, createdById: owner.id, lockedDecks: true } })
+    const tournament = await prisma.tournament.create({
+      data: {
+        title: `TSL6 T ${suffix}`, description: '', startDate: new Date(Date.now() + 86400_000), locationName: 'Arena',
+        postalCode: '10115', city: 'Berlin', state: 'Berlin', latitude: 52.52, longitude: 13.405,
+        rulesetId: ruleset.id, createdById: owner.id,
+      },
+    })
+    await prisma.tournamentParticipant.create({ data: { tournamentId: tournament.id, userId: already.id, deckId: alreadyDeck.id } })
+
+    mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
+    expect((await START(req(), { params: Promise.resolve({ id: tournament.id }) })).status).toBe(200)
+
+    // A brand-new participant trying to join after start — must be rejected, not silently
+    // registered with an unlocked (empty-snapshot) deck.
+    mockAuth.mockResolvedValue(asSession({ id: latecomer.id, name: latecomer.username }))
+    const joinAttempt = await JOIN(
+      new Request('http://localhost/x/join', { method: 'POST', body: JSON.stringify({ deckId: latecomerDeck.id }) }),
+      { params: Promise.resolve({ id: tournament.id }) }
+    )
+    expect(joinAttempt.status).toBe(409)
+    expect((await joinAttempt.json()).error).toBe('registration_closed')
+    const noParticipant = await prisma.tournamentParticipant.findUnique({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: latecomer.id } } })
+    expect(noParticipant).toBeNull()
+
+    // The already-registered, already-snapshotted participant swapping their deck after start —
+    // must also be rejected, so their stale snapshot can't be quietly invalidated.
+    mockAuth.mockResolvedValue(asSession({ id: already.id, name: already.username }))
+    const swapAttempt = await JOIN_PATCH(
+      new Request('http://localhost/x/join', { method: 'PATCH', body: JSON.stringify({ deckId: alreadySecondDeck.id }) }),
+      { params: Promise.resolve({ id: tournament.id }) }
+    )
+    expect(swapAttempt.status).toBe(409)
+    expect((await swapAttempt.json()).error).toBe('tournament_started')
   })
 })

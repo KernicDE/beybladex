@@ -35,28 +35,52 @@ export async function POST(_req: Request, { params }: Ctx) {
   }
   if (tournament.startedAt) return Response.json({ error: 'already_started' }, { status: 409 })
 
-  const startedAt = await prisma.$transaction(async (tx) => {
-    const updated = await tx.tournament.update({ where: { id }, data: { startedAt: new Date() } })
-
-    if (tournament.ruleset.lockedDecks) {
-      const participants = await tx.tournamentParticipant.findMany({
-        where: { tournamentId: id, withdrawn: false, deckId: { not: null } },
-        select: { id: true, deckId: true },
-      })
-      for (const p of participants) {
-        const deckBuilds = await tx.deckBuild.findMany({
-          where: { deckId: p.deckId! },
-          orderBy: { position: 'asc' },
-          select: { buildId: true },
-        })
-        await tx.tournamentParticipant.update({
-          where: { id: p.id },
-          data: { lockedBuildIds: deckBuilds.map((db) => db.buildId) },
-        })
+  // [REVIEW-FIX P16-3] the original version read startedAt OUTSIDE the transaction, then did an
+  // unconditional update inside it — two concurrent POSTs both passed the null check above and
+  // both proceeded, so the SECOND one re-stamped startedAt and re-snapshotted against
+  // whatever the live decks looked like by then, breaking the "one-way, no silent re-stamp"
+  // claim. Fixed: the actual guard is now the CONDITIONAL updateMany inside the transaction
+  // (WHERE startedAt IS NULL) — only one concurrent caller can ever match count 1; the loser
+  // gets a clean 409 instead of silently re-running the snapshot.
+  let result: { startedAt: Date } | 'already_started'
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.tournament.updateMany({ where: { id, startedAt: null }, data: { startedAt: new Date() } })
+      if (claimed.count === 0) {
+        // Lost the race (or started between the read above and here) — surface as the same
+        // conflict the pre-check above would have given a slightly-earlier caller.
+        throw new Error('ALREADY_STARTED_RACE')
       }
-    }
-    return updated.startedAt
-  })
+      const updated = await tx.tournament.findUniqueOrThrow({ where: { id }, select: { startedAt: true } })
 
-  return Response.json({ startedAt })
+      if (tournament.ruleset.lockedDecks) {
+        // [REVIEW-FIX P16-4] snapshot EVERY registered TournamentParticipant row, including
+        // withdrawn ones — the plan says "every", and a withdrawn participant re-joining later
+        // (if that ever becomes possible) must not end up with a stale/missing snapshot either.
+        const participants = await tx.tournamentParticipant.findMany({
+          where: { tournamentId: id, deckId: { not: null } },
+          select: { id: true, deckId: true },
+        })
+        for (const p of participants) {
+          const deckBuilds = await tx.deckBuild.findMany({
+            where: { deckId: p.deckId! },
+            orderBy: { position: 'asc' },
+            select: { buildId: true },
+          })
+          await tx.tournamentParticipant.update({
+            where: { id: p.id },
+            data: { lockedBuildIds: deckBuilds.map((db) => db.buildId) },
+          })
+        }
+      }
+      return { startedAt: updated.startedAt! }
+    })
+  } catch (e) {
+    if (e instanceof Error && e.message === 'ALREADY_STARTED_RACE') {
+      return Response.json({ error: 'already_started' }, { status: 409 })
+    }
+    throw e
+  }
+
+  return Response.json({ startedAt: result.startedAt })
 }
