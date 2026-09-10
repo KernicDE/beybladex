@@ -16,18 +16,6 @@ import { sendNotificationEmail } from '@/lib/mailer'
 
 export const notifyChannel = (userId: string) => `notify:${userId}`
 
-/** Generic single-user notification (Phase 11): durable Notification row (source of truth) +
- *  per-user Redis pub/sub publish for the SSE stream — the same channel discipline as
- *  notifyUsersInRadius, no second notification path. In-app only (no email): proposal-review
- *  outcomes are account-internal events, not marketing blasts. */
-export async function notifyUser(
-  userId: string,
-  content: { title: string; message: string; link: string },
-): Promise<void> {
-  const row = await prisma.notification.create({ data: { userId, ...content } })
-  await redis.publish(notifyChannel(userId), JSON.stringify(row))
-}
-
 type NotifiableUser = Pick<
   User,
   'id' | 'latitude' | 'longitude' | 'notifyRadiusKm' | 'notifyRecurring' | 'notifyEmail' | 'isMinor' | 'email'
@@ -43,9 +31,9 @@ function notificationContent(t: Tournament): { title: string; message: string; l
 }
 
 // Phase 13: single-user notification (club applications/invites, approvals; also used by
-// Phase 7's payment/check-in/arena notifications). Reuses the same durable row + per-user
-// pub/sub channel as the radius blast; email honors the same minor ceiling (no email to
-// isMinor users, in-app notification always reaches them).
+// Phase 7's payment/check-in/arena notifications and Phase 11's catalog-proposal review
+// outcomes). Reuses the same durable row + per-user pub/sub channel as the radius blast;
+// email honors the same minor ceiling (no email to isMinor users, in-app always reaches them).
 export async function notifyUser(
   userId: string,
   content: { title: string; message: string; link?: string },

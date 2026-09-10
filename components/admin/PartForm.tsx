@@ -131,8 +131,7 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
         <FormField label="Bild (optional)">
           <div className="flex items-center gap-3">
             {values.imageId && (
-              // eslint-disable-next-line @next/next/no-img-element -- a small admin-only
-              // catalog thumbnail; next/image's remote-optimizer overhead isn't worth it here.
+              // eslint-disable-next-line @next/next/no-img-element -- small admin-only catalog thumbnail
               <img src={`/api/media/${values.imageId}`} alt="" className="size-16 rounded-md object-cover" />
             )}
             <input type="file" accept="image/*" onChange={uploadImage} disabled={imagePending} className="text-sm" />

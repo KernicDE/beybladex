@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
 import { CollectionItemForm } from '@/components/collection/CollectionItemForm'
+import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,9 +58,16 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       </div>
 
       {neu === '1' && (
-        <Card>
-          <CollectionItemForm />
-        </Card>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <h3 className="mb-3 text-sm font-semibold">Einzelnes Teil hinzufügen</h3>
+            <CollectionItemForm />
+          </Card>
+          <Card>
+            <h3 className="mb-3 text-sm font-semibold">Set als gekauft markieren</h3>
+            <MarkSetPurchasedForm />
+          </Card>
+        </div>
       )}
 
       {items.length === 0 && neu !== '1' ? (
