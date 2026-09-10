@@ -50,7 +50,7 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     })
     // Club ownership can't dangle (onDelete: Restrict in spec §3) — reassign to another admin
     // member, or dissolve the club if the departing owner was its only member.
-    const ownedClubs = await tx.club.findMany({ where: { ownerId: userId }, include: { members: { where: { isAdmin: true, userId: { not: userId } } } } })
+    const ownedClubs = await tx.club.findMany({ where: { ownerId: userId }, include: { members: { where: { isAdmin: true, status: 'ACTIVE', userId: { not: userId } } } } })
     for (const club of ownedClubs) {
       if (club.members[0]) await tx.club.update({ where: { id: club.id }, data: { ownerId: club.members[0].userId } })
       else await tx.club.delete({ where: { id: club.id } }) // no other admin — dissolve

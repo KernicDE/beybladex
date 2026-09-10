@@ -31,7 +31,7 @@ export default async function ClubsPage({
     orderBy: { name: 'asc' },
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: { id: true, name: true, slug: true, description: true, _count: { select: { members: true } } },
+    select: { id: true, name: true, slug: true, description: true, _count: { select: { members: { where: { status: 'ACTIVE' } } } } }, // Phase 13: pending rows don't count
   })
 
   const hasMore = rows.length > PAGE_SIZE

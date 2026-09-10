@@ -196,29 +196,51 @@ model Notification {
   createdAt DateTime @default(now())
 }
 
+// Phase 13: join policies. OPEN = today's behavior (immediate join); APPLICATION = self-service
+// POST creates a PENDING_APPLICATION row an admin must approve; INVITE_ONLY = no self-service
+// join at all — only owner/admins create PENDING_INVITE rows, and only the invitee may accept.
+enum ClubJoinPolicy {
+  OPEN
+  APPLICATION
+  INVITE_ONLY
+}
+
+// Phase 13: mirrors Friendship's PENDING/ACCEPTED shape. Default ACTIVE keeps every existing
+// ClubMember row behaviorally unchanged; pending rows must never inflate counts, rosters, or
+// isAdmin authz checks (every query filters to ACTIVE).
+enum ClubMemberStatus {
+  ACTIVE
+  PENDING_APPLICATION
+  PENDING_INVITE
+}
+
 model Club {
-  id          String       @id @default(uuid())
-  name        String       @unique
-  slug        String       @unique
+  id          String         @id @default(uuid())
+  name        String         @unique
+  slug        String         @unique
   description String?
+  websiteUrl  String? // Phase 13 — optional profile links
+  discordUrl  String?
+  joinPolicy  ClubJoinPolicy @default(OPEN) // Phase 13 — OPEN preserves pre-Phase-13 behavior
   ownerId     String
-  owner       User         @relation("ClubOwner", fields: [ownerId], references: [id])
+  owner       User           @relation("ClubOwner", fields: [ownerId], references: [id])
   members     ClubMember[]
   tournaments Tournament[]
   // Phase 12: capped chat stream (max 50 messages, enforced synchronously on insert) —
   // messages die with the club (onDelete: Cascade).
   messages    ClubMessage[]
-  createdAt   DateTime     @default(now())
+  createdAt   DateTime       @default(now())
 }
 
 model ClubMember {
-  id        String   @id @default(uuid())
+  id        String           @id @default(uuid())
   clubId    String
-  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  club      Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  isAdmin   Boolean  @default(false)
-  joinedAt  DateTime @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAdmin   Boolean          @default(false)
+  status    ClubMemberStatus @default(ACTIVE) // Phase 13 — see the enum's audit note
+  joinedAt  DateTime         @default(now())
 
   @@unique([clubId, userId])
 }
