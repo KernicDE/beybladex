@@ -10,10 +10,10 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { slugify, uniqueSlug } from '@/lib/slug'
+import { CLUB_DESCRIPTION_MAX as DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 
 const PAGE_SIZE = 24
 const NAME_MAX = 100
-const DESCRIPTION_MAX = 1000
 
 export async function GET(req: Request) {
   const url = new URL(req.url)

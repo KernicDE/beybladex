@@ -8,8 +8,9 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
 import { Input } from '@/components/ui/Input'
-import { Textarea } from '@/components/ui/Textarea'
+import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { errorMessage } from '@/lib/errorCopy'
+import { CLUB_DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 
 export function ClubForm() {
   const router = useRouter()
@@ -43,8 +44,8 @@ export function ClubForm() {
       <FormField label="Name">
         <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
       </FormField>
-      <FormField label="Beschreibung (optional)">
-        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} maxLength={1000} />
+      <FormField label="Beschreibung (optional, Markdown)">
+        <MarkdownEditor value={description} onChange={setDescription} rows={4} maxLength={CLUB_DESCRIPTION_MAX} />
       </FormField>
       {error && (
         <p role="alert" className="text-sm text-type-attack">

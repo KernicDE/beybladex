@@ -9,7 +9,8 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
 import { Select } from '@/components/ui/Select'
-import { Textarea } from '@/components/ui/Textarea'
+import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
+import { RATING_COMMENT_MAX } from '@/lib/markdownFieldCaps'
 
 export function RatingForm({
   buildId,
@@ -54,8 +55,8 @@ export function RatingForm({
           </Select>
         </FormField>
       </div>
-      <FormField label="Kommentar (optional)">
-        <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3} maxLength={500} placeholder="Wie spielt sich der Build?" />
+      <FormField label="Kommentar (optional, Markdown)">
+        <MarkdownEditor value={comment} onChange={setComment} rows={3} maxLength={RATING_COMMENT_MAX} placeholder="Wie spielt sich der Build?" />
       </FormField>
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
       <Button type="submit" disabled={busy}>

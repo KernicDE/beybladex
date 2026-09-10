@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { resolveVisibleFields } from '@/lib/privacy'
 import { friendshipBetween, isFriendWith } from '@/lib/friendship'
 import { FriendButton } from '@/components/social/FriendButton'
+import { MarkdownContent } from '@/components/ui/MarkdownContent'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +47,7 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
           }}
         />
       )}
-      {view.bio && <p>{view.bio}</p>}
+      {view.bio && <MarkdownContent>{view.bio}</MarkdownContent>}
       <dl className="space-y-1">
         {view.city && (
           <div>

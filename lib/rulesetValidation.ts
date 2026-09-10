@@ -3,10 +3,10 @@
 // Every accepted field maps 1:1 to a Ruleset column — no invented fields, no mass assignment:
 // anything not listed here is ignored, and a body with zero recognized fields is rejected.
 import { DECK_FORMATS } from '@/lib/rulesetLabels'
+import { RULESET_DESCRIPTION_MAX as DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 import type { DeckFormat } from '@prisma/client'
 
 const TITLE_MAX = 100
-const DESCRIPTION_MAX = 1000
 const POINTS_MIN = 1
 const POINTS_MAX = 100
 const RELAUNCH_MAX = 10
