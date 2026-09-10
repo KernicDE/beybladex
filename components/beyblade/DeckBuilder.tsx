@@ -13,6 +13,8 @@ import { FormField } from '@/components/ui/FormField'
 import { Input } from '@/components/ui/Input'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
+import { BuildComboForm } from '@/components/beyblade/BuildComboForm'
 import type { BuildCardData } from '@/components/beyblade/BuildCard'
 import type { WinRateStats } from '@/components/beyblade/WinRateBadge'
 import { validateNoDuplicateParts } from '@/lib/deckValidation'
@@ -22,10 +24,14 @@ const MAX_BUILDS = 3
 interface SearchResult {
   id: string
   type: BuildCardData['type']
-  blade: { id: string; name: string; imageUrl: string | null }
+  name: string | null
+  isOfficialSet: boolean
+  blade: { id: string; name: string; imageId: string | null }
   ratchet: { id: string; name: string }
   bit: { id: string; name: string }
   winRate: WinRateStats | null
+  // Phase 11 (item 6): true/false when the search ran with onlyMine=1, absent otherwise.
+  available?: boolean
 }
 
 export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: string; initialTitle: string; initialBuilds: BuildCardData[] }) {
@@ -33,6 +39,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
   const [title, setTitle] = useState(initialTitle)
   const [deck, setDeck] = useState<BuildCardData[]>(initialBuilds)
   const [query, setQuery] = useState('')
+  const [onlyMine, setOnlyMine] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +57,11 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
 
   async function search(e: React.FormEvent) {
     e.preventDefault()
-    const res = await fetch(`/api/builds?q=${encodeURIComponent(query.trim())}`)
+    const params = new URLSearchParams({ q: query.trim() })
+    // Phase 11 (item 6): "nur meine Teile" — a build is offered only when the caller owns all
+    // three constituent parts (CollectionItem, any sourceBuildId or none).
+    if (onlyMine) params.set('onlyMine', '1')
+    const res = await fetch(`/api/builds?${params}`)
     if (!res.ok) return
     const body = (await res.json()) as { builds: SearchResult[] }
     setResults(body.builds)
@@ -58,7 +69,14 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
   }
 
   function add(build: SearchResult) {
-    setDeck((d) => [...d, { id: build.id, type: build.type, blade: build.blade, ratchet: build.ratchet, bit: build.bit }])
+    setDeck((d) => [...d, {
+      id: build.id,
+      type: build.type,
+      blade: build.blade,
+      ratchet: build.ratchet,
+      bit: build.bit,
+      ...(build.name !== undefined ? { name: build.name, isOfficialSet: build.isOfficialSet } : {}),
+    }])
   }
 
   function remove(buildId: string) {
@@ -128,7 +146,32 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
           <Input id="deck-builder-q" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Teilname, z. B. DranSword…" />
           <Button variant="secondary" onClick={search}>Suchen</Button>
         </div>
-        {searched && results.length === 0 && <p className="text-sm text-current/60">Keine Builds gefunden.</p>}
+        <div className="flex items-center gap-2">
+          <input
+            id="deck-only-mine"
+            type="checkbox"
+            checked={onlyMine}
+            onChange={(e) => setOnlyMine(e.target.checked)}
+            className="size-4 accent-x-cyan"
+          />
+          <label htmlFor="deck-only-mine" className="text-sm text-current/70">
+            Nur Builds, deren Teile ich besitze
+          </label>
+        </div>
+        {searched && results.length === 0 && (
+          <div className="space-y-3">
+            <p className="text-sm text-current/60">Keine Builds gefunden.</p>
+            {/* Phase 11 (item 1): the gap is felt HERE — offer the one-off combo create
+                (item 2) and the official-Set proposal (item 1) inline. */}
+            <details className="rounded-xl border border-dashed border-x-cyan/20 p-4">
+              <summary className="cursor-pointer text-sm font-medium">Nichts Passendes? Eigenen Build erstellen oder Set vorschlagen</summary>
+              <div className="mt-3 space-y-4">
+                <BuildComboForm onCreated={(build) => { setResults((r) => [{ ...build, winRate: null }, ...r]); setSearched(true) }} />
+                <CatalogProposalCTA defaultKind="BUILD" />
+              </div>
+            </details>
+          </div>
+        )}
         {results.length > 0 && (
           <ul className="divide-y rounded-xl border">
             {results.map((build) => {
@@ -141,6 +184,9 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
                     <p className="truncate text-sm text-current/60">{build.ratchet.name} · {build.bit.name}</p>
                   </div>
                   <TypeBadge type={build.type} />
+                  {build.available !== undefined && (
+                    <Badge tone={build.available ? 'cyan' : 'neutral'}>{build.available ? 'Baubar' : 'Teile fehlen'}</Badge>
+                  )}
                   <WinRateBadge stats={build.winRate} />
                   <Button size="sm" disabled={inDeck || full} onClick={() => add(build)}>
                     {inDeck ? 'Im Deck' : full ? 'Deck voll' : 'Hinzufügen'}

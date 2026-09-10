@@ -23,7 +23,14 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // explicit deleteMany keeps the erasure matrix self-documenting, per the Cross-Phase
     // Regression Guard's standing rule that a new User-owned model ships with its entry).
     await tx.rating.deleteMany({ where: { userId } })
-    await tx.partRequest.deleteMany({ where: { requestedById: userId } })
+    // Phase 11: catalog proposals are personal and die with the account (Cascade backstop,
+    // explicit deleteMany for the same self-documenting reason as above). MediaAsset rows are
+    // different — a real catalog image (a Part/Build/Tournament's picture) must survive the
+    // uploader's own erasure (uploadedById is a plain String, not a FK, per that model's own
+    // comment) — sever the reference with a tombstone value instead of deleting the row, so an
+    // unrelated user's account deletion never makes a live catalog photo vanish.
+    await tx.catalogProposal.deleteMany({ where: { submittedById: userId } })
+    await tx.mediaAsset.updateMany({ where: { uploadedById: userId }, data: { uploadedById: `geloescht_${userId.slice(0, 8)}` } })
     // Phase 12: ClubMessage rows are NOT deleted on account erasure — authorId is a plain
     // string column (same pattern as AuditLog.actorId), so the personal link is severed by the
     // User row's own anonymization below while the messages survive for the other club

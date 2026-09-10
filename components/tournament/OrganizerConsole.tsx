@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
+import { HeaderImageUpload } from '@/components/tournament/HeaderImageUpload'
 
 export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean; paidAt: string | null }
 export type ConsoleMatch = {
@@ -56,6 +57,7 @@ export function OrganizerConsole({
   completedAt,
   tournamentJudges,
   entryFeeCent,
+  headerImageId,
 }: {
   tournamentId: string
   participants: ConsoleParticipant[]
@@ -66,6 +68,8 @@ export function OrganizerConsole({
   tournamentJudges: ConsoleJudge[]
   /** Phase 7 — the payment section only renders when the event actually charges an entry fee. */
   entryFeeCent: number
+  /** Phase 11 (item 5) — current header image, if any, for the upload section's preview. */
+  headerImageId: string | null
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -129,6 +133,8 @@ export function OrganizerConsole({
         {completed && <Badge tone="green">Turnier abgeschlossen</Badge>}
       </div>
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
+
+      <HeaderImageUpload tournamentId={tournamentId} headerImageId={headerImageId} />
 
       {!completed && (
         <section aria-labelledby="stage-create-heading" className="space-y-2">

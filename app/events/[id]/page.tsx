@@ -5,6 +5,7 @@
 // check-in status — the day-of check-in table lives in Phase 5's organizer console; check-in
 // itself already works here via PATCH /api/tournaments/[id]/checkin.
 import Link from 'next/link'
+import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -60,6 +61,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         currency: true,
         isRecurring: true,
         createdById: true,
+        headerImageId: true,
         ruleset: { select: { title: true, slug: true } },
         participants: {
           orderBy: { id: 'asc' },
@@ -83,6 +85,14 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+      {tournament.headerImageId && (
+        // Phase 11 (item 5): full-width event header image via the generic media pipeline.
+        // MediaAsset is served at a fixed 1200x400 (EVENT_HEADER_TARGET) — a relatively
+        // positioned container + `fill` avoids passing separate width/height here.
+        <div className="relative h-48 w-full overflow-hidden rounded-xl sm:h-64">
+          <Image src={`/api/media/${tournament.headerImageId}`} alt="" fill sizes="768px" className="object-cover" />
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{tournament.title}</h1>
         {tournament.isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}

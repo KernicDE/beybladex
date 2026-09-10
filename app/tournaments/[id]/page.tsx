@@ -191,6 +191,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
           completedAt={tournament.completedAt?.toISOString() ?? null}
           tournamentJudges={tournamentJudges}
           entryFeeCent={tournament.entryFeeCent}
+          headerImageId={tournament.headerImageId}
         />
       )}
 

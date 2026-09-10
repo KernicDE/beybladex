@@ -19,7 +19,7 @@ export interface PartFormValues {
   beyType: string
   spinDirection: string
   weightGrams: string
-  imageUrl: string
+  imageId: string | null
 }
 
 const EMPTY: PartFormValues = {
@@ -29,7 +29,7 @@ const EMPTY: PartFormValues = {
   beyType: '',
   spinDirection: 'RIGHT',
   weightGrams: '',
-  imageUrl: '',
+  imageId: null,
 }
 
 export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
@@ -37,7 +37,25 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
   const [values, setValues] = useState(initial)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [imagePending, setImagePending] = useState(false)
   const editing = Boolean(initial.id)
+
+  async function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !initial.id) return
+    setImagePending(true)
+    setError(null)
+    const form = new FormData()
+    form.set('image', file)
+    const res = await fetch(`/api/admin/parts/${initial.id}/image`, { method: 'POST', body: form })
+    setImagePending(false)
+    if (res.ok) {
+      router.refresh()
+    } else {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null
+      setError(body?.error ?? `Bild-Upload fehlgeschlagen (${res.status})`)
+    }
+  }
 
   const set = (key: keyof PartFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setValues((v) => ({ ...v, [key]: e.target.value }))
@@ -53,7 +71,6 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
       beyType: values.beyType === '' ? null : values.beyType,
       spinDirection: values.spinDirection,
       weightGrams: values.weightGrams === '' ? null : Number(values.weightGrams),
-      imageUrl: values.imageUrl === '' ? null : values.imageUrl,
     }
     if (editing) payload.id = initial.id
     const res = await fetch('/api/admin/parts', {
@@ -110,9 +127,17 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
           <Input type="number" min="0" step="0.01" value={values.weightGrams} onChange={set('weightGrams')} />
         </FormField>
       </div>
-      <FormField label="Bild-URL (lokal, ab / — optional)">
-        <Input value={values.imageUrl} onChange={set('imageUrl')} placeholder="/parts/dransword-3-60.png" />
-      </FormField>
+      {editing && (
+        <FormField label="Bild (optional)">
+          <div className="flex items-center gap-3">
+            {values.imageId && (
+              // eslint-disable-next-line @next/next/no-img-element -- small admin-only catalog thumbnail
+              <img src={`/api/media/${values.imageId}`} alt="" className="size-16 rounded-md object-cover" />
+            )}
+            <input type="file" accept="image/*" onChange={uploadImage} disabled={imagePending} className="text-sm" />
+          </div>
+        </FormField>
+      )}
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
       <Button type="submit" disabled={busy}>
         {editing ? 'Änderungen speichern' : 'Teil anlegen'}

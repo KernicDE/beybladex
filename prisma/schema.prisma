@@ -71,9 +71,16 @@ enum SpinDirection {
   LEFT
 }
 
-enum PartRequestStatus {
+// Phase 11 — catalog proposals replace PartRequest (free-text) with a structured shape
+// covering a new Part OR a new official Build/Set in one model.
+enum ProposalKind {
+  PART
+  BUILD
+}
+
+enum ProposalStatus {
   PENDING
-  RESOLVED
+  APPROVED
   REJECTED
 }
 
@@ -151,7 +158,12 @@ model User {
   organizedTournaments Tournament[]   @relation("TournamentOrganizer")
   judgedTournaments    TournamentJudge[]
   ratings              Rating[]
-  partRequests         PartRequest[]
+  // Phase 11: submitted catalog proposals die with the account (Cascade);
+  // reviewedById is SetNull so a reviewer's erasure never takes their reviews with them.
+  catalogProposals     CatalogProposal[] @relation("CatalogProposalSubmitter")
+  reviewedProposals    CatalogProposal[] @relation("CatalogProposalReviewer")
+  // No mediaAssets relation here — MediaAsset.uploadedById is a plain String (see that
+  // model's own comment), not a FK, so it never appears as a Prisma relation on User.
   stageStandings       StageStanding[]
 
   // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
@@ -322,6 +334,10 @@ model Tournament {
   // Phase 5 Part C — "Turnier abschließen" from the organizer console; null while running.
   completedAt     DateTime?
 
+  // Phase 11 — event header image via the generic media pipeline (item 0); rendered full-width
+  // on the detail page and as a list-card thumbnail on /events.
+  headerImageId   String?
+  headerImage     MediaAsset?             @relation("TournamentHeaderImage", fields: [headerImageId], references: [id], onDelete: SetNull)
   // Phase 7 — QR-Workflows & Zahlungsverfolgung: organizer-configured count of physical
   // arenas/stadiums at the venue; null = no arena management (matches get no arenaNumber).
   arenaCount      Int?
@@ -418,9 +434,8 @@ model StageStanding {
 }
 
 // Part (Phase 5 Part A, [REVIEW-FIX: backend-security #5, performance P12]) — the curated parts
-// catalog. imageUrl points at a file under /public/parts/ (admin/TRUSTED-curated, a few hundred
-// files; no upload pipeline at this scale) and is always rendered via next/image with explicit
-// sizes/width/height.
+// catalog. Phase 11 replaced the free-text imageUrl column with a real FK to MediaAsset (the
+// generic upload pipeline): one owned asset per image, served by /api/media/[id].
 model Part {
   id            String          @id @default(uuid())
   name          String
@@ -429,7 +444,8 @@ model Part {
   beyType       BeyType?
   spinDirection SpinDirection
   weightGrams   Float?
-  imageUrl      String?
+  imageId       String?
+  image         MediaAsset?     @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
   metadata      Json?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -442,17 +458,24 @@ model Part {
   @@index([category, name])
 }
 
-// PartRequest (Phase 5 Part A) — "request missing part" flow: any logged-in user can ask for a
-// part the catalog doesn't have yet; it lands in an admin/TRUSTED queue.
-model PartRequest {
-  id                String            @id @default(uuid())
-  requestedById     String
-  requestedBy       User              @relation(fields: [requestedById], references: [id], onDelete: Cascade)
-  name              String
-  manufacturerGuess Manufacturer?
-  notes             String?
-  status            PartRequestStatus @default(PENDING)
-  createdAt         DateTime          @default(now())
+// CatalogProposal (Phase 11, replaces PartRequest) — any logged-in user proposes a new Part or
+// official Build/Set; TRUSTED/JUDGE/ORGANIZER/ADMIN review. payload is validated by kind at the
+// route layer (lib/proposalValidation.ts, extending lib/partValidation.ts's pattern), never
+// accepted as opaque JSON. imageAssetId is an optional MediaAsset uploaded with the proposal.
+model CatalogProposal {
+  id            String         @id @default(uuid())
+  kind          ProposalKind
+  submittedById String
+  submittedBy   User           @relation("CatalogProposalSubmitter", fields: [submittedById], references: [id], onDelete: Cascade)
+  payload       Json
+  imageAssetId  String?
+  imageAsset    MediaAsset?    @relation("CatalogProposalImage", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  status        ProposalStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?          @relation("CatalogProposalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewNote    String?
+  createdAt     DateTime       @default(now())
+  reviewedAt    DateTime?
 
   @@index([status, createdAt])
 }
@@ -467,10 +490,22 @@ model Build {
   bit         Part     @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
   type        BeyType  @default(ATTACK)
 
+  // Phase 11 — official Sets: `name` is the retail product name (nullable — a user-created
+  // combo has no single official name); isOfficialSet marks curated retail products (created
+  // via CatalogProposal approval or the curator direct-create path, never by POST /api/builds);
+  // imageId is the Set photo via the media pipeline. Builds stay catalog rows without a user
+  // FK — a user's personal combo is just a non-official Build.
+  name          String?
+  isOfficialSet Boolean @default(false)
+  imageId       String?
+  image         MediaAsset? @relation("BuildImage", fields: [imageId], references: [id], onDelete: SetNull)
+
   ratings     Rating[]
   deckBuilds  DeckBuild[]
   matchesP1   Match[]  @relation("Player1Build")
   matchesP2   Match[]  @relation("Player2Build")
+  // Phase 11 — provenance for collection rows created by "Set als gekauft markieren".
+  sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBuild")
 
   @@index([bladeId])
   @@index([ratchetId])
@@ -563,9 +598,41 @@ model CollectionItem {
   merchant      String?
   boughtAt      DateTime?
 
+  // Phase 11 — provenance only: "this part entry came from buying Set X" (item 6). Not a new
+  // ownership unit — the three rows created by marking a Set purchased stay independently
+  // editable/deletable. SetNull so deleting a catalog Build never blocks collection edits.
+  sourceBuildId String?
+  sourceBuild   Build?    @relation("CollectionItemSourceBuild", fields: [sourceBuildId], references: [id], onDelete: SetNull)
+
   pricePoints   PricePoint[]
 
   @@index([partOrBeyId])
+}
+
+// MediaAsset (Phase 11, item 0) — ONE generic owned-asset model behind every image upload.
+// Files live on the bind-mounted `media_uploads:` volume (container FS is ephemeral under
+// Watchtower redeploys — never the writable layer) and are served by /api/media/[id].
+// filename is the ORIGINAL client filename (provenance); the stored file on disk is always
+// "<id>.webp" after the sharp resize+WebP normalization.
+// MediaAsset.uploadedById is a plain String, NOT a User FK — same reasoning as
+// AuditLog.actorId/ClubMessage.authorId: a real catalog image (a Part/Build/Tournament's
+// picture) must survive its uploader's account being erased under Art. 17 (a stranger
+// deleting their own account must never make an unrelated catalog photo disappear).
+// Erasure severs the reference (see lib/accountErasure.ts) rather than deleting the row.
+model MediaAsset {
+  id           String   @id @default(uuid())
+  filename     String
+  mimeType     String
+  width        Int
+  height       Int
+  sizeBytes    Int
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  parts        Part[]        @relation("PartImage")
+  builds       Build[]       @relation("BuildImage")
+  tournaments  Tournament[]  @relation("TournamentHeaderImage")
+  proposals    CatalogProposal[] @relation("CatalogProposalImage")
 }
 
 // PricePoint (Phase 5 Part B, [REVIEW-FIX: ux-product §3d, spec §5 Phase 5 "Preisverlauf"]) —

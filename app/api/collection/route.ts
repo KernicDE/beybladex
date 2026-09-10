@@ -17,7 +17,7 @@ import { parseCollectionItemBody } from '@/lib/collectionItemBody'
 
 const PAGE_SIZE = 20
 
-const PART_SELECT = { id: true, name: true, category: true, manufacturer: true, imageUrl: true } as const
+const PART_SELECT = { id: true, name: true, category: true, manufacturer: true, imageId: true } as const
 
 type ItemRow = {
   id: string
@@ -25,7 +25,7 @@ type ItemRow = {
   currency: string
   merchant: string | null
   boughtAt: Date | null
-  part: { id: string; name: string; category: string; manufacturer: string; imageUrl: string | null }
+  part: { id: string; name: string; category: string; manufacturer: string; imageId: string | null }
 }
 
 function itemJson(i: ItemRow) {

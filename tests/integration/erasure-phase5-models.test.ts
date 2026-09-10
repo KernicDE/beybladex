@@ -1,7 +1,7 @@
 // tests/integration/erasure-phase5-models.test.ts
 // Phase 5 Part A, Cross-Phase Regression Guard (privacy-dsgvo #3): the account-erasure matrix
 // handles the models this phase made User-owned — CollectionItem (now FK'd to Part), Deck /
-// DeckBuild, Rating (new userId), PartRequest, and TournamentParticipant (kept, link severed
+// DeckBuild, Rating (new userId), CatalogProposal, and TournamentParticipant (kept, link severed
 // by anonymization — Art. 17(3)). CI-only (Postgres/Redis).
 import { describe, it, expect, afterEach } from 'vitest'
 import { eraseOrAnonymizeUser } from '@/lib/accountErasure'
@@ -28,7 +28,7 @@ afterEach(async () => {
   await prisma.tournamentParticipant.deleteMany({ where: { id: { in: ids.participants } } })
   await prisma.collectionItem.deleteMany({ where: { id: { in: ids.collectionItems } } })
   await prisma.rating.deleteMany({ where: { id: { in: ids.ratings } } })
-  await prisma.partRequest.deleteMany({ where: { id: { in: ids.requests } } })
+  await prisma.catalogProposal.deleteMany({ where: { id: { in: ids.requests } } })
   for (const id of ids.tournaments) await prisma.tournament.delete({ where: { id } }).catch(() => {})
   for (const id of ids.rulesets) await prisma.ruleset.delete({ where: { id } }).catch(() => {})
   for (const deckId of ids.decks) {
@@ -43,7 +43,7 @@ afterEach(async () => {
 })
 
 describe('account erasure — Phase 5 models', () => {
-  it('erases CollectionItem/Deck/DeckBuild/Rating/PartRequest and keeps the TournamentParticipant link anonymized', async () => {
+  it('erases CollectionItem/Deck/DeckBuild/Rating/CatalogProposal and keeps the TournamentParticipant link anonymized', async () => {
     const suffix = Date.now().toString(36)
     const user = await prisma.user.create({ data: { username: `er_user_${suffix}`, passwordHash: 'x' } })
     const opponent = await prisma.user.create({ data: { username: `er_opp_${suffix}`, passwordHash: 'x' } })
@@ -59,7 +59,7 @@ describe('account erasure — Phase 5 models', () => {
     await prisma.deckBuild.create({ data: { deckId: deck.id, buildId: build.id, position: 1 } })
     const rating = await prisma.rating.create({ data: { buildId: build.id, userId: user.id, stars: 4, comment: 'gut' } })
     ids.ratings.push(rating.id)
-    const request = await prisma.partRequest.create({ data: { requestedById: user.id, name: `Wunschteil ${suffix}` } })
+    const request = await prisma.catalogProposal.create({ data: { kind: 'PART', submittedById: user.id, payload: { name: `Wunschteil ${suffix}` } } })
     ids.requests.push(request.id)
 
     // Art. 17(3) data: a tournament participant row must SURVIVE, stripped of PII by the
@@ -85,7 +85,7 @@ describe('account erasure — Phase 5 models', () => {
     expect(await prisma.deck.findUnique({ where: { id: deck.id } })).toBeNull()
     expect(await prisma.deckBuild.findMany({ where: { deckId: deck.id } })).toEqual([])
     expect(await prisma.rating.findUnique({ where: { id: rating.id } })).toBeNull()
-    expect(await prisma.partRequest.findUnique({ where: { id: request.id } })).toBeNull()
+    expect(await prisma.catalogProposal.findUnique({ where: { id: request.id } })).toBeNull()
 
     // Legitimate-interest rows: survive, personal link severed (the User row is anonymized in place).
     const kept = await prisma.tournamentParticipant.findUnique({ where: { id: participant.id } })

@@ -15,7 +15,7 @@ import { getPartStats } from '@/lib/metaCache'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
-import { PartRequestCTA } from '@/components/beyblade/PartRequestCTA'
+import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 
 const SECTIONS = [
   { id: 'events', title: 'Events' },
@@ -105,8 +105,8 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
             {partResults!.parts.map((part) => (
               <li key={part.id}>
                 <Link href={`/builds?q=${encodeURIComponent(part.name)}`} className="flex items-center gap-3 px-4 py-3 hover:bg-current/5">
-                  {part.imageUrl ? (
-                    <Image src={part.imageUrl} alt="" width={40} height={40} sizes="40px" className="h-10 w-10 rounded object-contain" />
+                  {part.imageId ? (
+                    <Image src={`/api/media/${part.imageId}`} alt="" width={40} height={40} sizes="40px" className="h-10 w-10 rounded object-contain" />
                   ) : (
                     <span aria-hidden="true" className="h-10 w-10 rounded bg-x-cyan/10" />
                   )}
@@ -122,7 +122,7 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
           </ul>
         )}
         {query && partResults!.parts.length === 0 && (
-          <PartRequestCTA defaultName={query} loggedIn={viewerId !== null} />
+          <CatalogProposalCTA defaultKind="PART" defaultName={query} loggedIn={viewerId !== null} />
         )}
       </section>
       {SECTIONS.map(({ id, title }) => (

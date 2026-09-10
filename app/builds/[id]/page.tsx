@@ -91,9 +91,9 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           {parts.map(({ label, part }) => (
             <li key={part.id}>
               <Card className="h-full p-4 text-center">
-                {part.imageUrl ? (
+                {part.imageId ? (
                   <Image
-                    src={part.imageUrl}
+                    src={`/api/media/${part.imageId}`}
                     alt={part.name}
                     width={96}
                     height={96}
