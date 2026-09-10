@@ -30,7 +30,7 @@
 // are created, lib/arenaAssign.ts's assignArenasAtGeneration hands out arenaNumber 1..arenaCount
 // per round group. If the body omits arenaCount, the tournament's stored value is used, so a
 // stage created via POST .../stages with arenaCount keeps it without repeating it here.
-import { auth } from '@/lib/auth'
+import { requireUser, getCallerRole } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { assignArenasAtGeneration, parseArenaCount } from '@/lib/arenaAssign'
@@ -56,12 +56,13 @@ import type { Prisma } from '@prisma/client'
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
 
 export async function POST(req: Request, { params }: Ctx) {
-  const session = await auth()
-  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if ('error' in gate) return gate.error
+  const userId = gate.userId
   // [REVIEW-FIX: backend-security #37] THE expensive one: transactional bracket generation.
   // A bracket is generated once per stage — 15/min/user cannot hinder any real workflow but
   // caps how hard a compromised organizer session can hammer the DB.
-  const { allowed } = await rateLimit(`tournament:generate:${session.user.id}`, 15, 60)
+  const { allowed } = await rateLimit(`tournament:generate:${userId}`, 15, 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id, stageId } = await params
 
@@ -80,8 +81,8 @@ export async function POST(req: Request, { params }: Ctx) {
     },
   })
   if (!stage || stage.tournamentId !== id) return Response.json({ error: 'not_found' }, { status: 404 })
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (stage.tournament.createdById !== session.user.id && caller?.role !== 'ADMIN') {
+  const callerRole = await getCallerRole(userId)
+  if (stage.tournament.createdById !== userId && callerRole !== 'ADMIN') {
     return Response.json({ error: 'forbidden' }, { status: 403 })
   }
   if (stage.status === 'COMPLETED') return Response.json({ error: 'stage_completed' }, { status: 409 })

@@ -6,7 +6,7 @@
 // leaves the OLD MediaAsset row/file orphaned (acceptable — no other row references it once
 // Part.imageId is repointed; a future cleanup pass could sweep unreferenced assets, out of
 // scope here) rather than risk deleting a file another in-flight request still reads.
-import { auth } from '@/lib/auth'
+import { requireRole } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { PART_IMAGE_TARGET, processAndStoreImage } from '@/lib/media'
@@ -14,13 +14,10 @@ import { PART_IMAGE_TARGET, processAndStoreImage } from '@/lib/media'
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function POST(req: Request, { params }: Ctx): Promise<Response> {
-  const session = await auth()
-  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (caller?.role !== 'TRUSTED' && caller?.role !== 'ADMIN') {
-    return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
-  const { allowed } = await rateLimit(`parts:image:${session.user.id}`, 30, 60 * 60)
+  // Deliberately narrower than the proposal-reviewer tier until issue #42 lands: TRUSTED/ADMIN.
+  const gate = await requireRole('TRUSTED', 'ADMIN')
+  if ('error' in gate) return gate.error
+  const { allowed } = await rateLimit(`parts:image:${gate.userId}`, 30, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const { id } = await params
@@ -40,7 +37,7 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
 
   let assetId: string
   try {
-    const asset = await processAndStoreImage(file, PART_IMAGE_TARGET, session.user.id)
+    const asset = await processAndStoreImage(file, PART_IMAGE_TARGET, gate.userId)
     assetId = asset.id
   } catch (err) {
     const token = err instanceof Error && err.message === 'invalid_file_type' ? 'invalid_image_type' : 'invalid_image'

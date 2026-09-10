@@ -3,22 +3,10 @@
 // ADMIN role only — 401 unauthenticated, 403 for GUEST/USER/JUDGE/ORGANIZER (negative test in
 // tests/integration/parts-admin.test.ts). POST creates a Part, PATCH edits one; every
 // successful mutation writes an append-only AuditLog row (Phase 4 model). Rate-limited per user.
-import { auth } from '@/lib/auth'
+import { requireRole } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parsePartInput } from '@/lib/partValidation'
-
-type CuratorGate = { error: Response } | { actorId: string }
-
-async function requireCurator(): Promise<CuratorGate> {
-  const session = await auth()
-  if (!session?.user?.id) return { error: Response.json({ error: 'unauthorized' }, { status: 401 }) }
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (caller?.role !== 'TRUSTED' && caller?.role !== 'ADMIN') {
-    return { error: Response.json({ error: 'forbidden' }, { status: 403 }) }
-  }
-  return { actorId: session.user.id }
-}
 
 async function readJson(req: Request): Promise<unknown | { error: Response }> {
   try {
@@ -29,9 +17,10 @@ async function readJson(req: Request): Promise<unknown | { error: Response }> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const gate = await requireCurator()
+  // Deliberately narrower than the proposal-reviewer tier until issue #42 lands: TRUSTED/ADMIN.
+  const gate = await requireRole('TRUSTED', 'ADMIN')
   if ('error' in gate) return gate.error
-  const { allowed } = await rateLimit(`parts:create:${gate.actorId}`, 60, 60 * 60)
+  const { allowed } = await rateLimit(`parts:create:${gate.userId}`, 60, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const body = await readJson(req)
@@ -43,7 +32,7 @@ export async function POST(req: Request): Promise<Response> {
     const created = await tx.part.create({ data: data as import('@prisma/client').Prisma.PartCreateInput })
     await tx.auditLog.create({
       data: {
-        actorId: gate.actorId,
+        actorId: gate.userId,
         action: 'part.create',
         targetType: 'part',
         targetId: created.id,
@@ -56,9 +45,10 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function PATCH(req: Request): Promise<Response> {
-  const gate = await requireCurator()
+  // Deliberately narrower than the proposal-reviewer tier until issue #42 lands: TRUSTED/ADMIN.
+  const gate = await requireRole('TRUSTED', 'ADMIN')
   if ('error' in gate) return gate.error
-  const { allowed } = await rateLimit(`parts:update:${gate.actorId}`, 120, 60 * 60)
+  const { allowed } = await rateLimit(`parts:update:${gate.userId}`, 120, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   const body = await readJson(req)
@@ -77,7 +67,7 @@ export async function PATCH(req: Request): Promise<Response> {
     const updated = await tx.part.update({ where: { id }, data: data as import('@prisma/client').Prisma.PartUpdateInput })
     await tx.auditLog.create({
       data: {
-        actorId: gate.actorId,
+        actorId: gate.userId,
         action: 'part.update',
         targetType: 'part',
         targetId: updated.id,

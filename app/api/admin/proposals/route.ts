@@ -16,11 +16,10 @@
 //   (WHERE id AND status='PENDING') inside the settle transaction, modeled on
 //   tournaments/[id]/start — two simultaneous approvals can no longer both create a Part/Build
 //   row; the loser of the race gets 409 already_reviewed.
-import { auth } from '@/lib/auth'
+import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { notifyUser } from '@/lib/notify'
-import { isCurator } from '@/lib/roles'
 import { PROPOSAL_SLOT_CATEGORIES, type BuildProposalPayload, type InlinePartPayload } from '@/lib/proposalValidation'
 import type { Manufacturer, PartCategory, BeyType, SpinDirection } from '@prisma/client'
 
@@ -34,18 +33,6 @@ class ComboExistsError extends Error {
   constructor(readonly buildId: string) {
     super('combo_exists')
   }
-}
-
-type CuratorGate = { error: Response } | { actorId: string }
-
-async function requireCurator(): Promise<CuratorGate> {
-  const session = await auth()
-  if (!session?.user?.id) return { error: Response.json({ error: 'unauthorized' }, { status: 401 }) }
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (!isCurator(caller?.role)) {
-    return { error: Response.json({ error: 'forbidden' }, { status: 403 }) }
-  }
-  return { actorId: session.user.id }
 }
 
 interface InlinePartCreate {
@@ -97,7 +84,7 @@ export async function GET(): Promise<Response> {
 export async function PATCH(req: Request): Promise<Response> {
   const gate = await requireCurator()
   if ('error' in gate) return gate.error
-  const { allowed } = await rateLimit(`proposals:review:${gate.actorId}`, 120, 60 * 60)
+  const { allowed } = await rateLimit(`proposals:review:${gate.userId}`, 120, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 
   let body: unknown
@@ -124,12 +111,12 @@ export async function PATCH(req: Request): Promise<Response> {
       await prisma.$transaction(async (tx) => {
         const { count } = await tx.catalogProposal.updateMany({
           where: { id, status: 'PENDING' },
-          data: { status: 'REJECTED', reviewNote, reviewedById: gate.actorId, reviewedAt: new Date() },
+          data: { status: 'REJECTED', reviewNote, reviewedById: gate.userId, reviewedAt: new Date() },
         })
         if (count === 0) throw new Error('ALREADY_REVIEWED_RACE')
         await tx.auditLog.create({
           data: {
-            actorId: gate.actorId,
+            actorId: gate.userId,
             action: 'catalog_proposal.reject',
             targetType: 'catalog_proposal',
             targetId: id,
@@ -162,7 +149,7 @@ export async function PATCH(req: Request): Promise<Response> {
     const result = await prisma.$transaction(async (tx) => {
       const claimed = await tx.catalogProposal.updateMany({
         where: { id, status: 'PENDING' },
-        data: { status: 'APPROVED', reviewNote, reviewedById: gate.actorId, reviewedAt: new Date() },
+        data: { status: 'APPROVED', reviewNote, reviewedById: gate.userId, reviewedAt: new Date() },
       })
       if (claimed.count === 0) throw new Error('ALREADY_REVIEWED_RACE')
 
@@ -223,7 +210,7 @@ export async function PATCH(req: Request): Promise<Response> {
 
       await tx.auditLog.create({
         data: {
-          actorId: gate.actorId,
+          actorId: gate.userId,
           action: 'catalog_proposal.approve',
           targetType: proposal.kind === 'PART' ? 'part' : 'build',
           targetId: createdPartId ?? createdBuildId!,
