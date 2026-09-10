@@ -61,6 +61,8 @@ export interface TournamentFormValues {
   currency: string
   isRecurring: boolean
   recurringDays: string
+  // Phase 14 — opts a casual/friendly/test event out of Elo impact; defaults to ranked (true).
+  rankedEligible: boolean
   rulesetId: string
   clubId: string
 }
@@ -83,6 +85,7 @@ export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
   currency: 'EUR',
   isRecurring: false,
   recurringDays: '',
+  rankedEligible: true,
   rulesetId: '',
   clubId: '',
 }
@@ -287,6 +290,7 @@ export function TournamentForm({
       currency: values.currency,
       isRecurring: values.isRecurring,
       recurringDays: values.recurringDays === '' ? null : Number(values.recurringDays),
+      rankedEligible: values.rankedEligible,
       rulesetId: values.rulesetId,
       clubId: values.clubId || null,
     }
@@ -476,6 +480,22 @@ export function TournamentForm({
           </Select>
         </FormField>
       )}
+
+      <div className="flex items-start gap-3">
+        <input
+          id="tournament-rankedEligible"
+          type="checkbox"
+          checked={values.rankedEligible}
+          onChange={(e) => setValues((v) => ({ ...v, rankedEligible: e.target.checked }))}
+          className="mt-0.5 size-4 shrink-0 accent-x-cyan"
+        />
+        <label htmlFor="tournament-rankedEligible" className="text-sm">
+          Gewertet (Elo-Rangliste)
+          <span className="block text-xs text-current/60">
+            Abgeschlossene Matches dieses Turniers fließen in die Elo-Rangliste der Teilnehmer:innen ein. Für lockere/Test-Events deaktivieren.
+          </span>
+        </label>
+      </div>
 
       <div className="flex items-start gap-3">
         <input

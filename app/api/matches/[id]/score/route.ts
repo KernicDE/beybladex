@@ -38,6 +38,7 @@ import { markMetaDirty } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
 import { assignFreedArena } from '@/lib/arenaAssign'
 import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
+import { getActiveSeason, applyMatchResultToRatings } from '@/lib/season'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -297,6 +298,19 @@ export async function POST(req: Request, { params }: Ctx) {
     // Phase 7 — the match just freed its arena: hand the number to the next waiting match in
     // this stage (lib/arenaAssign.ts). No-op when arena management is off (arenaNumber null).
     await assignFreedArena(updated)
+
+    // Phase 14 — Elo update. Gated on the tournament's own rankedEligible flag AND an ACTIVE
+    // season existing (a fresh install with no season created yet must not throw — ratings
+    // simply don't accrue until an admin creates one). Idempotency is inherited from the
+    // early-return replay/409-conflict checks above: this block only runs once per real
+    // COMPLETED transition, never on a replayed clientEventId.
+    if (match.tournament.rankedEligible && match.player1Id && match.player2Id) {
+      const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
+      const activeSeason = await getActiveSeason(prisma)
+      if (activeSeason) {
+        await applyMatchResultToRatings(prisma, activeSeason.id, winnerId, loserId)
+      }
+    }
   }
 
   return Response.json({

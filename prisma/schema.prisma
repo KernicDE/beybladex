@@ -113,49 +113,49 @@ enum BracketSide {
 }
 
 model User {
-  id                   String         @id @default(uuid())
-  username             String         @unique
-  passwordHash         String?
-  email                String?
-  role                 Role           @default(USER)
+  id           String  @id @default(uuid())
+  username     String  @unique
+  passwordHash String?
+  email        String?
+  role         Role    @default(USER)
 
-  displayName          String?
-  birthDate            DateTime?
-  country              Country        @default(DE)
-  state                String?
-  postalCode           String?
-  city                 String?
-  latitude             Float?
-  longitude            Float?
-  discordTag           String?
-  bio                  String?
+  displayName String?
+  birthDate   DateTime?
+  country     Country   @default(DE)
+  state       String?
+  postalCode  String?
+  city        String?
+  latitude    Float?
+  longitude   Float?
+  discordTag  String?
+  bio         String?
 
-  profileVisibility    PrivacyLevel   @default(PUBLIC)
-  locationVisibility   PrivacyLevel   @default(FRIENDS_ONLY) // was PUBLIC — Art. 25 privacy-by-default
-  collectionVisibility PrivacyLevel   @default(PUBLIC)
-  decksVisibility      PrivacyLevel   @default(PUBLIC)
-  ageVisibility        PrivacyLevel   @default(PRIVATE) // spec §2.D: "Alter" is privacy-controlled
+  profileVisibility    PrivacyLevel @default(PUBLIC)
+  locationVisibility   PrivacyLevel @default(FRIENDS_ONLY) // was PUBLIC — Art. 25 privacy-by-default
+  collectionVisibility PrivacyLevel @default(PUBLIC)
+  decksVisibility      PrivacyLevel @default(PUBLIC)
+  ageVisibility        PrivacyLevel @default(PRIVATE) // spec §2.D: "Alter" is privacy-controlled
 
-  notifyRadiusKm       Int?           @default(50)
-  notifyRecurring      Boolean        @default(false) // was true — opt-in, not opt-out
-  notifyEmail          Boolean        @default(false)
+  notifyRadiusKm  Int?    @default(50)
+  notifyRecurring Boolean @default(false) // was true — opt-in, not opt-out
+  notifyEmail     Boolean @default(false)
 
-  totpSecret           String?
-  passkeys             Passkey[]
+  totpSecret String?
+  passkeys   Passkey[]
 
-  collection           CollectionItem[]
-  decks                Deck[]
-  tournaments          TournamentParticipant[]
-  judgedMatches        Match[]        @relation("JudgeMatches")
-  createdRules         Ruleset[]
-  notifications        Notification[]
+  collection    CollectionItem[]
+  decks         Deck[]
+  tournaments   TournamentParticipant[]
+  judgedMatches Match[]                 @relation("JudgeMatches")
+  createdRules  Ruleset[]
+  notifications Notification[]
 
   sentFriendRequests     Friendship[] @relation("SentFriends")
   receivedFriendRequests Friendship[] @relation("ReceivedFriends")
 
-  ownedClubs           Club[]         @relation("ClubOwner")
+  ownedClubs           Club[]            @relation("ClubOwner")
   clubMemberships      ClubMember[]
-  organizedTournaments Tournament[]   @relation("TournamentOrganizer")
+  organizedTournaments Tournament[]      @relation("TournamentOrganizer")
   judgedTournaments    TournamentJudge[]
   ratings              Rating[]
   // Phase 11: submitted catalog proposals die with the account (Cascade);
@@ -165,23 +165,29 @@ model User {
   // No mediaAssets relation here — MediaAsset.uploadedById is a plain String (see that
   // model's own comment), not a FK, so it never appears as a Prisma relation on User.
   stageStandings       StageStanding[]
+  // Phase 14 — real FK (not a plain String like AuditLog.actorId/MediaAsset.uploadedById):
+  // account erasure ANONYMIZES the User row in place (lib/accountErasure.ts), it never hard-
+  // deletes it, so this FK never actually cascades in practice — kept as a real relation
+  // purely so the leaderboard/profile queries can `include: { user: true }` directly instead
+  // of a manual join. Documented per the plan's own note to decide this at implementation time.
+  playerRatings        PlayerRating[]
 
   // Additive fields, none in spec §3 — required for GDPR Art. 8 (minors) and Art. 7 (consent evidence):
-  isMinor                 Boolean        @default(true) // computed at registration from birthDate; safe-by-default
+  isMinor                 Boolean       @default(true) // computed at registration from birthDate; safe-by-default
   parentalConsentEmail    String?
   parentalConsentAt       DateTime?
   privacyPolicyAcceptedAt DateTime?
   privacyPolicyVersion    String?
-  status                  AccountStatus  @default(ACTIVE) // minors start PENDING_PARENTAL_CONSENT (Task 5)
+  status                  AccountStatus @default(ACTIVE) // minors start PENDING_PARENTAL_CONSENT (Task 5)
 
-  createdAt            DateTime       @default(now())
+  createdAt DateTime @default(now())
 }
 
 model Passkey {
-  id           String   @id @default(uuid())
+  id           String @id @default(uuid())
   userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialId String   @unique
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String @unique
   publicKey    String
   counter      Int
 }
@@ -246,14 +252,14 @@ model Club {
 }
 
 model ClubMember {
-  id        String           @id @default(uuid())
-  clubId    String
-  club      Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  isAdmin   Boolean          @default(false)
-  status    ClubMemberStatus @default(ACTIVE) // Phase 13 — see the enum's audit note
-  joinedAt  DateTime         @default(now())
+  id       String           @id @default(uuid())
+  clubId   String
+  club     Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAdmin  Boolean          @default(false)
+  status   ClubMemberStatus @default(ACTIVE) // Phase 13 — see the enum's audit note
+  joinedAt DateTime         @default(now())
 
   @@unique([clubId, userId])
 }
@@ -268,88 +274,130 @@ model ClubMessage {
   clubId    String
   club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
   authorId  String
-  body      String   // bio-convention free-text cap (500), enforced in the route
+  body      String // bio-convention free-text cap (500), enforced in the route
   createdAt DateTime @default(now())
 
   @@index([clubId, createdAt])
 }
 
 model Ruleset {
-  id                  String       @id @default(uuid())
-  title               String
-  slug                String       @unique
-  description         String?
-  isPublic            Boolean      @default(true)
-  createdById         String
-  createdBy           User         @relation(fields: [createdById], references: [id])
+  id          String  @id @default(uuid())
+  title       String
+  slug        String  @unique
+  description String?
+  isPublic    Boolean @default(true)
+  createdById String
+  createdBy   User    @relation(fields: [createdById], references: [id])
 
-  deckFormat          DeckFormat   @default(WBO_COUNTERDECK)
-  targetPoints        Int          @default(4)
-  finalsTargetPoints  Int          @default(7)
-  lockedDecks         Boolean      @default(true)
-  allowForceSwitch    Boolean      @default(true)
-  arenaTurnAllowed    Boolean      @default(true)
-  outOfBounds2Pts     Boolean      @default(true)
-  ownFinishPenalty    Boolean      @default(true)
-  relaunchLimit       Int          @default(1)
-  aerialContactRerun  Boolean      @default(true)
+  deckFormat               DeckFormat @default(WBO_COUNTERDECK)
+  targetPoints             Int        @default(4)
+  finalsTargetPoints       Int        @default(7)
+  lockedDecks              Boolean    @default(true)
+  allowForceSwitch         Boolean    @default(true)
+  arenaTurnAllowed         Boolean    @default(true)
+  outOfBounds2Pts          Boolean    @default(true)
+  ownFinishPenalty         Boolean    @default(true)
+  relaunchLimit            Int        @default(1)
+  aerialContactRerun       Boolean    @default(true)
   // [Phase 2, REVIEW-FIX: ux-product §5] spec §2.B lists "äußere Störungen" (external
   // disturbance → rematch) as a special rule but spec §3's schema never gave it a column —
   // additive gap-closer, per Global Constraints.
-  externalDisturbanceRerun Boolean @default(true)
+  externalDisturbanceRerun Boolean    @default(true)
 
-  tournaments         Tournament[]
+  tournaments Tournament[]
 }
 
 model Tournament {
-  id              String                  @id @default(uuid())
-  title           String
-  description     String
-  startDate       DateTime
-  endDate         DateTime?
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  startDate   DateTime
+  endDate     DateTime?
 
-  locationName    String
-  street          String?
-  postalCode      String
-  city            String
-  state           String
-  country         Country                 @default(DE)
-  latitude        Float
-  longitude       Float
+  locationName String
+  street       String?
+  postalCode   String
+  city         String
+  state        String
+  country      Country @default(DE)
+  latitude     Float
+  longitude    Float
 
-  entryFeeCent    Int                     @default(0)
-  currency        String                  @default("EUR")
-  isRecurring     Boolean                 @default(false)
-  recurringDays   Int?
+  entryFeeCent  Int     @default(0)
+  currency      String  @default("EUR")
+  isRecurring   Boolean @default(false)
+  recurringDays Int?
 
-  rulesetId       String
-  ruleset         Ruleset                 @relation(fields: [rulesetId], references: [id])
+  rulesetId String
+  ruleset   Ruleset @relation(fields: [rulesetId], references: [id])
 
-  clubId          String?
-  club            Club?                   @relation(fields: [clubId], references: [id])
+  clubId String?
+  club   Club?   @relation(fields: [clubId], references: [id])
 
-  createdById     String
-  createdBy       User                    @relation("TournamentOrganizer", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User   @relation("TournamentOrganizer", fields: [createdById], references: [id])
 
   // Phase 5 Part C — "Turnier abschließen" from the organizer console; null while running.
-  completedAt     DateTime?
+  completedAt DateTime?
 
   // Phase 11 — event header image via the generic media pipeline (item 0); rendered full-width
   // on the detail page and as a list-card thumbnail on /events.
-  headerImageId   String?
-  headerImage     MediaAsset?             @relation("TournamentHeaderImage", fields: [headerImageId], references: [id], onDelete: SetNull)
+  headerImageId String?
+  headerImage   MediaAsset? @relation("TournamentHeaderImage", fields: [headerImageId], references: [id], onDelete: SetNull)
   // Phase 7 — QR-Workflows & Zahlungsverfolgung: organizer-configured count of physical
   // arenas/stadiums at the venue; null = no arena management (matches get no arenaNumber).
-  arenaCount      Int?
+  arenaCount    Int?
   // Phase 7 — server-issued, event-scoped token for the QR self-service check-in. The bare
   // tournament id must never be accepted as a check-in credential, hence a per-event uuid.
-  checkInToken    String                  @unique @default(uuid())
+  checkInToken  String      @unique @default(uuid())
 
-  participants    TournamentParticipant[]
-  matches         Match[]
-  judges          TournamentJudge[]
+  // Phase 14 — an organizer can opt a casual/friendly/test event out of Elo impact. Defaults
+  // to true (ranked) so every ALREADY-RUN tournament starts counting once this phase ships —
+  // they were run as real competitive events, so that's the correct default, not a silent
+  // retroactive change of intent (see the plan's own note).
+  rankedEligible Boolean @default(true)
+
+  participants TournamentParticipant[]
+  matches      Match[]
+  judges       TournamentJudge[]
   // Phase 5 Part C2 — the tournament's ordered stages (each with its own format/bracket).
-  stages          TournamentStage[]
+  stages       TournamentStage[]
+}
+
+// Phase 14 — Ranked Ladder & Elo Rating System. One Season is ACTIVE at a time (enforced in
+// app/api/admin/seasons/route.ts, not at the DB level — a DB-level partial unique index on a
+// boolean-ish status would work in raw Postgres but Prisma has no portable way to express it
+// declaratively without a raw migration; the admin-only creation route is the sole write path
+// so app-level enforcement is sufficient here).
+enum SeasonStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model Season {
+  id       String         @id @default(uuid())
+  name     String // organizer-facing label, e.g. "Season 1 – Frühjahr 2026"
+  startsAt DateTime
+  endsAt   DateTime
+  status   SeasonStatus   @default(ACTIVE)
+  ratings  PlayerRating[]
+
+  @@index([status])
+}
+
+model PlayerRating {
+  id          String   @id @default(uuid())
+  seasonId    String
+  season      Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  elo         Int      @default(1000)
+  peakElo     Int      @default(1000)
+  gamesPlayed Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([seasonId, userId])
+  @@index([seasonId, elo])
 }
 
 model TournamentParticipant {
@@ -389,25 +437,25 @@ model TournamentJudge {
 // tournament (e.g. "Vorrunde" SWISS → "Playoffs" DOUBLE_ELIMINATION). Every Match belongs to
 // exactly one stage; a stage's round numbering restarts at 1.
 model TournamentStage {
-  id              String            @id @default(uuid())
-  tournamentId    String
-  tournament      Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  order           Int               // 1-based sequence within the tournament
-  name            String            // organizer-facing label, e.g. "Vorrunde", "Playoffs"
-  format          TournamentFormat
-  status          StageStatus       @default(PENDING)
-  swissRounds     Int?              // SWISS only: total planned rounds, set at stage creation
-  swissRoundsDone Int               @default(0)
+  id                String           @id @default(uuid())
+  tournamentId      String
+  tournament        Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  order             Int // 1-based sequence within the tournament
+  name              String // organizer-facing label, e.g. "Vorrunde", "Playoffs"
+  format            TournamentFormat
+  status            StageStatus      @default(PENDING)
+  swissRounds       Int? // SWISS only: total planned rounds, set at stage creation
+  swissRoundsDone   Int              @default(0)
   // Phase 5 Part C3 — ROUND_ROBIN only: how many times each pair meets (1, 2, or 3; null/omitted
   // defaults to 1 at the route layer, no DB default so the organizer's actual choice is recorded).
   roundRobinRepeats Int?
-  qualifyCount    Int?              // how many top participants advance to the NEXT stage; null on the last stage
+  qualifyCount      Int? // how many top participants advance to the NEXT stage; null on the last stage
   // Populated by the stage-complete route: the previous stage's top `qualifyCount` userIds, read
   // by the generate route as this stage's participant pool (NOT a new join model, per plan).
-  qualifiedUserIds String[]         @default([])
+  qualifiedUserIds  String[]         @default([])
 
-  matches         Match[]
-  standings       StageStanding[]
+  matches   Match[]
+  standings StageStanding[]
 
   @@unique([tournamentId, order])
 }
@@ -422,8 +470,8 @@ model StageStanding {
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   wins        Int             @default(0)
   losses      Int             @default(0)
-  buchholz    Float           @default(0)   // tiebreak: sum of opponents' win counts at time of pairing
-  opponentIds String[]        @default([])  // played-against history — Swiss pairing must not repeat a pairing
+  buchholz    Float           @default(0) // tiebreak: sum of opponents' win counts at time of pairing
+  opponentIds String[]        @default([]) // played-against history — Swiss pairing must not repeat a pairing
   // Swiss only: how many byes this player has received in this stage — a player never gets two
   // byes in one stage. (Additive column beyond the plan's literal StageStanding sketch; the plan
   // REQUIRES bye tracking but its sketch has no field for it — documented deviation.)
@@ -437,7 +485,7 @@ model StageStanding {
 // catalog. Phase 11 replaced the free-text imageUrl column with a real FK to MediaAsset (the
 // generic upload pipeline): one owned asset per image, served by /api/media/[id].
 model Part {
-  id            String          @id @default(uuid())
+  id            String        @id @default(uuid())
   name          String
   manufacturer  Manufacturer
   category      PartCategory
@@ -445,14 +493,14 @@ model Part {
   spinDirection SpinDirection
   weightGrams   Float?
   imageId       String?
-  image         MediaAsset?     @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
+  image         MediaAsset?   @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
   metadata      Json?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  buildsBlade   Build[]         @relation("BuildBlade")
-  buildsRatchet Build[]         @relation("BuildRatchet")
-  buildsBit     Build[]         @relation("BuildBit")
+  buildsBlade     Build[]          @relation("BuildBlade")
+  buildsRatchet   Build[]          @relation("BuildRatchet")
+  buildsBit       Build[]          @relation("BuildBit")
   collectionItems CollectionItem[]
 
   @@index([category, name])
@@ -481,14 +529,14 @@ model CatalogProposal {
 }
 
 model Build {
-  id          String   @id @default(uuid())
-  bladeId     String
-  blade       Part     @relation("BuildBlade", fields: [bladeId], references: [id], onDelete: Restrict)
-  ratchetId   String
-  ratchet     Part     @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
-  bitId       String
-  bit         Part     @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
-  type        BeyType  @default(ATTACK)
+  id        String  @id @default(uuid())
+  bladeId   String
+  blade     Part    @relation("BuildBlade", fields: [bladeId], references: [id], onDelete: Restrict)
+  ratchetId String
+  ratchet   Part    @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
+  bitId     String
+  bit       Part    @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
+  type      BeyType @default(ATTACK)
 
   // Phase 11 — official Sets: `name` is the retail product name (nullable — a user-created
   // combo has no single official name); isOfficialSet marks curated retail products (created
@@ -496,14 +544,14 @@ model Build {
   // imageId is the Set photo via the media pipeline. Builds stay catalog rows without a user
   // FK — a user's personal combo is just a non-official Build.
   name          String?
-  isOfficialSet Boolean @default(false)
+  isOfficialSet Boolean     @default(false)
   imageId       String?
   image         MediaAsset? @relation("BuildImage", fields: [imageId], references: [id], onDelete: SetNull)
 
-  ratings     Rating[]
-  deckBuilds  DeckBuild[]
-  matchesP1   Match[]  @relation("Player1Build")
-  matchesP2   Match[]  @relation("Player2Build")
+  ratings                Rating[]
+  deckBuilds             DeckBuild[]
+  matchesP1              Match[]          @relation("Player1Build")
+  matchesP2              Match[]          @relation("Player2Build")
   // Phase 11 — provenance for collection rows created by "Set als gekauft markieren".
   sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBuild")
 
@@ -536,17 +584,17 @@ model DeckBuild {
 }
 
 model Match {
-  id             String      @id @default(uuid())
-  tournamentId   String
-  tournament     Tournament  @relation(fields: [tournamentId], references: [id])
+  id           String          @id @default(uuid())
+  tournamentId String
+  tournament   Tournament      @relation(fields: [tournamentId], references: [id])
   // Phase 5 Part C2 — every match belongs to exactly one stage (required FK; no production rows
   // predate stages per the plan's backward-compat note). tournamentId is deliberately KEPT as a
   // denormalized second FK so all Part C authz/scoring call sites keep reading match.tournament.*
   // directly instead of a stage→tournament two-hop. Stage deletion cascades to its matches.
-  stageId        String
-  stage          TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  judgeId        String?
-  judge          User?       @relation("JudgeMatches", fields: [judgeId], references: [id])
+  stageId      String
+  stage        TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  judgeId      String?
+  judge        User?           @relation("JudgeMatches", fields: [judgeId], references: [id])
 
   // Phase 5 Part C — nullable (documented additive deviation from spec §3's required form):
   // empty future-round bracket slots are persisted at generation time and filled when the
@@ -554,30 +602,30 @@ model Match {
   player1Id      String?
   player2Id      String?
   player1BuildId String?
-  player1Build   Build?      @relation("Player1Build", fields: [player1BuildId], references: [id])
+  player1Build   Build?  @relation("Player1Build", fields: [player1BuildId], references: [id])
   player2BuildId String?
-  player2Build   Build?      @relation("Player2Build", fields: [player2BuildId], references: [id])
+  player2Build   Build?  @relation("Player2Build", fields: [player2BuildId], references: [id])
 
-  scorePlayer1   Int         @default(0)
-  scorePlayer2   Int         @default(0)
-  winnerId       String?
+  scorePlayer1 Int     @default(0)
+  scorePlayer2 Int     @default(0)
+  winnerId     String?
 
   // Phase 5 Part C — bracket/round placement and lifecycle (all additive):
-  round          Int         @default(0) // 1 = first bracket round, counts up to the final; 0/unused for SWISS
-  bracketOrder   Int         @default(0) // position within a round; feeds match slot (i+1)/2 in round+1
-  status         MatchStatus @default(PENDING)
+  round         Int          @default(0) // 1 = first bracket round, counts up to the final; 0/unused for SWISS
+  bracketOrder  Int          @default(0) // position within a round; feeds match slot (i+1)/2 in round+1
+  status        MatchStatus  @default(PENDING)
   // Phase 5 Part C2 — stage-scoped placement. bracketSide is only set for DOUBLE_ELIMINATION
   // stages; swissRound only for SWISS stages (distinct from `round`, which stays the
   // elimination-bracket round number and restarts at 1 per stage).
-  bracketSide    BracketSide?
-  swissRound     Int?
+  bracketSide   BracketSide?
+  swissRound    Int?
   // Idempotency key for offline-synced scores: one client-generated UUID per judge action, unique
   // DB-wide — a replayed POST with the same clientEventId is a server-side no-op.
-  clientEventId  String?     @unique
+  clientEventId String?      @unique
 
   // Phase 7 — arena/stadium assignment: which physical arena the match plays on (1..arenaCount);
   // null = unassigned (waiting for the dynamic pass after another match frees its arena).
-  arenaNumber    Int?
+  arenaNumber             Int?
   // Phase 7 — QR self-service check-in: when each player scanned the arena QR and confirmed
   // their presence; null until checked in.
   player1ArenaCheckedInAt DateTime?
@@ -602,9 +650,9 @@ model CollectionItem {
   // ownership unit — the three rows created by marking a Set purchased stay independently
   // editable/deletable. SetNull so deleting a catalog Build never blocks collection edits.
   sourceBuildId String?
-  sourceBuild   Build?    @relation("CollectionItemSourceBuild", fields: [sourceBuildId], references: [id], onDelete: SetNull)
+  sourceBuild   Build?  @relation("CollectionItemSourceBuild", fields: [sourceBuildId], references: [id], onDelete: SetNull)
 
-  pricePoints   PricePoint[]
+  pricePoints PricePoint[]
 
   @@index([partOrBeyId])
 }
@@ -629,10 +677,10 @@ model MediaAsset {
   uploadedById String
   createdAt    DateTime @default(now())
 
-  parts        Part[]        @relation("PartImage")
-  builds       Build[]       @relation("BuildImage")
-  tournaments  Tournament[]  @relation("TournamentHeaderImage")
-  proposals    CatalogProposal[] @relation("CatalogProposalImage")
+  parts       Part[]            @relation("PartImage")
+  builds      Build[]           @relation("BuildImage")
+  tournaments Tournament[]      @relation("TournamentHeaderImage")
+  proposals   CatalogProposal[] @relation("CatalogProposalImage")
 }
 
 // PricePoint (Phase 5 Part B, [REVIEW-FIX: ux-product §3d, spec §5 Phase 5 "Preisverlauf"]) —

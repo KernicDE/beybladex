@@ -59,6 +59,12 @@ export default async function AdminUsersPage({
           >
             Audit-Log
           </Link>
+          <Link
+            href="/settings/admin/seasons"
+            className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
+          >
+            Seasons
+          </Link>
         </div>
       </div>
 

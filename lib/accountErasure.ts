@@ -75,6 +75,12 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // spec §3 has no cascade there and none is needed; the row itself carries no PII anymore).
     // TournamentParticipant rows are kept for the same Art. 17(3) reason: a tournament's
     // participant history legitimately outlives one participant's account.
+    // Phase 14: PlayerRating.userId (a real FK, see that model's own schema comment) needs no
+    // action here for the same reason — the row survives with the now-anonymized User row still
+    // attached, exactly like Match.player1Id above; the public ladder simply renders
+    // "Gelöschter Nutzer" for that entry instead of disappearing (a season's leaderboard/rank
+    // history has genuine aggregate value beyond the individual, same judgment call as
+    // AuditLog/ClubMessage).
 
     // Audit trail (Phase 4, [REVIEW-FIX: privacy-dsgvo #8]): append-only, actor is the account
     // owner acting on themselves. actorId is a plain string column — the log must outlive the

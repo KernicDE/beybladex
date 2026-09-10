@@ -17,6 +17,7 @@ import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { MIN_RATED_GAMES_FOR_LADDER } from '@/lib/elo'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,7 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
   const isOwner = viewerId === subject.id
   const profileVisible = view.displayName !== null || isOwner // profileVisible isn't returned directly; displayName tracks it 1:1 except for the isOwner-always-true case already folded in.
 
-  const [tournamentHistory, clubMemberships] = profileVisible
+  const [tournamentHistory, clubMemberships, eloInfo] = profileVisible
     ? await Promise.all([
         prisma.tournamentParticipant.findMany({
           where: { userId: subject.id, withdrawn: false },
@@ -66,8 +67,9 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
           take: 20,
           select: { club: { select: { slug: true, name: true } } },
         }),
+        loadEloInfo(subject.id),
       ])
-    : [[], []]
+    : [[], [], null]
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -84,6 +86,17 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
         <div>
           <h1 className="text-2xl font-semibold">{view.displayName ?? view.username}</h1>
           <p className="text-sm text-current/60">@{view.username}</p>
+          {/* Phase 14 — Elo badge, gated behind profileVisible like everything else new on this
+              page (a new piece of potentially-identifying competitive data, same rule as
+              tournament history/club memberships above — not a hardcoded-always-public
+              exception). Only shown once the min-games threshold is met, same as the public
+              ladder itself. */}
+          {eloInfo && (
+            <p className="mt-1 flex items-center gap-2 text-sm">
+              <Badge tone="cyan">Elo {eloInfo.elo}</Badge>
+              {eloInfo.rank !== null && <span className="text-current/60">Rang #{eloInfo.rank} — {eloInfo.seasonName}</span>}
+            </p>
+          )}
         </div>
       </div>
 
@@ -183,4 +196,28 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
       )}
     </main>
   )
+}
+
+// Phase 14: current-season Elo + public rank for the badge above. Returns null when there's no
+// active season or the subject has no rating row yet this season (brand-new/never-played) —
+// rendered as no badge at all, not a "0 games" placeholder. `rank` stays null below the
+// public-ladder's own minimum-games threshold (lib/elo.ts) — the Elo number itself is still
+// shown to a viewer who can already see this profile (it's their own accurate rating), just
+// without a rank number that would be misleading this early.
+async function loadEloInfo(userId: string): Promise<{ elo: number; rank: number | null; seasonName: string } | null> {
+  const season = await prisma.season.findFirst({ where: { status: 'ACTIVE' } })
+  if (!season) return null
+  const rating = await prisma.playerRating.findUnique({
+    where: { seasonId_userId: { seasonId: season.id, userId } },
+    select: { elo: true, gamesPlayed: true },
+  })
+  if (!rating) return null
+  let rank: number | null = null
+  if (rating.gamesPlayed >= MIN_RATED_GAMES_FOR_LADDER) {
+    const higherRated = await prisma.playerRating.count({
+      where: { seasonId: season.id, gamesPlayed: { gte: MIN_RATED_GAMES_FOR_LADDER }, elo: { gt: rating.elo } },
+    })
+    rank = higherRated + 1
+  }
+  return { elo: rating.elo, rank, seasonName: season.name }
 }

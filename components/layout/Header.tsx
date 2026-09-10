@@ -21,6 +21,8 @@ const NAV_LINKS = [
   { href: '/collection', label: 'Sammlung' },
   { href: '/clubs', label: 'Clubs' },
   { href: '/rules', label: 'Regeln' },
+  // Phase 14 — public Elo leaderboard for the current ACTIVE season.
+  { href: '/rangliste', label: 'Rangliste' },
 ] as const
 
 export function Header({ session }: { session: Session | null }) {
