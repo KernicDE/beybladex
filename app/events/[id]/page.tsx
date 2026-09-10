@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { JoinPanel } from '@/components/tournament/JoinPanel'
+import { EventShareQR } from '@/components/tournament/EventShareQR'
 
 export const revalidate = 60 // public, frequently-mutated content [REVIEW-FIX: performance P16]
 
@@ -116,6 +117,8 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           </Link>
         </p>
       </Card>
+
+      <EventShareQR tournamentId={tournament.id} />
 
       {/* Join flow — guests get the sign-in prompt instead of the join button (Task 13 convention). */}
       {!me ? (

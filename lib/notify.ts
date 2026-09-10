@@ -84,19 +84,8 @@ export async function notifyUsersInRadius(tournament: Tournament): Promise<void>
 
   const content = notificationContent(tournament)
   for (const user of eligible) {
-    await notifyUser(user.id, content.title, content.message, content.link)
-
-    if (user.notifyEmail && !user.isMinor && user.email) {
-      try {
-        await sendNotificationEmail({
-          to: user.email,
-          subject: content.title,
-          text: `${content.message}\n\nDetails: ${content.link}`,
-        })
-      } catch (err) {
-        // A broken mail server must never lose or block the durable in-app notification.
-        console.error(`[notify] email to ${user.id} failed:`, err)
-      }
-    }
+    // notifyUser (above) already creates the row, publishes to Redis, AND sends the email
+    // (same minor-ceiling rule) — do not duplicate the email send here.
+    await notifyUser(user.id, content)
   }
 }
