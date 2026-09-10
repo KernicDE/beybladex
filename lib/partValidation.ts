@@ -15,14 +15,7 @@ export interface PartInput {
   beyType: (typeof BEY_TYPES)[number] | null
   spinDirection: (typeof SPIN_DIRECTIONS)[number]
   weightGrams: number | null
-  imageUrl: string | null
   metadata: Record<string, unknown> | null
-}
-
-export interface PartRequestInput {
-  name: string
-  manufacturerGuess: (typeof MANUFACTURERS)[number] | null
-  notes: string | null
 }
 
 function takeString(body: Record<string, unknown>, key: string, max: number): string | null | undefined {
@@ -84,12 +77,8 @@ export function parsePartInput(body: unknown, partial: boolean): { data?: Partia
     } else errors.push('invalid_weightGrams')
   }
 
-  const imageUrl = takeString(b, 'imageUrl', 500)
-  if (imageUrl !== undefined) {
-    // Catalog images are local files under /public — no external URLs (zero-CDN guarantee).
-    if (imageUrl !== null && !imageUrl.startsWith('/')) errors.push('invalid_imageUrl')
-    else data.imageUrl = imageUrl
-  }
+  // Phase 11: catalog images are MediaAsset FKs (uploaded via the generic pipeline), not a
+  // free-text URL — imageUrl no longer exists on Part and is not accepted here.
 
   if (b.metadata !== undefined || !partial) {
     if (b.metadata === null) data.metadata = null
@@ -98,24 +87,4 @@ export function parsePartInput(body: unknown, partial: boolean): { data?: Partia
   }
 
   return errors.length > 0 ? { errors } : { data }
-}
-
-/** Parses a "request missing part" payload (POST /api/parts/request). */
-export function parsePartRequestInput(body: unknown): { data?: PartRequestInput; errors?: string[] } {
-  if (typeof body !== 'object' || body === null) return { errors: ['invalid_body'] }
-  const b = body as Record<string, unknown>
-  const errors: string[] = []
-
-  const name = takeString(b, 'name', NAME_MAX)
-  if (!name) errors.push('invalid_name')
-
-  let manufacturerGuess: PartRequestInput['manufacturerGuess'] = null
-  if (b.manufacturerGuess !== undefined && b.manufacturerGuess !== null) {
-    if (!isEnumValue(MANUFACTURERS, b.manufacturerGuess)) errors.push('invalid_manufacturerGuess')
-    else manufacturerGuess = b.manufacturerGuess
-  }
-
-  const notes = takeString(b, 'notes', 500)
-
-  return errors.length > 0 ? { errors } : { data: { name: name!, manufacturerGuess, notes: notes ?? null } }
 }

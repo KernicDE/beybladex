@@ -47,6 +47,11 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       INTERNAL_CRON_SECRET: ${INTERNAL_CRON_SECRET}
+      # MediaAsset files (Phase 11's generic upload pipeline) live on the bind-mounted volume
+      # below — the container FS is ephemeral (Watchtower recreates on every deploy).
+      MEDIA_UPLOADS_DIR: /app/media_uploads
+    volumes:
+      - media_uploads:/app/media_uploads
     networks:
       - proxy
       - internal
@@ -126,6 +131,9 @@ services:
 
 volumes:
   postgres_data:
+  # One mount for EVERY upload type (part/set images, event headers), not one per feature —
+  # lib/media.ts writes "<asset-id>.webp" files here; /api/media/[id] serves them.
+  media_uploads:
 
 networks:
   # Traefik's own network on this server — external, not created by this

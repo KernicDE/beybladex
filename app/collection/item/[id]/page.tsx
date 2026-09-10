@@ -35,7 +35,7 @@ export default async function CollectionItemPage({ params }: PageProps<'/collect
     select: {
       id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
       userId: true,
-      part: { select: { id: true, name: true, category: true, manufacturer: true, beyType: true, imageUrl: true } },
+      part: { select: { id: true, name: true, category: true, manufacturer: true, beyType: true, imageId: true } },
       pricePoints: { orderBy: { recordedAt: 'asc' }, select: { id: true, price: true, currency: true, recordedAt: true } },
     },
   })

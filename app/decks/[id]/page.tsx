@@ -23,7 +23,7 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/[id]'
         include: {
           build: {
             include: {
-              blade: { select: { id: true, name: true, imageUrl: true } },
+              blade: { select: { id: true, name: true, imageId: true } },
               ratchet: { select: { id: true, name: true } },
               bit: { select: { id: true, name: true } },
             },

@@ -38,7 +38,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
     ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: {
       id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
-      part: { select: { name: true, category: true, manufacturer: true, imageUrl: true } },
+      part: { select: { name: true, category: true, manufacturer: true, imageId: true } },
     },
   })
   const hasMore = rows.length > PAGE_SIZE

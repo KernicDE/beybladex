@@ -16,6 +16,18 @@ import { sendNotificationEmail } from '@/lib/mailer'
 
 export const notifyChannel = (userId: string) => `notify:${userId}`
 
+/** Generic single-user notification (Phase 11): durable Notification row (source of truth) +
+ *  per-user Redis pub/sub publish for the SSE stream — the same channel discipline as
+ *  notifyUsersInRadius, no second notification path. In-app only (no email): proposal-review
+ *  outcomes are account-internal events, not marketing blasts. */
+export async function notifyUser(
+  userId: string,
+  content: { title: string; message: string; link: string },
+): Promise<void> {
+  const row = await prisma.notification.create({ data: { userId, ...content } })
+  await redis.publish(notifyChannel(userId), JSON.stringify(row))
+}
+
 type NotifiableUser = Pick<
   User,
   'id' | 'latitude' | 'longitude' | 'notifyRadiusKm' | 'notifyRecurring' | 'notifyEmail' | 'isMinor' | 'email'

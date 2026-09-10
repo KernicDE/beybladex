@@ -1,11 +1,12 @@
 // tests/integration/parts-admin.test.ts
 // Phase 5 Part A: parts-catalog curation authz. Only TRUSTED/ADMIN can POST/PATCH
-// /api/admin/parts and PATCH /api/admin/part-requests — 401 unauthenticated, 403 for USER
-// (negative tests, per the standing Global-Constraints rule). A TRUSTED user succeeds and the
-// mutation writes an AuditLog row. CI-only (Postgres/Redis).
+// /api/admin/parts — 401 unauthenticated, 403 for USER (negative tests, per the standing
+// Global-Constraints rule). A TRUSTED user succeeds and the mutation writes an AuditLog row.
+// The old "part-requests queue" test below was removed — PartRequest was replaced by
+// CatalogProposal in Phase 11; see tests/integration/catalog-proposal-flow.test.ts.
+// CI-only (Postgres/Redis).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { POST, PATCH } from '@/app/api/admin/parts/route'
-import { PATCH as PATCH_REQUEST } from '@/app/api/admin/part-requests/route'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 
@@ -16,7 +17,7 @@ function asSession(value: { id: string; name: string } | null) {
   return (value ? { user: value, expires: new Date(Date.now() + 86400_000).toISOString() } : null) as unknown as NonNullable<Awaited<ReturnType<typeof auth>>>
 }
 
-const ids = { users: [] as string[], parts: [] as string[], requests: [] as string[] }
+const ids = { users: [] as string[], parts: [] as string[] }
 
 const VALID_PART = {
   name: 'TestBlade 1-60',
@@ -45,10 +46,6 @@ afterEach(async () => {
   for (const id of ids.parts) {
     await prisma.auditLog.deleteMany({ where: { targetId: id } })
     await prisma.part.delete({ where: { id } }).catch(() => {})
-  }
-  for (const id of ids.requests) {
-    await prisma.auditLog.deleteMany({ where: { targetId: id } })
-    await prisma.partRequest.delete({ where: { id } }).catch(() => {})
   }
   for (const id of ids.users) await prisma.user.delete({ where: { id } }).catch(() => {})
   for (const key of Object.keys(ids)) (ids[key as keyof typeof ids]).length = 0
@@ -87,23 +84,4 @@ describe('parts catalog curation authz', () => {
     expect((await prisma.part.findUnique({ where: { id } }))!.weightGrams).toBe(33.1)
   })
 
-  it('part-requests queue: 403 for USER, TRUSTED can resolve', async () => {
-    const suffix = Date.now().toString(36)
-    const user = await makeUser('plain', 'USER')
-    const trusted = await makeUser('resolver', 'TRUSTED')
-    const requester = await makeUser('requester', 'USER')
-    const request = await prisma.partRequest.create({
-      data: { requestedById: requester.id, name: `Fehlendes Teil ${suffix}`, manufacturerGuess: 'HASBRO' },
-    })
-    ids.requests.push(request.id)
-
-    const req = () => new Request('http://localhost/api/admin/part-requests', { method: 'PATCH', body: JSON.stringify({ id: request.id, status: 'RESOLVED' }) })
-    mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
-    expect((await PATCH_REQUEST(req())).status).toBe(403)
-    expect((await prisma.partRequest.findUnique({ where: { id: request.id } }))!.status).toBe('PENDING')
-
-    mockAuth.mockResolvedValue(asSession({ id: trusted.id, name: trusted.username }))
-    expect((await PATCH_REQUEST(req())).status).toBe(200)
-    expect((await prisma.partRequest.findUnique({ where: { id: request.id } }))!.status).toBe('RESOLVED')
-  })
 })

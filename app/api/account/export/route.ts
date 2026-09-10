@@ -2,7 +2,8 @@
 // GET, owner-only — GDPR Art. 20 data portability. Assembles one machine-readable JSON document
 // covering every User-owned category. Collection/Deck/Friendship/ClubMember/TournamentParticipant
 // queries are written against the real schema; Phase 5 Part A added the userId-scoped Rating
-// and PartRequest queries below (both models became User-owned with that phase).
+// query; Phase 11 replaced PartRequest with CatalogProposal (submittedById) and added
+// MediaAsset (uploadedById) — both User-owned, added to this export per the standing rule.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
@@ -11,13 +12,14 @@ export async function GET() {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
 
-  const [user, collection, decks, ratings, partRequests, friendships, clubMemberships, tournamentParticipations, stageStandings] =
+  const [user, collection, decks, ratings, catalogProposals, mediaAssets, friendships, clubMemberships, tournamentParticipations, stageStandings] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
       prisma.collectionItem.findMany({ where: { userId }, include: { pricePoints: true } }),
       prisma.deck.findMany({ where: { userId }, include: { builds: true } }),
       prisma.rating.findMany({ where: { userId } }),
-      prisma.partRequest.findMany({ where: { requestedById: userId } }),
+      prisma.catalogProposal.findMany({ where: { submittedById: userId } }),
+      prisma.mediaAsset.findMany({ where: { uploadedById: userId }, select: { id: true, filename: true, mimeType: true, width: true, height: true, createdAt: true } }),
       prisma.friendship.findMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
       prisma.clubMember.findMany({ where: { userId }, include: { club: true } }),
       prisma.tournamentParticipant.findMany({ where: { userId }, include: { tournament: true } }),
@@ -50,7 +52,8 @@ export async function GET() {
     collection,
     decks,
     ratings,
-    partRequests,
+    catalogProposals,
+    mediaAssets,
     friendships,
     clubMemberships,
     notificationPreferences: {

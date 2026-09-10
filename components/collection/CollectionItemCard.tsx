@@ -14,7 +14,7 @@ export interface CollectionItemCardData {
   currency: string
   merchant: string | null
   boughtAt: Date | null
-  part: { name: string; category: string; manufacturer: string; imageUrl: string | null }
+  part: { name: string; category: string; manufacturer: string; imageId: string | null }
 }
 
 export function CollectionItemCard({

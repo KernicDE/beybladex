@@ -1,9 +1,11 @@
 // app/settings/admin/parts/page.tsx
-// Parts-catalog curation (Phase 5 Part A): searchable/paginated catalog list with an inline
-// edit form per part, a "Neues Teil" create form, and the "request missing part" queue below.
-// Gate: TRUSTED or ADMIN — the API twin (/api/admin/parts) returns 403 for everyone else, so
-// the redirect hides nothing. (ADMIN reaches this page via a link on /settings/admin; TRUSTED
-// catalog contributors use the direct URL — the settings tab bar only shows Admin to ADMIN.)
+// Parts-catalog curation. Two distinct authz tiers on one page (Phase 11 widened the reviewer
+// tier past the original TRUSTED/ADMIN pair, but NOT the direct-authoring tier):
+// - Page gate / proposal review: TRUSTED, JUDGE, ORGANIZER, or ADMIN (lib/roles.ts's
+//   isCurator) — the people most likely to encounter an uncatalogued real-world part.
+// - Direct catalog authoring (the searchable list + inline PartForm edit/create): TRUSTED or
+//   ADMIN only, unchanged — the API twin (/api/admin/parts) still 403s everyone else, so a
+//   JUDGE/ORGANIZER reaching this page sees ONLY the proposal queue, not the catalog-edit UI.
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
@@ -13,7 +15,8 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
 import { PartForm } from '@/components/admin/PartForm'
-import { PartRequestQueue } from '@/components/admin/PartRequestQueue'
+import { ProposalQueue, type ProposalEntry } from '@/components/admin/ProposalQueue'
+import { isCurator } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic' // privileged, per-user surface — never cached
 
@@ -25,30 +28,41 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
   if (!session?.user?.id) redirect('/login')
 
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (caller?.role !== 'TRUSTED' && caller?.role !== 'ADMIN') redirect('/settings/profile')
+  if (!isCurator(caller?.role)) redirect('/settings/profile')
+  const canAuthor = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
 
   const query = typeof q === 'string' ? q.trim() : ''
   const categoryFilter = typeof category === 'string' ? category : ''
 
-  const rows = await prisma.part.findMany({
-    where: {
-      ...(query ? { name: { contains: query, mode: 'insensitive' } } : {}),
-      ...(categoryFilter ? { category: categoryFilter as 'BLADE' | 'RATCHET' | 'BIT' | 'ACCESSORY' } : {}),
-    },
-    orderBy: { name: 'asc' },
-    take: PAGE_SIZE + 1,
-    ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  })
+  const rows = canAuthor
+    ? await prisma.part.findMany({
+        where: {
+          ...(query ? { name: { contains: query, mode: 'insensitive' } } : {}),
+          ...(categoryFilter ? { category: categoryFilter as 'BLADE' | 'RATCHET' | 'BIT' | 'ACCESSORY' } : {}),
+        },
+        orderBy: { name: 'asc' },
+        take: PAGE_SIZE + 1,
+        ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      })
+    : []
   const hasMore = rows.length > PAGE_SIZE
   const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
   const nextCursor = hasMore ? page[page.length - 1].id : null
 
-  const requests = await prisma.partRequest.findMany({
+  const proposalRows = await prisma.catalogProposal.findMany({
     where: { status: 'PENDING' },
     orderBy: { createdAt: 'asc' },
     take: 50,
-    include: { requestedBy: { select: { username: true } } },
+    include: { submittedBy: { select: { username: true } } },
   })
+  const proposals: ProposalEntry[] = proposalRows.map((p) => ({
+    id: p.id,
+    kind: p.kind,
+    payload: p.payload as unknown as ProposalEntry['payload'],
+    imageAssetId: p.imageAssetId,
+    submittedBy: p.submittedBy.username,
+    createdAt: p.createdAt.toISOString(),
+  }))
 
   const toFormValues = (part: (typeof page)[number]) => ({
     id: part.id,
@@ -58,7 +72,7 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
     beyType: part.beyType ?? '',
     spinDirection: part.spinDirection,
     weightGrams: part.weightGrams?.toString() ?? '',
-    imageUrl: part.imageUrl ?? '',
+    imageId: part.imageId,
   })
 
   return (
@@ -70,41 +84,45 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
         </Link>
       </div>
 
-      <form action="/settings/admin/parts" className="flex flex-wrap items-center gap-2">
-        <label htmlFor="parts-q" className="sr-only">Teilname suchen</label>
-        <Input id="parts-q" name="q" defaultValue={query} placeholder="Teilname suchen…" className="w-64" />
-        <label htmlFor="parts-category" className="sr-only">Kategorie filtern</label>
-        <select id="parts-category" name="category" defaultValue={categoryFilter} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-base-dark-alt">
-          <option value="">Alle Kategorien</option>
-          <option value="BLADE">Blades</option>
-          <option value="RATCHET">Ratchets</option>
-          <option value="BIT">Bits</option>
-          <option value="ACCESSORY">Zubehör</option>
-        </select>
-        <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-          Filtern
-        </button>
-      </form>
-
-      {page.length === 0 ? (
-        <EmptyState title="Keine Teile gefunden" description="Passe die Suche an oder lege das Teil unten neu an." />
-      ) : (
-        <ul className="space-y-4">
-          {page.map((part) => (
-            <li key={part.id}>
-              <Card>
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{part.name}</p>
-                  <Badge tone="cyan">{part.category}</Badge>
-                  <Badge tone="neutral">{part.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}</Badge>
-                </div>
-                <PartForm initial={toFormValues(part)} />
-              </Card>
-            </li>
-          ))}
-        </ul>
+      {canAuthor && (
+        <form action="/settings/admin/parts" className="flex flex-wrap items-center gap-2">
+          <label htmlFor="parts-q" className="sr-only">Teilname suchen</label>
+          <Input id="parts-q" name="q" defaultValue={query} placeholder="Teilname suchen…" className="w-64" />
+          <label htmlFor="parts-category" className="sr-only">Kategorie filtern</label>
+          <select id="parts-category" name="category" defaultValue={categoryFilter} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-base-dark-alt">
+            <option value="">Alle Kategorien</option>
+            <option value="BLADE">Blades</option>
+            <option value="RATCHET">Ratchets</option>
+            <option value="BIT">Bits</option>
+            <option value="ACCESSORY">Zubehör</option>
+          </select>
+          <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
+            Filtern
+          </button>
+        </form>
       )}
-      {nextCursor && (
+
+      {canAuthor && (
+        page.length === 0 ? (
+          <EmptyState title="Keine Teile gefunden" description="Passe die Suche an oder lege das Teil unten neu an." />
+        ) : (
+          <ul className="space-y-4">
+            {page.map((part) => (
+              <li key={part.id}>
+                <Card>
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{part.name}</p>
+                    <Badge tone="cyan">{part.category}</Badge>
+                    <Badge tone="neutral">{part.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}</Badge>
+                  </div>
+                  <PartForm initial={toFormValues(part)} />
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+      {canAuthor && nextCursor && (
         <Link
           href={`/settings/admin/parts?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(categoryFilter ? { category: categoryFilter } : {}), cursor: nextCursor })}`}
           className="inline-block underline underline-offset-2"
@@ -114,23 +132,20 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
       )}
 
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold">Fehlende Teile — Anfragen</h3>
-        {requests.length === 0 ? (
-          <EmptyState title="Keine ausstehenden Anfragen" description="Wenn Nutzer:innen ein fehlendes Teil melden, landet es hier." />
+        <h3 className="text-lg font-semibold">Katalog-Vorschläge — ausstehend</h3>
+        {proposals.length === 0 ? (
+          <EmptyState title="Keine ausstehenden Vorschläge" description="Wenn Nutzer:innen ein fehlendes Teil oder Set vorschlagen, landet es hier." />
         ) : (
-          <PartRequestQueue
-            entries={requests.map((r) => ({
-              ...r,
-              createdAt: r.createdAt.toISOString(),
-            }))}
-          />
+          <ProposalQueue entries={proposals} />
         )}
       </div>
 
-      <Card>
-        <h3 className="mb-3 text-lg font-semibold">Neues Teil anlegen</h3>
-        <PartForm />
-      </Card>
+      {canAuthor && (
+        <Card>
+          <h3 className="mb-3 text-lg font-semibold">Neues Teil anlegen</h3>
+          <PartForm />
+        </Card>
+      )}
     </section>
   )
 }
