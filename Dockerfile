@@ -68,6 +68,12 @@ RUN npm prune --omit=dev
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# issue #77 — redeclared here on purpose: ARG/ENV from the builder stage do NOT
+# carry into a new stage (found on the first real deploy — the image labels had
+# the version but the container env didn't, so /api/version fell back to the dev
+# marker). This is the ENV the running server actually reads.
+ARG APP_VERSION="0.0.0-dev+local"
+ENV APP_VERSION=$APP_VERSION
 # Defensive default for anyone running this image directly (`docker run`, no compose):
 # Next's standalone server.js binds to process.env.HOSTNAME, and Docker auto-injects
 # HOSTNAME=<container-id> for every container — left unset here, the server ends up bound
