@@ -32,6 +32,7 @@
 // stage created via POST .../stages with arenaCount keeps it without repeating it here.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { assignArenasAtGeneration, parseArenaCount } from '@/lib/arenaAssign'
 import { generateSingleEliminationBracket } from '@/lib/bracket'
 import { generateDoubleEliminationBracket } from '@/lib/doubleElimination'
@@ -57,6 +58,11 @@ type Ctx = { params: Promise<{ id: string; stageId: string }> }
 export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] THE expensive one: transactional bracket generation.
+  // A bracket is generated once per stage — 15/min/user cannot hinder any real workflow but
+  // caps how hard a compromised organizer session can hammer the DB.
+  const { allowed } = await rateLimit(`tournament:generate:${session.user.id}`, 15, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id, stageId } = await params
 
   let body: Record<string, unknown> = {}

@@ -15,6 +15,7 @@
 // user; the organizer/staff manual-marking path is the authoritative fallback).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { isTournamentStaff } from '@/lib/tournamentJudges'
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -22,6 +23,11 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function PATCH(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] day-of staff scan batches in quick succession — the limit
+  // is deliberately high (5/s/user) so mass check-in is never throttled, but a compromised
+  // session can't flood the endpoint indefinitely.
+  const { allowed } = await rateLimit(`tournament:checkin:${session.user.id}`, 300, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   let body: unknown = {}

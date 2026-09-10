@@ -13,6 +13,7 @@
 // lib/notify.ts's notifyUser — no second notification mechanism).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { notifyUser } from '@/lib/notify'
 import { isTournamentStaff } from '@/lib/tournamentJudges'
 
@@ -21,6 +22,10 @@ type Ctx = { params: Promise<{ id: string; matchId: string }> }
 export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] arena QR scans arrive in bursts on match day — the
+  // limit is deliberately high (5/s/user) so a judge scanning a queue is never throttled.
+  const { allowed } = await rateLimit(`tournament:arena-checkin:${session.user.id}`, 300, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id, matchId } = await params
 
   let body: Record<string, unknown> = {}

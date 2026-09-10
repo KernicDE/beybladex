@@ -159,6 +159,12 @@ model User {
   totpSecret String?
   passkeys   Passkey[]
 
+  // [REVIEW-FIX: backend-security #50] session-revocation counter: bumped on GDPR erasure and
+  // TOTP deactivation (and, by contract, any future password-change route), stamped into every
+  // new JWT as the `tv` claim and re-checked on every request — a token minted before the bump
+  // stops authenticating immediately instead of living out its 30 days.
+  tokenVersion Int       @default(0)
+
   collection    CollectionItem[]
   decks         Deck[]
   tournaments   TournamentParticipant[]

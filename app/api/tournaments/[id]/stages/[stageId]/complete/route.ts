@@ -19,6 +19,7 @@
 // pool (the stage-to-stage qualification gate). Sets TournamentStage.status = COMPLETED.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { sortSwiss } from '@/lib/swiss'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
@@ -26,6 +27,9 @@ type Ctx = { params: Promise<{ id: string; stageId: string }> }
 export async function POST(_req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] organizer stage lifecycle; 30/min/user.
+  const { allowed } = await rateLimit(`tournament:stage-complete:${session.user.id}`, 30, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id, stageId } = await params
 
   const stage = await prisma.tournamentStage.findUnique({

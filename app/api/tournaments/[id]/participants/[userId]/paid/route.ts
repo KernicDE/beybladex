@@ -7,6 +7,7 @@
 // not an error); DELETE marks unpaid again (paidAt = null, for a correction).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { isTournamentStaff } from '@/lib/tournamentJudges'
 
 type Ctx = { params: Promise<{ id: string; userId: string }> }
@@ -35,6 +36,10 @@ async function authorizeAndLoadParticipant(id: string, targetUserId: string, cal
 export async function PATCH(_req: Request, { params }: Ctx): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] payment-desk workflow flips many participants in
+  // succession — deliberately high (5/s/user); only bounds a compromised staff session.
+  const { allowed } = await rateLimit(`tournament:paid:${session.user.id}`, 300, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id, userId } = await params
 
   const loaded = await authorizeAndLoadParticipant(id, userId, session.user.id)
@@ -50,6 +55,10 @@ export async function PATCH(_req: Request, { params }: Ctx): Promise<Response> {
 export async function DELETE(_req: Request, { params }: Ctx): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] payment-desk workflow flips many participants in
+  // succession — deliberately high (5/s/user); only bounds a compromised staff session.
+  const { allowed } = await rateLimit(`tournament:paid:${session.user.id}`, 300, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id, userId } = await params
 
   const loaded = await authorizeAndLoadParticipant(id, userId, session.user.id)

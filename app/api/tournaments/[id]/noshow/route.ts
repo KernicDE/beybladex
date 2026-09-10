@@ -18,6 +18,7 @@
 //   SINGLE_ELIMINATION — unchanged Part C behavior, now stage-scoped.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { assignFreedArena } from '@/lib/arenaAssign'
 import { winnerPropagation } from '@/lib/doubleElimination'
 import { markEliminated, recordSwissResult, resolveStuckByes } from '@/lib/stageFlow'
@@ -54,6 +55,10 @@ async function propagateWinner(stageId: string, round: number, bracketOrder: num
 export async function POST(req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] no-show marking cascades win propagation — expensive per
+  // call; 60/min/user bounds a compromised organizer session without touching real workflows.
+  const { allowed } = await rateLimit(`tournament:noshow:${session.user.id}`, 60, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   let body: Record<string, unknown>

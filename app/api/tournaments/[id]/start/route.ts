@@ -16,6 +16,7 @@
 // match as before this phase.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { rateLimit } from '@/lib/rateLimit'
 import { notifyTournamentStarted } from '@/lib/notify'
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -23,6 +24,10 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function POST(_req: Request, { params }: Ctx) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  // [REVIEW-FIX: backend-security #37] one-way, lock-in-heavy action; 30/min/user leaves every
+  // legitimate "Turnier starten" workflow untouched while bounding request flooding.
+  const { allowed } = await rateLimit(`tournament:start:${session.user.id}`, 30, 60)
+  if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
   const tournament = await prisma.tournament.findUnique({
