@@ -30,10 +30,12 @@ export function createRedisClient(url: string, options: RedisOptions = {}) {
 }
 
 // Command connection: GET/SET/EXPIRE/pipelines — tile cache, rate limits, currency cache.
-// enableOfflineQueue: false so these commands fail fast during an outage instead of queueing
-// up and hanging the request until Redis returns.
-export const redis =
-  globalForRedis.redis ?? createRedisClient(process.env.REDIS_URL!, { enableOfflineQueue: false })
+// Keeps the default offline queue (enableOfflineQueue: true): callers issue commands right
+// after import with no explicit "wait for ready" step, and disabling the queue makes ioredis
+// reject any command that races the initial connection handshake, not just ones sent during
+// a real outage. maxRetriesPerRequest still bounds how long a queued command waits before
+// failing, so this doesn't reintroduce the "hangs forever" risk.
+export const redis = globalForRedis.redis ?? createRedisClient(process.env.REDIS_URL!)
 
 // Dedicated subscriber connection — the ONLY connection allowed to call .subscribe().
 // Used by Phase 3's SSE notification stream and Phase 12's club-chat stream. Keeps the default
