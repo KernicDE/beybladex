@@ -2835,9 +2835,9 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 
 # Phase 20: Canonical Build Naming & Duplicate-Combo Prevention — added post-Phase-6, MVP2, by explicit user request
 
-**Tracking:** [Issue #16](https://github.com/KernicDE/beybladex/issues/16)
+**Tracking:** [Issue #16](https://github.com/KernicDE/beybladex/issues/16) (closed)
 
-**Status: planned, not started.** Same standing note: confirm before starting.
+**Status: DONE — merged to main 2026-09-10 (commit `75ea00d`).** Naming grammar confirmed by the user: `"<Blade> <Ratchet><Bit-short>"`. Implemented by Kimi (tmux delegation), reviewed by Claude before merge — found and fixed a real gap along the way: `POST /api/builds`/`POST /api/admin/builds` had no route handlers at all. `lib/buildNaming.ts`, `@@unique([bladeId, ratchetId, bitId])`, graceful existing-combo pre-checks on all three creation paths. `npx tsc --noEmit` clean, eslint clean, 247/247 unit tests.
 
 **Scope, verified against current code first**: the user's expectation — a `Build`'s name is auto-derived from its parts as `"<Blade> <Ratchet><Bit-short>"` (their worked example: Blade "Circle Ghost" + Ratchet "6-40" + Bit "LR" (low orb) → "Circle Ghost 4-60LR" — note the ratchet number in a real product name is the blade's own stat suffix convention, not a literal concatenation; the exact WBO/retail naming grammar needs confirming against real product names at implementation time, not assumed from one example) — is NOT implemented. `Build.name` is free-text, typed by hand in every creation path (the admin direct-create form, the `CatalogProposalForm`'s Set-name field) — nothing derives it from the constituent parts' names. Worse, there is no unique constraint on `(bladeId, ratchetId, bitId)` at all (verified: no `@@unique` on `Build` covering those three columns) — two rows can reference the exact same three parts today, and the only place that ever concatenates part names into a build-like label is `app/meta/page.tsx`'s display-only `${blade.name} ${ratchet.name} ${bit.name}`, never stored or used for deduplication.
 
