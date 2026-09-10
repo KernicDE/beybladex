@@ -11,7 +11,8 @@ import { prisma } from '@/lib/db'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
-import { DECK_FORMAT_LABELS, RULESET_FIELD_HINTS } from '@/lib/rulesetLabels'
+import { DECK_FORMAT_LABELS } from '@/lib/rulesetLabels'
+import { buildRulesetProse } from '@/lib/rulesetProse'
 
 export const revalidate = 300 // [REVIEW-FIX: performance P16]
 
@@ -27,15 +28,9 @@ export default async function RulesetPage({ params }: { params: Promise<{ slug: 
   if (!ruleset.isPublic && ruleset.createdById !== session?.user?.id) notFound()
 
   const isOwner = ruleset.createdById === session?.user?.id
-  const toggles = [
-    { label: 'Gesperrte Decks', value: ruleset.lockedDecks, hint: RULESET_FIELD_HINTS.lockedDecks },
-    { label: 'Force-Switch erlaubt', value: ruleset.allowForceSwitch, hint: RULESET_FIELD_HINTS.allowForceSwitch },
-    { label: 'Arena-Drehung erlaubt', value: ruleset.arenaTurnAllowed, hint: RULESET_FIELD_HINTS.arenaTurnAllowed },
-    { label: 'Out-of-Bounds = 2 Punkte', value: ruleset.outOfBounds2Pts, hint: RULESET_FIELD_HINTS.outOfBounds2Pts },
-    { label: 'Own-Finish-Strafe', value: ruleset.ownFinishPenalty, hint: RULESET_FIELD_HINTS.ownFinishPenalty },
-    { label: 'Wiederholung bei Luftkontakt', value: ruleset.aerialContactRerun, hint: RULESET_FIELD_HINTS.aerialContactRerun },
-    { label: 'Wiederholung bei äußeren Störungen', value: ruleset.externalDisturbanceRerun, hint: RULESET_FIELD_HINTS.externalDisturbanceRerun },
-  ] as const
+  // Phase 10 item 3 — full explanatory paragraphs per toggle, modeled on the WBO rules page's
+  // depth, instead of a bare badge + one-line hint.
+  const toggleProse = buildRulesetProse(ruleset)
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -64,13 +59,15 @@ export default async function RulesetPage({ params }: { params: Promise<{ slug: 
 
       <Card>
         <h2 className="text-lg font-semibold">Sonderregeln</h2>
-        <ul className="mt-3 space-y-3">
-          {toggles.map((toggle) => (
+        <ul className="mt-3 space-y-4">
+          {toggleProse.map((toggle) => (
             <li key={toggle.label} className="flex items-start gap-3">
-              <Badge tone={toggle.value ? 'green' : 'neutral'}>{toggle.value ? 'An' : 'Aus'}</Badge>
+              <Badge tone={toggle.value ? 'green' : 'neutral'} className="mt-0.5 shrink-0">
+                {toggle.value ? 'An' : 'Aus'}
+              </Badge>
               <div>
                 <p className="text-sm font-medium">{toggle.label}</p>
-                <p className="text-xs text-current/60">{toggle.hint}</p>
+                <p className="mt-1 text-sm text-current/70">{toggle.paragraph}</p>
               </div>
             </li>
           ))}

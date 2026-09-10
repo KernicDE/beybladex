@@ -56,12 +56,12 @@ export function FriendButton({ subjectId, initial }: { subjectId: string; initia
   let content: React.ReactNode
   if (state.status === null) {
     content = (
-      <Button onClick={send} disabled={busy}>Anfrage senden</Button>
+      <Button onClick={send} disabled={busy}>Freundschaftsanfrage senden</Button>
     )
   } else if (state.status === 'PENDING' && state.outgoing) {
     content = (
       <>
-        <Button variant="secondary" disabled>Angefragt</Button>
+        <Button variant="secondary" disabled>Freundschaftsanfrage gesendet</Button>
         <Button variant="ghost" size="sm" onClick={remove} disabled={busy}>Anfrage zurückziehen</Button>
       </>
     )

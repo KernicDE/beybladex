@@ -49,7 +49,7 @@ export default async function FriendsPage({ params, searchParams }: PageProps<'/
       {page.length === 0 ? (
         <EmptyState
           title="Noch keine Freunde"
-          description="Freundschaften entstehen über „Anfrage senden“ auf dem Profil eines anderen Nutzers."
+          description="Freundschaften entstehen über „Freundschaftsanfrage senden“ auf dem Profil eines anderen Nutzers."
         />
       ) : (
         <ul className="divide-y rounded-xl border">

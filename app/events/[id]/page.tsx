@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { JoinPanel } from '@/components/tournament/JoinPanel'
 import { EventShareQR } from '@/components/tournament/EventShareQR'
+import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 
 export const revalidate = 60 // public, frequently-mutated content [REVIEW-FIX: performance P16]
 
@@ -36,6 +37,15 @@ function formatFee(cent: number, currency: string): string {
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+// Same winners-bracket round-count derivation as /tournaments/[id]/page.tsx (kept local —
+// duplicating one small pure function is cheaper than threading a shared import for a single
+// preview stage; see that file's own copy for the full comment on the round-count formula).
+function stageWinnersRounds(matches: { round: number; bracketSide: string | null }[]): number {
+  const maxRound = Math.max(0, ...matches.map((m) => m.round))
+  if (maxRound === 0) return 0
+  return matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
 }
 
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -67,11 +77,42 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           orderBy: { id: 'asc' },
           select: { userId: true, checkedIn: true, user: { select: { username: true, displayName: true } } },
         },
+        // Phase 10 item 6 — read-only bracket/standings preview, reusing JudgeBracketView (the
+        // same component /tournaments/[id]'s full page uses) instead of a second renderer. Only
+        // the LAST stage is shown here — a compact "where things stand" glance; the full
+        // multi-stage view remains behind the "Turnierbaum & Judge-Bereich" link below.
+        stages: {
+          orderBy: { order: 'desc' },
+          take: 1,
+          include: {
+            matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] },
+            standings: {
+              orderBy: [{ wins: 'desc' }, { buchholz: 'desc' }],
+              include: { user: { select: { username: true, displayName: true } } },
+            },
+          },
+        },
       },
     }),
     auth(),
   ])
   if (!tournament) notFound()
+
+  // Phase 10 item 6 — participant club affiliation: one grouped query instead of N+1, kept to
+  // ACTIVE memberships only (standing rule from lib/clubMembers.ts) and the first membership
+  // per user (a participant list badge shows one club, not every one they belong to).
+  const participantIds = tournament.participants.map((p) => p.userId)
+  const memberships = participantIds.length
+    ? await prisma.clubMember.findMany({
+        where: { userId: { in: participantIds }, status: 'ACTIVE' },
+        orderBy: { joinedAt: 'asc' },
+        select: { userId: true, club: { select: { slug: true, name: true } } },
+      })
+    : []
+  const clubByUserId = new Map<string, { slug: string; name: string }>()
+  for (const m of memberships) {
+    if (!clubByUserId.has(m.userId)) clubByUserId.set(m.userId, m.club)
+  }
 
   const now = new Date()
   const me = session?.user?.id
@@ -162,20 +203,73 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           <p className="text-sm text-current/60">Noch keine Anmeldungen — sei die erste Person!</p>
         ) : (
           <ul className="space-y-2">
-            {tournament.participants.map((p) => (
-              <li key={p.userId} className="flex items-center justify-between rounded-md border border-current/10 px-3 py-2 text-sm">
-                <span>{p.user.displayName ?? p.user.username}</span>
-                {isOrganizer &&
-                  (p.checkedIn ? (
-                    <Badge tone="cyan">Eingecheckt</Badge>
-                  ) : (
-                    <Badge tone="neutral">Nicht eingecheckt</Badge>
-                  ))}
-              </li>
-            ))}
+            {tournament.participants.map((p) => {
+              const club = clubByUserId.get(p.userId)
+              return (
+                <li key={p.userId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-current/10 px-3 py-2 text-sm">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Link href={`/profile/${p.user.username}`} className="hover:underline">
+                      {p.user.displayName ?? p.user.username}
+                    </Link>
+                    {club && (
+                      <Link href={`/clubs/${club.slug}`}>
+                        <Badge tone="neutral">{club.name}</Badge>
+                      </Link>
+                    )}
+                    {/* Deck visibility is gated on the target page itself (404 when private) —
+                        this link is always shown; a private-decks user just 404s through it,
+                        same as any other resolveVisibleFields-gated link on the site. */}
+                    <Link href={`/decks/${p.user.username}`} className="text-x-cyan-text hover:underline">
+                      Decks
+                    </Link>
+                  </span>
+                  {isOrganizer &&
+                    (p.checkedIn ? (
+                      <Badge tone="cyan">Eingecheckt</Badge>
+                    ) : (
+                      <Badge tone="neutral">Nicht eingecheckt</Badge>
+                    ))}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
+
+      {tournament.stages.length > 0 && tournament.stages[0].matches.length > 0 && (
+        <section aria-labelledby="bracket-preview-heading" className="space-y-3">
+          <h2 id="bracket-preview-heading" className="text-lg font-semibold">
+            Stand — {tournament.stages[0].name}
+          </h2>
+          <JudgeBracketView
+            matches={tournament.stages[0].matches.map((m) => ({
+              id: m.id,
+              round: m.round,
+              bracketOrder: m.bracketOrder,
+              swissRound: m.swissRound,
+              player1Id: m.player1Id,
+              player2Id: m.player2Id,
+              winnerId: m.winnerId,
+              status: m.status,
+            }))}
+            players={tournament.participants.map((p) => ({ id: p.userId, name: p.user.displayName ?? p.user.username }))}
+            format={tournament.stages[0].format}
+            wbRounds={stageWinnersRounds(tournament.stages[0].matches)}
+            standings={tournament.stages[0].standings.map((s) => ({
+              userId: s.userId,
+              name: s.user.displayName ?? s.user.username,
+              wins: s.wins,
+              losses: s.losses,
+              buchholz: s.buchholz,
+            }))}
+          />
+          <p className="text-sm">
+            <Link href={`/tournaments/${tournament.id}`} className="text-x-cyan-text hover:underline">
+              Vollständiger Turnierbaum & Judge-Bereich →
+            </Link>
+          </p>
+        </section>
+      )}
 
       {tournament.description && (
         <section aria-labelledby="description-heading" className="space-y-2">

@@ -6,31 +6,32 @@
 // EmptyState renders a "Turnier erstellen" CTA for ORGANIZER/ADMIN sessions AND for users who
 // administer at least one club (Phase 4's Club membership path — the same rule the API enforces).
 import Link from 'next/link'
+import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Input } from '@/components/ui/Input'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { Select } from '@/components/ui/Select'
+import { EventsFilterBar } from '@/components/tournament/EventsFilterBar'
 
 export const revalidate = 60 // public, frequently-added content [REVIEW-FIX: performance P16]
 
 const PAGE_SIZE = 24
-const COUNTRIES = [
-  { value: '', label: 'Alle Länder' },
-  { value: 'DE', label: 'Deutschland' },
-  { value: 'AT', label: 'Österreich' },
-  { value: 'CH', label: 'Schweiz' },
-] as const
+// YYYY-MM-DD only — anything else is a malformed date input and must not 500 the page
+// (Phase 10 item 8's explicit requirement).
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Center of the DACH region when no result pins the map.
 const DEFAULT_CENTER = { lat: 48.5, lng: 10 }
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatFee(cent: number, currency: string): string {
@@ -41,9 +42,13 @@ function formatFee(cent: number, currency: string): string {
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string }>
+  searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string; from?: string; to?: string }>
 }) {
-  const { country, state, q, cursor } = await searchParams
+  const { country, state, q, cursor, from, to } = await searchParams
+  // Malformed/unparseable input is ignored (no bound on that side) rather than erroring the
+  // whole list — a mistyped date must not 500 the page.
+  const fromDate = from && DATE_RE.test(from) ? new Date(`${from}T00:00:00`) : null
+  const toDate = to && DATE_RE.test(to) ? new Date(`${to}T23:59:59`) : null
   const session = await auth()
   const query = (q ?? '').trim()
 
@@ -65,6 +70,9 @@ export default async function EventsPage({
       ...(query
         ? { OR: [{ title: { contains: query, mode: 'insensitive' } }, { city: { contains: query, mode: 'insensitive' } }] }
         : {}),
+      ...(fromDate || toDate
+        ? { startDate: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
+        : {}),
     },
     orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
     take: PAGE_SIZE + 1,
@@ -81,6 +89,7 @@ export default async function EventsPage({
       entryFeeCent: true,
       currency: true,
       isRecurring: true,
+      headerImageId: true,
       _count: { select: { participants: true } },
     },
   })
@@ -92,6 +101,8 @@ export default async function EventsPage({
   if (country) filterParams.set('country', country)
   if (state) filterParams.set('state', state)
   if (query) filterParams.set('q', query)
+  if (from) filterParams.set('from', from)
+  if (to) filterParams.set('to', to)
   const filterQuery = filterParams.toString()
 
   return (
@@ -120,26 +131,16 @@ export default async function EventsPage({
         }))}
       />
 
-      {/* Filter bar: plain GET form so every filter combination is a shareable URL. */}
-      <form method="GET" className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="sm:w-48">
-          <label htmlFor="filter-country" className="mb-1 block text-sm">
-            Land
-          </label>
-          <Select id="filter-country" name="country" defaultValue={country ?? ''}>
-            {COUNTRIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="sm:w-48">
-          <label htmlFor="filter-state" className="mb-1 block text-sm">
-            Bundesland / Kanton
-          </label>
-          <Input id="filter-state" name="state" defaultValue={state ?? ''} placeholder="z. B. Bayern" />
-        </div>
+      {/* Filter bar: plain GET form so every filter combination is a shareable URL. Country/
+          state/date-range are the interactive client piece (EventsFilterBar); the query text
+          field and submit stay here. */}
+      <form method="GET" className="flex flex-col flex-wrap gap-3 sm:flex-row sm:items-end">
+        <EventsFilterBar
+          initialCountry={country ?? ''}
+          initialState={state ?? ''}
+          initialFrom={from ?? ''}
+          initialTo={to ?? ''}
+        />
         <button
           type="submit"
           className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
@@ -173,16 +174,28 @@ export default async function EventsPage({
           {page.map((t) => (
             <li key={t.id}>
               <Card className="p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link href={`/events/${t.id}`} className="font-semibold hover:underline">
-                    {t.title}
-                  </Link>
-                  {t.isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    {/* Phase 10 item 7 — two lines, per the user's exact spec: line 1 date/time/
+                        title/price, line 2 location/participants. */}
+                    <p className="flex flex-wrap items-center gap-2">
+                      <Link href={`/events/${t.id}`} className="font-semibold hover:underline">
+                        {formatDate(t.startDate)} {formatTime(t.startDate)} – {t.title}, {formatFee(t.entryFeeCent, t.currency)}
+                      </Link>
+                      {t.isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}
+                    </p>
+                    <p className="mt-1 text-sm text-current/60">
+                      {t.country}, {t.state}, {t.city} · {t._count.participants} Teilnehmer
+                    </p>
+                  </div>
+                  {/* Phase 11 item 5 cross-reference: right-aligned thumbnail once a header
+                      image is set; a card with none keeps the text-only layout unchanged. */}
+                  {t.headerImageId && (
+                    <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md">
+                      <Image src={`/api/media/${t.headerImageId}`} alt="" fill sizes="96px" className="object-cover" />
+                    </div>
+                  )}
                 </div>
-                <p className="mt-1 text-sm text-current/60">
-                  {formatDate(t.startDate)} · {t.city}, {t.state} ({t.country}) ·{' '}
-                  {formatFee(t.entryFeeCent, t.currency)} · {t._count.participants} Teilnehmer
-                </p>
               </Card>
             </li>
           ))}
