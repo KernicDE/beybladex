@@ -1,7 +1,9 @@
 // tests/integration/parts-admin.test.ts
-// Phase 5 Part A: parts-catalog curation authz. Only TRUSTED/ADMIN can POST/PATCH
-// /api/admin/parts — 401 unauthenticated, 403 for USER (negative tests, per the standing
-// Global-Constraints rule). A TRUSTED user succeeds and the mutation writes an AuditLog row.
+// Phase 5 Part A: parts-catalog curation authz. The canonical curator tier
+// TRUSTED/JUDGE/ORGANIZER/ADMIN (lib/roles.ts CURATOR_ROLES, issue #42 — the old hardcoded
+// TRUSTED/ADMIN list that 403'd JUDGE/ORGANIZER is gone) can POST/PATCH /api/admin/parts —
+// 401 unauthenticated, 403 for GUEST/USER (negative tests, per the standing Global-Constraints
+// rule). A TRUSTED user succeeds and the mutation writes an AuditLog row.
 // The old "part-requests queue" test below was removed — PartRequest was replaced by
 // CatalogProposal in Phase 11; see tests/integration/catalog-proposal-flow.test.ts.
 // CI-only (Postgres/Redis).
@@ -34,7 +36,7 @@ function post(body: unknown) {
   return new Request('http://localhost/api/admin/parts', { method: 'POST', body: JSON.stringify(body) })
 }
 
-async function makeUser(tag: string, role: 'GUEST' | 'USER' | 'TRUSTED' | 'JUDGE' | 'ADMIN') {
+async function makeUser(tag: string, role: 'GUEST' | 'USER' | 'TRUSTED' | 'JUDGE' | 'ORGANIZER' | 'ADMIN') {
   const suffix = Date.now().toString(36)
   const user = await prisma.user.create({ data: { username: `pa_${tag}_${suffix}`, passwordHash: 'x', role } })
   ids.users.push(user.id)
@@ -52,17 +54,30 @@ afterEach(async () => {
 })
 
 describe('parts catalog curation authz', () => {
-  it('POST: 401 unauthenticated; 403 for GUEST/USER/JUDGE; nothing is created', async () => {
+  it('POST: 401 unauthenticated; 403 for GUEST/USER; nothing is created', async () => {
     mockAuth.mockResolvedValue(asSession(null))
     expect((await POST(post(VALID_PART))).status).toBe(401)
 
-    for (const role of ['GUEST', 'USER', 'JUDGE'] as const) {
+    for (const role of ['GUEST', 'USER'] as const) {
       const user = await makeUser(role.toLowerCase(), role)
       mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
       expect((await POST(post(VALID_PART))).status).toBe(403)
     }
     expect(await prisma.part.count({ where: { name: `TestBlade 1-60` } })).toBe(0)
     expect(await prisma.auditLog.count({ where: { action: 'part.create' } })).toBe(0)
+  })
+
+  it('issue #42: the full curator tier TRUSTED/JUDGE/ORGANIZER/ADMIN can POST (no more drift)', async () => {
+    for (const role of ['TRUSTED', 'JUDGE', 'ORGANIZER', 'ADMIN'] as const) {
+      const user = await makeUser(role.toLowerCase(), role)
+      mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
+      const res = await POST(post({ ...VALID_PART, name: `TestBlade 1-60 ${role}` }))
+      expect(res.status, `role ${role} must be allowed`).toBe(201)
+      const { id } = (await res.json()) as { id: string }
+      ids.parts.push(id)
+    }
+    expect(await prisma.part.count({ where: { name: { startsWith: 'TestBlade 1-60' } } })).toBe(4)
+    expect(await prisma.auditLog.count({ where: { action: 'part.create' } })).toBe(4)
   })
 
   it('TRUSTED can POST a part (201 + AuditLog row); ADMIN can PATCH it', async () => {

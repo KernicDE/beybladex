@@ -1,9 +1,12 @@
 // app/api/admin/parts/route.ts
-// Parts-catalog curation. AUTHZ RULE (standing Global-Constraints requirement): TRUSTED or
-// ADMIN role only — 401 unauthenticated, 403 for GUEST/USER/JUDGE/ORGANIZER (negative test in
+// Parts-catalog curation. AUTHZ RULE (standing Global-Constraints requirement): the canonical
+// curator tier TRUSTED/JUDGE/ORGANIZER/ADMIN (lib/roles.ts CURATOR_ROLES via lib/guards.ts
+// requireCurator — issue #42 removed the old hardcoded TRUSTED/ADMIN drift that 403'd
+// JUDGE/ORGANIZER here while letting them approve proposals and create official Sets) —
+// 401 unauthenticated, 403 for GUEST/USER (negative test in
 // tests/integration/parts-admin.test.ts). POST creates a Part, PATCH edits one; every
 // successful mutation writes an append-only AuditLog row (Phase 4 model). Rate-limited per user.
-import { requireRole } from '@/lib/guards'
+import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parsePartInput } from '@/lib/partValidation'
@@ -17,8 +20,7 @@ async function readJson(req: Request): Promise<unknown | { error: Response }> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  // Deliberately narrower than the proposal-reviewer tier until issue #42 lands: TRUSTED/ADMIN.
-  const gate = await requireRole('TRUSTED', 'ADMIN')
+  const gate = await requireCurator()
   if ('error' in gate) return gate.error
   const { allowed } = await rateLimit(`parts:create:${gate.userId}`, 60, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
@@ -45,8 +47,7 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function PATCH(req: Request): Promise<Response> {
-  // Deliberately narrower than the proposal-reviewer tier until issue #42 lands: TRUSTED/ADMIN.
-  const gate = await requireRole('TRUSTED', 'ADMIN')
+  const gate = await requireCurator()
   if ('error' in gate) return gate.error
   const { allowed } = await rateLimit(`parts:update:${gate.userId}`, 120, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
