@@ -36,13 +36,13 @@ export async function POST(req: Request) {
 
   const { username, challenge } = JSON.parse(raw)
   const verification = await verifyAuthentication(response, challenge)
-  if (!verification.verified) return Response.json({ error: 'verification_failed' }, { status: 401 })
+  if (!verification.verified || !verification.userId) return Response.json({ error: 'verification_failed' }, { status: 401 })
 
-  // Mint a real NextAuth session now that the passkey ceremony succeeded: a single-use,
-  // short-lived Redis "verified" token consumed by lib/auth.ts's second authorize branch
-  // (credentials.webauthnToken). POST succeeds only after Redis-verified challenge consumption,
-  // and signIn sets the same httpOnly/SameSite=Strict session cookie password login does.
-  const user = await prisma.user.findUniqueOrThrow({ where: { username } })
+  // Bind the session to the user who OWNS the verified passkey, never to the username from the
+  // challenge record alone: an attacker answering a challenge minted for <victim> with their own
+  // passkey must not receive a session for <victim>.
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: verification.userId } })
+  if (user.username !== username) return Response.json({ error: 'credential_user_mismatch' }, { status: 403 })
   const webauthnToken = randomUUID()
   await redis.set(`webauthn-verified:${webauthnToken}`, username, 'EX', 60)
   await signIn('credentials', { webauthnToken, redirect: false })
