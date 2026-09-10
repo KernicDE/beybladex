@@ -98,3 +98,50 @@ describe('POST /api/register uniqueness handling (issues #64, #65)', () => {
     await expect(POST(post(validBody()))).rejects.toThrow('connection reset')
   })
 })
+
+describe('POST /api/register email handling (issue #65)', () => {
+  it.each(['not-an-email', 'a b@c.de', 'missing-at-sign.de', 'a@b c.de'])(
+    'rejects malformed email %j with 400 invalid_email',
+    async (email) => {
+      const res = await POST(post(validBody({ email })))
+
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'invalid_email' })
+      expect(userCreate).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects an overlong email (>254 chars) with 400 invalid_email', async () => {
+    const res = await POST(post(validBody({ email: `${'a'.repeat(250)}@example.com` })))
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'invalid_email' })
+  })
+
+  it('accepts a well-formed email and stores it', async () => {
+    const res = await POST(post(validBody({ email: ' Player@Example.COM ' })))
+
+    expect(res.status).toBe(201)
+    expect(userCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ email: 'Player@Example.COM' }) })
+    )
+  })
+
+  it('treats an absent email as optional (stores null)', async () => {
+    const res = await POST(post(validBody()))
+
+    expect(res.status).toBe(201)
+    expect(userCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ email: null }) })
+    )
+  })
+
+  it('has NO email-exists oracle: an email already used elsewhere does not block registration', async () => {
+    // Email is not unique in the schema and never looked up at registration — a second account
+    // with the same address must register fine and the response must not leak anything about
+    // the address's prior use.
+    const res = await POST(post(validBody({ email: 'already.used@example.com' })))
+
+    expect(res.status).toBe(201)
+  })
+})

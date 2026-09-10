@@ -13,6 +13,13 @@ import { getClientIp } from '@/lib/getClientIp'
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 const RESERVED_USERNAMES = new Set(['admin', 'api', 'root', 'support', 'moderator', 'beybladex'])
 
+// [RC3 #65] pragmatic server-side email format check (email is OPTIONAL at registration).
+// Deliberately not RFC 5322-complete — one reachable domain label with an @ in between is the
+// contract; anything fancier is the confirmation-mail's job (an unsendable address simply never
+// confirms). Cap 254 chars is the RFC 5321 path limit.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_MAX_LENGTH = 254
+
 const PRIVACY_POLICY_VERSION = '2026-09-08' // bump whenever /datenschutz's content changes materially
 
 export async function POST(req: Request) {
@@ -46,6 +53,13 @@ export async function POST(req: Request) {
   if (!privacyPolicyAccepted) {
     return Response.json({ error: 'privacy_policy_not_accepted' }, { status: 400 })
   }
+  // [RC3 #65] validate the email FORMAT before anything is stored (was: any string, even
+  // "not-an-email", was persisted). The field stays optional — an absent or empty email is
+  // stored as null (the register form omits the field when the input is empty).
+  const emailStr = typeof email === 'string' ? email.trim() : ''
+  if (emailStr && (emailStr.length > EMAIL_MAX_LENGTH || !EMAIL_RE.test(emailStr))) {
+    return Response.json({ error: 'invalid_email' }, { status: 400 })
+  }
   const parsedBirthDate = new Date(birthDate as string)
   if (!birthDate || Number.isNaN(parsedBirthDate.getTime()) || parsedBirthDate > new Date()) {
     return Response.json({ error: 'invalid_birth_date' }, { status: 400 })
@@ -56,6 +70,14 @@ export async function POST(req: Request) {
     return Response.json({ error: 'parental_consent_email_required' }, { status: 400 })
   }
 
+  // [RC3 #65] Enumeration-oracle decision — deliberate, documented: the SPECIFIC 409 is kept.
+  // Usernames are public on this platform: every account has a public profile page at
+  // /[username], so "does this username exist" is enumerable without touching registration at
+  // all; a generic "registration failed" here would cost honest users a usable error message
+  // and close no real oracle. What remains (response-code amplification) is bounded by the
+  // strict per-IP limiter above — 5 attempts / 15 min, fail-closed while Redis is down (#49).
+  // Email existence is a non-topic: email is NOT unique in the schema and never looked up
+  // here, so registration discloses nothing about which addresses are registered.
   const existing = await prisma.user.findUnique({ where: { username } })
   if (existing) return Response.json({ error: 'username_taken' }, { status: 409 })
 
@@ -66,7 +88,7 @@ export async function POST(req: Request) {
       data: {
         username,
         passwordHash,
-        email: (email as string) || null,
+        email: emailStr || null,
         birthDate: parsedBirthDate,
         isMinor,
         privacyPolicyAcceptedAt: new Date(),
