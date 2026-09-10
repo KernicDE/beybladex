@@ -3,21 +3,17 @@
 // AUTHZ RULE (standing Global-Constraints requirement): only the club's OWNER or an ACTIVE
 // isAdmin member may edit; anyone else gets 403 (negative test in
 // tests/integration/club-join-policies.test.ts). Name/slug/owner are immutable here —
-// ownership transfer is out of scope (same as Phase 4). URL validation is length-cap only,
-// no format allowlist (see app/api/clubs/route.ts); joinPolicy must be a valid enum value.
+// ownership transfer is out of scope (same as Phase 4). URLs go through the shared
+// https?-only allowlist in lib/urlValidation.ts (stored XSS guard); joinPolicy must be
+// a valid enum value.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getActiveAdminMembership } from '@/lib/clubMembers'
+import { parseOptionalUrl } from '@/lib/urlValidation'
 
 const DESCRIPTION_MAX = 1000
 const URL_MAX = 200
 const JOIN_POLICIES = ['OPEN', 'APPLICATION', 'INVITE_ONLY'] as const
-
-function parseOptionalUrl(value: unknown): { ok: boolean; value: string | null } {
-  if (value === null) return { ok: true, value: null }
-  if (typeof value !== 'string' || value.length > URL_MAX) return { ok: false, value: null }
-  return { ok: true, value: value.trim() || null }
-}
 
 type Ctx = { params: Promise<{ slug: string }> }
 
@@ -55,7 +51,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   for (const key of ['websiteUrl', 'discordUrl'] as const) {
     if (fields[key] !== undefined) {
-      const parsed = parseOptionalUrl(fields[key])
+      const parsed = parseOptionalUrl(fields[key], URL_MAX)
       if (!parsed.ok) return Response.json({ error: 'invalid_club_url' }, { status: 400 })
       data[key] = parsed.value
     }

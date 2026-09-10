@@ -6,7 +6,8 @@
 //   immutable via PATCH), patches /api/clubs/[slug]. Rendered for owner/admins only —
 //   the route independently enforces the same tier (403).
 // URL fields are optional; the "looks like a URL" hint (inputMode/type=url) is client-side
-// only — the server accepts any string within the length cap.
+// only — the server enforces an https?-only allowlist (lib/urlValidation.ts) and rejects
+// anything else with invalid_club_url.
 'use client'
 
 import { useState } from 'react'

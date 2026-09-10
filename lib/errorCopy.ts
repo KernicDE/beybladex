@@ -85,7 +85,7 @@ const COPY: Record<string, string> = {
   // clubs — Phase 13 join policies
   join_requires_invite: 'Dieser Club ist nur auf Einladung beitretbar.',
   invalid_join_policy: 'Die angegebene Beitrittsregel ist ungültig.',
-  invalid_club_url: 'Der angegebene Link ist ungültig (maximal 200 Zeichen).',
+  invalid_club_url: 'Der angegebene Link ist ungültig (nur http:// oder https://, maximal 200 Zeichen).',
   invalid_action: 'Die angegebene Aktion ist ungültig.',
   invalid_transition: 'Diese Änderung ist für den aktuellen Status nicht möglich.',
   // admin
