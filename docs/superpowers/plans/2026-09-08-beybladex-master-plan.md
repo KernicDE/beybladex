@@ -2380,14 +2380,16 @@ Each phase below keeps its own full file/interface/acceptance-criteria detail in
 
 **Progress tracking, added 2026-09-10**: every phase (7–17) and the MVP3 stub has its own GitHub issue — [github.com/KernicDE/beybladex/issues](https://github.com/KernicDE/beybladex/issues), labeled `mvp1.5`/`mvp2`/`mvp3` and grouped under the matching [milestone](https://github.com/KernicDE/beybladex/milestones). Each phase's own section below links its issue via a **Tracking:** line right under the header — update that issue's status (and close it on merge) as work actually happens, the same way this file's own phase text gets updated; the two should never drift out of sync.
 
-### MVP1.5 — closing out the initial release (rough priority, not binding)
+### MVP1.5 — closing out the initial release — **COMPLETE, all 7 phases merged to main as of 2026-09-10**
 
-1. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — real gaps found by using the live site; several items here are cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
-2. **Phase 9 — Location Autofill** — quality-of-life for organizers creating events; Phase 10 item 1's region dropdown depends on this phase's canonical region list (or vice versa — whichever ships first defines it).
-3. **Phase 8 — Markdown Authoring** — unblocks Phase 10 item 3's rules-page depth and Phase 12's chat.
-4. **Phase 11 — Generic Media Pipeline, Catalog Proposals, Official Sets & Collection-Linked Availability** — closes a genuinely bigger-than-expected gap (no UI to create a `Build` at all, a core piece of the original spec's deck-builder promise); also builds the one reusable image-upload pipeline (normalized dimensions, WebP) used by both catalog images and the new event header images, and opens catalog curation to Sammlung-side user proposals reviewed by TRUSTED/JUDGE/ORGANIZER/ADMIN.
-5. **Phase 7 — QR-Workflows & Zahlungsverfolgung** — completes the entry-fee/payment tracking the schema (`Tournament.entryFeeCent`) has carried since Phase 1 with no UI ever reaching it, plus event/arena check-in QR flows.
-6. **Phase 12 — Club Chat** and **Phase 13 — Club Profile Fields & Join Policies** — social depth for the existing Club feature.
+1. **Phase 10 — Profile/Tournament/Rules Depth & Missing UI Surfaces** — DONE, merged `87dae5d`. Real gaps found by using the live site; several items here were cheap, high-value fixes (tournament edit/cancel UI, public-profile rebuild, events list layout).
+2. **Phase 9 — Location Autofill** — DONE, merged. Quality-of-life for organizers creating events; Phase 10 item 1's region dropdown depends on this phase's canonical region list.
+3. **Phase 8 — Markdown Authoring** — DONE, merged. Unblocked Phase 10 item 3's rules-page depth and Phase 12's chat.
+4. **Phase 11 — Generic Media Pipeline, Catalog Proposals, Official Sets & Collection-Linked Availability** — DONE, merged. Closed a genuinely bigger-than-expected gap (no UI to create a `Build` at all, a core piece of the original spec's deck-builder promise); also built the one reusable image-upload pipeline (normalized dimensions, WebP) used by both catalog images and event header images, and opened catalog curation to Sammlung-side user proposals reviewed by TRUSTED/JUDGE/ORGANIZER/ADMIN.
+5. **Phase 7 — QR-Workflows & Zahlungsverfolgung** — DONE, merged. Completed the entry-fee/payment tracking the schema (`Tournament.entryFeeCent`) had carried since Phase 1 with no UI ever reaching it, plus event/arena check-in QR flows.
+6. **Phase 12 — Club Chat** and **Phase 13 — Club Profile Fields & Join Policies** — DONE, both merged. Social depth for the existing Club feature.
+
+**MVP2 starts next** — proceeding directly per standing instruction ("mache weiter ohne Nachfragen … fahre mit MVP2 fort").
 
 ### MVP2 — competitive identity & ranking (rough priority, not binding)
 
@@ -2495,11 +2497,13 @@ This section stays a placeholder — the actual schema, routes, and bracket-logi
 
 ---
 
-# Phase 10: Profile/Tournament/Rules Depth & Missing UI Surfaces — added post-Phase-6 by explicit user request, MVP1.5, NOT YET SCHEDULED
+# Phase 10: Profile/Tournament/Rules Depth & Missing UI Surfaces — added post-Phase-6 by explicit user request, MVP1.5, MERGED
 
-**Tracking:** [Issue #4](https://github.com/KernicDE/beybladex/issues/4)
+**Tracking:** [Issue #4](https://github.com/KernicDE/beybladex/issues/4) (closed)
 
-**Status: planned, not started.** Same standing note as Phases 7–9: recorded here so the requirement isn't lost, not to be picked up without the user explicitly asking. Confirm before starting. This phase is a grab-bag of real gaps found by the user actually using the live site (https://beybladex.de) post-Phase-6 — each item below was verified against the current code, not assumed.
+**Status: DONE — merged to main 2026-09-10 (commit `87dae5d`).** All 9 items plus the 6a sub-item (notification-radius geocoding bug) shipped: EventsFilterBar (region + date-range filters), events-list thumbnail card, TournamentForm date/time split, toggle-to-prose rules page, rebuilt public profile + new `/decks/[username]`, friend-request notifications + relabeling, tournament `?view=` toggle with a new `/tournaments/[id]/edit` page and "Turnier absagen", and an enriched public participant list with a read-only bracket/standings preview. `npx tsc --noEmit` clean, `npm test` 202/202, eslint clean. **This was MVP1.5's last open phase — MVP1.5 (Phases 7–13) is now fully complete; MVP2 is next.**
+
+This phase was a grab-bag of real gaps found by the user actually using the live site (https://beybladex.de) post-Phase-6 — each item below was verified against the current code, not assumed.
 
 **1. State/Kanton filter as a dropdown.** `app/events/page.tsx`'s state filter (`filter-state`) is currently a free-text `<Input placeholder="z. B. Bayern">` — replace with a `<Select>` populated from a canonical DACH region list (16 German Bundesländer, 9 Austrian Bundesländer, 26 Swiss Kantone), filtered to the currently-selected `country`'s list; with no country selected, the control is disabled/shows "Land auswählen" (the user's exact wording) rather than an empty or unfiltered dropdown. **Binding dependency on Phase 9**: the canonical region-name list used here MUST be the same one Phase 9's state-autofill (item 4 there) writes into `Tournament.state` — if Phase 9 ships first and writes Nominatim's raw region names, and this phase later hardcodes a different canonical list, filter values won't match stored data and the dropdown will silently return zero results for real tournaments. Whichever phase ships first defines the canonical list (`lib/dachRegions.ts` or similar, shared by both); the other must consume it, not invent a second one.
 
