@@ -11,26 +11,34 @@ import { isTournamentStaff } from '@/lib/tournamentJudges'
 
 type Ctx = { params: Promise<{ id: string; userId: string }> }
 
-async function authorizeAndLoadParticipant(id: string, targetUserId: string, callerId: string) {
+// Explicit `ok` discriminant tag, not a bare `{error} | {participant}` union — TypeScript's
+// `in` narrowing on that shape left `loaded.error` typed as `Response | undefined` at every
+// call site (same footgun as lib/tournamentJudges.ts-adjacent helpers elsewhere in this
+// phase; `ok` as a literal boolean discriminant narrows reliably).
+type AuthzResult =
+  | { ok: true; participant: NonNullable<Awaited<ReturnType<typeof prisma.tournamentParticipant.findUnique>>> }
+  | { ok: false; error: Response }
+
+async function authorizeAndLoadParticipant(id: string, targetUserId: string, callerId: string): Promise<AuthzResult> {
   const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true } })
-  if (!tournament) return { error: Response.json({ error: 'not_found' }, { status: 404 }) } as const
+  if (!tournament) return { ok: false, error: Response.json({ error: 'not_found' }, { status: 404 }) }
   if (!(await isTournamentStaff(id, callerId, tournament.createdById))) {
-    return { error: Response.json({ error: 'forbidden' }, { status: 403 }) } as const
+    return { ok: false, error: Response.json({ error: 'forbidden' }, { status: 403 }) }
   }
   const participant = await prisma.tournamentParticipant.findUnique({
     where: { tournamentId_userId: { tournamentId: id, userId: targetUserId } },
   })
-  if (!participant) return { error: Response.json({ error: 'not_found' }, { status: 404 }) } as const
-  return { participant } as const
+  if (!participant) return { ok: false, error: Response.json({ error: 'not_found' }, { status: 404 }) }
+  return { ok: true, participant }
 }
 
-export async function PATCH(_req: Request, { params }: Ctx) {
+export async function PATCH(_req: Request, { params }: Ctx): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id, userId } = await params
 
   const loaded = await authorizeAndLoadParticipant(id, userId, session.user.id)
-  if ('error' in loaded) return loaded.error
+  if (!loaded.ok) return loaded.error
 
   const updated = await prisma.tournamentParticipant.update({
     where: { id: loaded.participant.id },
@@ -39,13 +47,13 @@ export async function PATCH(_req: Request, { params }: Ctx) {
   return Response.json({ userId: updated.userId, paidAt: updated.paidAt })
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(_req: Request, { params }: Ctx): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id, userId } = await params
 
   const loaded = await authorizeAndLoadParticipant(id, userId, session.user.id)
-  if ('error' in loaded) return loaded.error
+  if (!loaded.ok) return loaded.error
 
   const updated = await prisma.tournamentParticipant.update({
     where: { id: loaded.participant.id },

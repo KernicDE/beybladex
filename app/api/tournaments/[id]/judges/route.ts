@@ -10,17 +10,21 @@ import { prisma } from '@/lib/db'
 
 type Ctx = { params: Promise<{ id: string }> }
 
-async function requireOrganizer(id: string, callerId: string) {
+// Returns the error Response to short-circuit with, or null when the caller is authorized.
+// (Not `{ error: Response } | {}` — TypeScript's `in` narrowing doesn't reliably exclude a
+// bare `{}` branch, since `{}` structurally accepts any non-null value; that shape produced
+// `Response | undefined` at every call site instead of the intended `Response`.)
+async function requireOrganizer(id: string, callerId: string): Promise<Response | null> {
   const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true } })
-  if (!tournament) return { error: Response.json({ error: 'not_found' }, { status: 404 }) } as const
+  if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
   const caller = await prisma.user.findUnique({ where: { id: callerId }, select: { role: true } })
   if (tournament.createdById !== callerId && caller?.role !== 'ADMIN') {
-    return { error: Response.json({ error: 'forbidden' }, { status: 403 }) } as const
+    return Response.json({ error: 'forbidden' }, { status: 403 })
   }
-  return {} as const
+  return null
 }
 
-export async function GET(_req: Request, { params }: Ctx) {
+export async function GET(_req: Request, { params }: Ctx): Promise<Response> {
   const { id } = await params
   const judges = await prisma.tournamentJudge.findMany({
     where: { tournamentId: id },
@@ -30,13 +34,13 @@ export async function GET(_req: Request, { params }: Ctx) {
   return Response.json({ judges })
 }
 
-export async function POST(req: Request, { params }: Ctx) {
+export async function POST(req: Request, { params }: Ctx): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
   const authz = await requireOrganizer(id, session.user.id)
-  if ('error' in authz) return authz.error
+  if (authz) return authz
 
   let body: Record<string, unknown>
   try {
@@ -65,13 +69,13 @@ export async function POST(req: Request, { params }: Ctx) {
   return Response.json({ tournamentId: id, userId: targetUserId }, { status: 201 })
 }
 
-export async function DELETE(req: Request, { params }: Ctx) {
+export async function DELETE(req: Request, { params }: Ctx): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
   const authz = await requireOrganizer(id, session.user.id)
-  if ('error' in authz) return authz.error
+  if (authz) return authz
 
   const url = new URL(req.url)
   let targetUserId = url.searchParams.get('userId')
