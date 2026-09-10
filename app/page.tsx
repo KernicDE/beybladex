@@ -7,6 +7,7 @@
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Card } from '@/components/ui/Card'
+import { BrandMark } from '@/components/brand/BrandMark'
 
 const PRIMARY_LINKS = [
   { href: '/decks', title: 'Decks', description: 'Verwalte deine Turnier-Decks.' },
@@ -39,6 +40,7 @@ export default async function Home() {
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center gap-6 p-6 text-center">
+      <BrandMark size={56} />
       <h1 className="text-4xl font-bold tracking-tight text-x-cyan-text dark:text-x-cyan">
         BeybladeX.de
       </h1>
