@@ -34,7 +34,9 @@ describe('recomputeDirtyMeta cache-write failure', () => {
     expect(await redis.sismember(DIRTY_PARTS_KEY, partId)).toBe(1)
 
     // With the real pipeline again, the retry drains the set and writes the (zero-appearance)
-    // cache entries — proving the restored ids are processed normally.
+    // cache entries — proving the restored ids are processed normally. The spy must be restored
+    // FIRST: otherwise the "retry" runs through the same rejecting mock again.
+    vi.restoreAllMocks()
     const retry = await recomputeDirtyMeta()
     expect(retry).toMatchObject({ builds: 1, parts: 1 })
     expect(await redis.sismember(DIRTY_BUILDS_KEY, buildId)).toBe(0)
