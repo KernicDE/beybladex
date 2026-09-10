@@ -37,6 +37,13 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Lowercase repository owner (GHCR requires lowercase image names)
         run: echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      # issue #77 — CalVer + build identifier: UTC merge date + short SHA of the exact
+      # commit the green CI run tested. Baked into the image (Dockerfile APP_VERSION ENV)
+      # so the running instance always reports which build it is.
+      - name: Compute deploy version
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "APP_VERSION=$(date -u +%Y.%m.%d)+${SHORT_SHA}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -48,12 +55,20 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ env.IMAGE_OWNER }}/beybladex:latest
-          # Phase 18 — the ONLY build-arg that needs a real value (Dockerfile's own comment):
-          # NEXT_PUBLIC_* vars are inlined into the client bundle at build time. Requires a
-          # repo secret NEXT_PUBLIC_VAPID_PUBLIC_KEY (not sensitive — safe as a public value —
-          # but kept as a secret rather than a plain repo variable so it's set once deliberately
-          # alongside the matching server-side VAPID_PRIVATE_KEY, not typo'd out of sync).
+          # Phase 18 — NEXT_PUBLIC_* vars are inlined into the client bundle at build time,
+          # so this one MUST be the real production value (not a stub) or the Push subscribe
+          # button breaks. Requires a repo secret NEXT_PUBLIC_VAPID_PUBLIC_KEY (not sensitive —
+          # safe as a public value — but kept as a secret rather than a plain repo variable so
+          # it's set once deliberately alongside the matching server-side VAPID_PRIVATE_KEY,
+          # not typo'd out of sync). APP_VERSION (issue #77) is the other build-arg with a
+          # real value, computed two steps above.
           build-args: |
             NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+            APP_VERSION=${{ env.APP_VERSION }}
+          # issue #77 — OCI labels so `docker inspect` on the server maps a running
+          # container straight back to commit and version (rollback/support lookups).
+          labels: |
+            org.opencontainers.image.version=${{ env.APP_VERSION }}
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
