@@ -5,8 +5,9 @@
 // byed player that round, NOT a ranking event, so unlike Swiss there is no bye-counting here) of
 // floor(n/2) non-overlapping pairs each, and every unordered pair meets exactly once per pass.
 //
-// Determinism: participants are sorted ascending userId first (the repo's standing seeding
-// convention, lib/bracket.ts), and the lowest-ranked participant is the fixed circle pivot.
+// Determinism: participants are sorted by lib/seeding.ts's sortBySeed first (Phase 15:
+// TournamentParticipant.seed ascending, unseeded last, userId tie-break — the same convention
+// lib/bracket.ts uses), and the top seed (or lowest userId, unseeded) is the fixed circle pivot.
 //
 // Repeats: for repeats > 1 the full pass is appended again, with player1Id/player2Id SWAPPED on
 // even-numbered passes (home/away alternation) — which nominal "player1" a match assigns has no
@@ -15,16 +16,15 @@
 //
 // Pure function (no DB) so the whole fixture list is unit-testable without infrastructure.
 import type { TournamentParticipant } from '@prisma/client'
+import { sortBySeed } from '@/lib/seeding'
 
 export type RoundRobinPairing = { round: number; player1Id: string; player2Id: string }
 
 export function generateRoundRobinPairings(
-  participants: Pick<TournamentParticipant, 'userId'>[],
+  participants: (Pick<TournamentParticipant, 'userId'> & { seed?: number | null })[],
   repeats: number
 ): RoundRobinPairing[] {
-  const sorted = [...participants]
-    .map((p) => p.userId)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const sorted = sortBySeed(participants).map((p) => p.userId)
   if (sorted.length < 2) return []
 
   // Odd field: a phantom null slot completes the circle; the participant mirrored against it

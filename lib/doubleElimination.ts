@@ -2,8 +2,10 @@
 // Phase 5 Part C2 — double-elimination bracket generation + propagation mapping.
 //
 // Pure functions only (no DB) so the topology is unit-testable without infrastructure.
-// Seeding and bye policy are reused VERBATIM from lib/bracket.ts (ascending userId; the first
-// `slots − n` participants get byes as auto-completed round-1 matches) — do not reinvent them here.
+// Seeding and bye policy are reused VERBATIM from lib/bracket.ts (Phase 15: lib/seeding.ts's
+// sortBySeed — TournamentParticipant.seed ascending, unseeded last, userId tie-break; the first
+// `slots − n` participants in that order get byes as auto-completed round-1 matches) — do not
+// reinvent them here.
 //
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // ROUND NUMBERING AND DROP-IN MAPPING (the single most error-prone part of this feature — a
@@ -62,6 +64,7 @@
 import type { BracketNode } from '@/lib/bracket'
 import { generateSingleEliminationBracket } from '@/lib/bracket'
 import type { TournamentParticipant } from '@prisma/client'
+import { sortBySeed } from '@/lib/seeding'
 
 export type DoubleEliminationBracket = {
   winners: BracketNode[]
@@ -104,9 +107,9 @@ function lbMatches(slots: number, j: number): number {
  * that. The winners array is exactly generateSingleEliminationBracket's output (byes included).
  */
 export function generateDoubleEliminationBracket(
-  participants: Pick<TournamentParticipant, 'userId'>[]
+  participants: (Pick<TournamentParticipant, 'userId'> & { seed?: number | null })[]
 ): DoubleEliminationBracket | null {
-  const sorted = [...participants].sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0))
+  const sorted = sortBySeed(participants)
   const count = sorted.length
   if (count < 3) return null
 

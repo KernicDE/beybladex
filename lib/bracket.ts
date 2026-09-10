@@ -4,13 +4,18 @@
 // findUnique include, never per-match queries; generation itself is a pure function so it is
 // unit-testable without a database).
 //
-// BYE POLICY (documented decision): participants carry no seeding data, so seeding is
-// deterministic — ascending userId. The first (nextPow2 − n) participants in that order receive
-// a bye. A bye is represented as a round-1 match with player2 = null, status COMPLETED and
-// winnerId = the bye recipient, so bracket rendering and advancement propagation stay uniform
-// (the winner slot feeds the next round exactly like a played match).
+// SEEDING (Phase 15 — replaces the old "no seeding data" policy): participants are sorted by
+// lib/seeding.ts's sortBySeed (TournamentParticipant.seed ascending, unseeded last, userId
+// tie-break — byte-for-byte the old behavior when every seed is null). The first
+// (nextPow2 − n) participants IN THAT ORDER receive a bye — i.e. the top seeds get the byes,
+// matching standard seeded-bracket convention (a "no-seed" field still degrades gracefully:
+// with everyone unseeded, this is just the old userId-ascending bye assignment). A bye is
+// represented as a round-1 match with player2 = null, status COMPLETED and winnerId = the bye
+// recipient, so bracket rendering and advancement propagation stay uniform (the winner slot
+// feeds the next round exactly like a played match).
 import { prisma } from '@/lib/db'
 import type { MatchStatus, TournamentParticipant } from '@prisma/client'
+import { sortBySeed } from '@/lib/seeding'
 
 export type BracketNode = {
   round: number
@@ -21,8 +26,8 @@ export type BracketNode = {
   status: MatchStatus
 }
 
-export function generateSingleEliminationBracket(participants: Pick<TournamentParticipant, 'userId'>[]): BracketNode[] {
-  const sorted = [...participants].sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0))
+export function generateSingleEliminationBracket(participants: (Pick<TournamentParticipant, 'userId'> & { seed?: number | null })[]): BracketNode[] {
+  const sorted = sortBySeed(participants)
   const count = sorted.length
   if (count < 2) return []
 
