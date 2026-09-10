@@ -47,3 +47,24 @@ export async function getActiveAdminMembership(clubId: string, userId: string) {
     select: { id: true },
   })
 }
+
+// The caller's ACTIVE membership row (any ACTIVE member, admin or not) — the authz read the
+// club action routes (invite/approve/promote/remove gates) use. A PENDING_APPLICATION /
+// PENDING_INVITE row never appears here, so it can never confer privileges. Distinct from
+// getViewerMembership, which intentionally includes pending rows for the UI's own-state view.
+export async function getActiveMembership(clubId: string, userId: string) {
+  return prisma.clubMember.findFirst({
+    where: { clubId, userId, status: 'ACTIVE' },
+    select: { isAdmin: true },
+  })
+}
+
+// The ACTIVE admin user ids (the owner is NOT included — callers add ownerId themselves when
+// they want the owner notified too, keeping ownership semantics at the call site).
+export async function getActiveAdminUserIds(clubId: string): Promise<string[]> {
+  const admins = await prisma.clubMember.findMany({
+    where: { clubId, status: 'ACTIVE', isAdmin: true },
+    select: { userId: true },
+  })
+  return admins.map((a) => a.userId)
+}

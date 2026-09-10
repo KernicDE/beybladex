@@ -189,6 +189,16 @@ describe('leaveClub', () => {
   })
 })
 
+describe('ACTIVE-filter single source of truth (issue #61)', () => {
+  it('the caller-privilege read is the ACTIVE-filtered lib/clubMembers.ts read — a caller whose only row is PENDING (mocked seam returns null, exactly what the ACTIVE filter does) gets 403 on invite and on promote/demote', async () => {
+    memberFindFirst.mockResolvedValue(null) // what getActiveMembership returns for a pending-only caller
+    await expect(inviteToClub('test-club', 'user-1', 'invitee-1')).rejects.toMatchObject({ status: 403, payload: { error: 'forbidden' } })
+    memberFindUnique.mockResolvedValue({ id: 'm3', userId: 'member-1', status: 'ACTIVE' })
+    await expect(updateMembership('test-club', 'user-1', { userId: 'member-1', isAdmin: true }))
+      .rejects.toMatchObject({ status: 403, payload: { error: 'forbidden' } })
+  })
+})
+
 describe('ClubMembershipError contract', () => {
   it('carries status + payload for the route to map 1:1 (204 = null payload)', () => {
     const e = new ClubMembershipError(409, { error: 'already_member' })

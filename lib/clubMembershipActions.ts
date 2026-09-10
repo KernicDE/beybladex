@@ -1,5 +1,6 @@
 // lib/clubMembershipActions.ts (RC4, issue #57 — extracted from
-// app/api/clubs/[slug]/members/route.ts; reads centralized onto lib/clubMembers.ts in #61)
+// app/api/clubs/[slug]/members/route.ts; issue #61 — every membership READ centralized in
+// lib/clubMembers.ts, the single source of truth for ACTIVE filtering)
 // The club-membership BUSINESS LOGIC, HTTP-free and directly unit-testable: join/apply (per
 // Club.joinPolicy), invite (owner/ACTIVE-admin only, PENDING_INVITE), approve/accept (status
 // transitions), promote/demote, and leave/decline/retract/remove (with the append-only AuditLog
@@ -28,6 +29,7 @@
 // The caller's own privileges are always read via an ACTIVE-filtered lookup: a pending
 // application/invite row never confers admin rights to its holder.
 import { prisma } from '@/lib/db'
+import { getActiveMembership, getActiveAdminUserIds } from '@/lib/clubMembers'
 import { rateLimit } from '@/lib/rateLimit'
 import { notifyUser } from '@/lib/notify'
 
@@ -60,20 +62,15 @@ async function loadClubAndCaller(clubSlug: string, userId: string) {
     select: { id: true, ownerId: true, name: true, slug: true, joinPolicy: true },
   })
   if (!club) return null
-  const caller = await prisma.clubMember.findFirst({
-    where: { clubId: club.id, userId, status: 'ACTIVE' },
-    select: { isAdmin: true },
-  })
+  // ACTIVE-filtered authz read — lib/clubMembers.ts is the single source of truth for the
+  // status filter; a pending application/invite row never confers admin rights (issue #61).
+  const caller = await getActiveMembership(club.id, userId)
   return { club, caller }
 }
 
 // Notify the club's owner + ACTIVE admin members (deduplicated) — used when someone applies.
 async function notifyClubAdmins(club: { id: string; ownerId: string; name: string; slug: string }, message: string) {
-  const admins = await prisma.clubMember.findMany({
-    where: { clubId: club.id, status: 'ACTIVE', isAdmin: true },
-    select: { userId: true },
-  })
-  const recipients = new Set(admins.map((a) => a.userId))
+  const recipients = new Set(await getActiveAdminUserIds(club.id))
   recipients.add(club.ownerId)
   for (const userId of recipients) {
     await notifyUser(userId, { title: `Neue Bewerbung: ${club.name}`, message, link: `/clubs/${club.slug}` })

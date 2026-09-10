@@ -10,6 +10,7 @@
 // can never nominate an owner. Rate-limited per user. Radius notifications fire post-create.
 import { requireUser } from '@/lib/guards'
 import { prisma } from '@/lib/db'
+import { getActiveAdminMembership } from '@/lib/clubMembers'
 import { notifyUsersInRadius } from '@/lib/notify'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
@@ -136,11 +137,9 @@ export async function POST(req: Request) {
     if (!hasGlobalRole) {
       // Club-admins may create events for THEIR club only — verified by query, not by the body.
       // Phase 13: the membership must be ACTIVE — a pending application/invite never confers
-      // event-creation rights, even if the row is (mistakenly) flagged isAdmin.
-      const membership = await prisma.clubMember.findFirst({
-        where: { clubId: data.clubId, userId: userId, status: 'ACTIVE', isAdmin: true },
-        select: { id: true },
-      })
+      // event-creation rights, even if the row is (mistakenly) flagged isAdmin. The read is
+      // lib/clubMembers.ts's ACTIVE-filtered authz read (issue #61) so the filter can't drift.
+      const membership = await getActiveAdminMembership(data.clubId, userId)
       if (!membership) return Response.json({ error: 'forbidden' }, { status: 403 })
     }
     const club = await prisma.club.findUnique({ where: { id: data.clubId }, select: { id: true } })
