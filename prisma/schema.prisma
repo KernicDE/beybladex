@@ -565,6 +565,9 @@ model Build {
   // Phase 11 — provenance for collection rows created by "Set als gekauft markieren".
   sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBuild")
 
+  // Phase 20 — the same three parts can never back two Build rows; every creation path
+  // pre-checks the combo and returns the existing Build's id gracefully.
+  @@unique([bladeId, ratchetId, bitId])
   @@index([bladeId])
   @@index([ratchetId])
   @@index([bitId])

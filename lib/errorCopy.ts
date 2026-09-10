@@ -93,6 +93,15 @@ const COPY: Record<string, string> = {
   invalid_arena_count: 'Die Anzahl der Arenen muss zwischen 1 und 64 liegen.',
   not_a_player: 'Du bist keine:r der beiden Spieler:innen dieses Matches.',
   already_judge: 'Diese Person ist bereits als Judge für dieses Turnier eingetragen.',
+  // builds (Phase 20 — POST /api/builds, POST /api/admin/builds)
+  combo_exists: 'Diese Kombination existiert bereits im Katalog.',
+  unknown_bladeId: 'Das gewählte Blade existiert nicht.',
+  unknown_ratchetId: 'Das gewählte Ratchet existiert nicht.',
+  unknown_bitId: 'Das gewählte Bit existiert nicht.',
+  invalid_bladeId: 'Das gewählte Teil ist kein Blade.',
+  invalid_ratchetId: 'Das gewählte Teil ist kein Ratchet.',
+  invalid_bitId: 'Das gewählte Teil ist kein Bit.',
+  invalid_type: 'Der angegebene Bey-Typ ist ungültig.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).
