@@ -2397,6 +2397,7 @@ Each phase below keeps its own full file/interface/acceptance-criteria detail in
 4. **Phase 17 — Visual Identity / Branding** — the platform's current PWA icons are unstyled placeholders (1–4 KB generic files); a real, distinctive mark is what makes BeybladeX.de recognizable next to WBO's forum and Challonge's generic bracket pages rather than blending in as "another Beyblade tool."
 5. **Phase 18 — Push Notifications & Event/Match Lifecycle Triggers** — neither real OS-level push notifications nor participant-facing lifecycle triggers ("Turnier gestartet," "Gehe zu Arena N") exist today; the only real-time mechanism is an open-tab SSE stream, and the only `notifyUser` call sites in the whole codebase are club-membership events. Depends on Phase 16's `Tournament.startedAt` and Phase 7's arena assignment for two of its three triggers.
 6. **Phase 19 — Unique Display Names & Registration Clarity** — `User.displayName` exists but has no uniqueness constraint at all today; adds a Unicode/case-insensitive uniqueness check (full free-form casing/UTF-8 preserved) plus registration-page copy explaining the username's lowercase-only rule before a user hits the error.
+7. **Phase 20 — Canonical Build Naming & Duplicate-Combo Prevention** — `Build.name` is free-text everywhere today with no auto-derivation from the constituent parts and no unique constraint on `(bladeId, ratchetId, bitId)` — two rows can reference the exact same combo. Adds a confirmed-grammar auto-naming function and a DB-level duplicate guard.
 
 **Explicitly out of MVP1.5 and MVP2**: 3-vs-3 team competition (WBO's "Masters League" format) — see MVP3 below; it needs a new roster/team concept this codebase doesn't have yet and is a bigger structural change than anything else in either list.
 
@@ -2825,6 +2826,26 @@ newEloA = eloA + K * (scoreA - expectedA)   // scoreA = 1 for a win, 0 for a los
 **Acceptance criteria:** two users can never hold display names that are visually/case-identical after Unicode normalization, while `displayName` itself keeps full free-form Unicode/casing; the registration page explains the username's lowercase-only rule and the display-name alternative before a user has to fail submission to learn it.
 
 **When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready.
+
+---
+
+# Phase 20: Canonical Build Naming & Duplicate-Combo Prevention — added post-Phase-6, MVP2, by explicit user request
+
+**Tracking:** [Issue #16](https://github.com/KernicDE/beybladex/issues/16)
+
+**Status: planned, not started.** Same standing note: confirm before starting.
+
+**Scope, verified against current code first**: the user's expectation — a `Build`'s name is auto-derived from its parts as `"<Blade> <Ratchet><Bit-short>"` (their worked example: Blade "Circle Ghost" + Ratchet "6-40" + Bit "LR" (low orb) → "Circle Ghost 4-60LR" — note the ratchet number in a real product name is the blade's own stat suffix convention, not a literal concatenation; the exact WBO/retail naming grammar needs confirming against real product names at implementation time, not assumed from one example) — is NOT implemented. `Build.name` is free-text, typed by hand in every creation path (the admin direct-create form, the `CatalogProposalForm`'s Set-name field) — nothing derives it from the constituent parts' names. Worse, there is no unique constraint on `(bladeId, ratchetId, bitId)` at all (verified: no `@@unique` on `Build` covering those three columns) — two rows can reference the exact same three parts today, and the only place that ever concatenates part names into a build-like label is `app/meta/page.tsx`'s display-only `${blade.name} ${ratchet.name} ${bit.name}`, never stored or used for deduplication.
+
+**1. Canonical name generation.** A pure function (`lib/buildNaming.ts`, unit-testable) `canonicalBuildName(blade: string, ratchet: string, bit: string): string` implementing the real WBO/retail naming convention — **confirm the exact grammar with the user against real product names before implementing** (the worked example alone under-specifies edge cases: bits with multi-letter short codes, ratchets whose retail-name segment isn't simply their own DB name, dual-spin/CX-series naming quirks from Phase 16). Called automatically wherever a `Build` is created without an explicit official name (admin direct-create, `CatalogProposal` BUILD approval, `POST /api/builds`'s personal-combo path) — an official Set's curator-entered name (the actual retail box name, which may differ cosmetically) is NOT overridden by this, since that's genuine product-name data, not a placeholder.
+
+**2. Duplicate-combo prevention, using the canonical name as the mechanism.** Add `@@unique([bladeId, ratchetId, bitId])` to `Build` (additive migration) so the DB itself rejects a second row for the same three parts — the canonical name from item 1 is what makes a collision immediately legible to a curator/user ("this combo already exists as X") rather than silently allowing a near-duplicate with a differently-typed name. `POST /api/builds` and the `CatalogProposal` BUILD-approval transaction both need a pre-check (existing-combo lookup, return the existing `Build.id` instead of erroring past a raw unique-constraint 500) so hitting an existing combo is a graceful "here's the build that already exists," not a database error.
+
+**Tests:** `tests/unit/build-naming.test.ts` (the canonical-name function against several real retail combos, once the grammar is confirmed), `tests/integration/duplicate-build-combo.test.ts` (creating a second `Build` for the same three parts returns the existing build, not a duplicate row or a 500).
+
+**Acceptance criteria:** every newly created non-official-Set `Build` gets a name automatically derived from its parts using the confirmed real naming convention; the same three parts can never produce two separate `Build` rows, and attempting to create a duplicate surfaces the existing build rather than erroring.
+
+**When this phase is eventually scheduled**, write its own bite-sized TDD sub-plan before starting — this section is file/interface-level, not implementation-ready. **Confirm the exact naming grammar with the user first** (item 1) — do not implement from the single worked example alone.
 
 ---
 
