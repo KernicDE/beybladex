@@ -2,6 +2,7 @@
 import { unlink } from 'node:fs/promises'
 import { prisma } from '@/lib/db'
 import { mediaFilePath } from '@/lib/media'
+import { invalidateTokenVersionCache } from '@/lib/tokenVersion'
 
 export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
   // Phase 21: ids of the on-volume avatar files to unlink AFTER the transaction commits
@@ -87,6 +88,10 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
         displayNameNormalized: `gelöschter nutzer ${userId}`,
         bio: null, discordTag: null, city: null, postalCode: null, latitude: null, longitude: null,
         birthDate: null, totpSecret: null, parentalConsentEmail: null,
+        // [REVIEW-FIX: backend-security #50] session revocation: the erasure invalidates every
+        // existing 30-day JWT — bumping tokenVersion makes the next jwt-callback check in
+        // lib/auth.ts reject each pre-erasure token at its next use.
+        tokenVersion: { increment: 1 },
         // Phase 21: the avatar reference is already severed by the MediaAsset deletion's
         // SetNull above; the explicit null keeps the erasure matrix self-documenting
         // (standing guard: every User-owned datum ships with its entry).
@@ -140,11 +145,10 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
   for (const assetId of avatarFileIds) {
     await unlink(mediaFilePath(assetId)).catch(() => {})
   }
-  // Session/token invalidation: KNOWN GAP — the plan calls for bumping a `tokenVersion` field so
-  // existing 30-day JWTs stop authenticating immediately after erasure. That field is additive to
-  // User and paired with the backend review's open token-revocation item, which has NOT been
-  // implemented yet in this codebase. Until it lands, a session cookie issued before erasure can
-  // technically still authenticate against the anonymized row (which no longer carries PII or
-  // credentials, so no data is exposed, but the session is not revoked). Add the bump here when
-  // tokenVersion exists — do not invent the field from this task.
+  // Session/token invalidation (issue #50, previously a KNOWN GAP — now implemented): the
+  // anonymizing update inside the transaction already bumped tokenVersion, and lib/auth.ts's
+  // jwt callback rejects any token whose `tv` claim no longer matches. The Redis version cache
+  // (lib/tokenVersion.ts) must be dropped AFTER the commit — never inside the transaction —
+  // so a rolled-back erasure cannot leave the cache and the DB disagreeing.
+  await invalidateTokenVersionCache(userId)
 }

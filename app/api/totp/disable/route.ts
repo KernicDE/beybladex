@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { bumpTokenVersion } from '@/lib/tokenVersion'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -33,7 +34,9 @@ export async function POST(req: Request) {
   const valid = await bcrypt.compare(password, user.passwordHash)
   if (!valid) return Response.json({ error: 'invalid_password' }, { status: 403 })
 
-  await prisma.user.update({ where: { id: user.id }, data: { totpSecret: null } })
+  // [REVIEW-FIX: backend-security #50] disabling the second factor revokes every existing
+  // session: all pre-disable 30-day JWTs stop authenticating at their next use.
+  await bumpTokenVersion(user.id)
 
   return Response.json({ disabled: true }, { status: 200 })
 }
