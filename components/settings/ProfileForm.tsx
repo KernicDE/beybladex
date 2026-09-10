@@ -1,6 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { FormField } from '@/components/ui/FormField'
+import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
+import { BIO_MAX } from '@/lib/markdownFieldCaps'
 
 type ProfileValues = {
   displayName: string
@@ -57,10 +60,14 @@ export function ProfileForm({ initial, isMinor }: { initial: ProfileValues; isMi
         Anzeigename
         <input className={inputCls} value={values.displayName} onChange={set('displayName')} maxLength={50} />
       </label>
-      <label className="block text-sm">
-        Über mich
-        <textarea className={inputCls} rows={4} value={values.bio} onChange={set('bio')} maxLength={500} />
-      </label>
+      <FormField label="Über mich">
+        <MarkdownEditor
+          value={values.bio}
+          onChange={(bio) => setValues((v) => ({ ...v, bio }))}
+          rows={4}
+          maxLength={BIO_MAX}
+        />
+      </FormField>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
           Stadt

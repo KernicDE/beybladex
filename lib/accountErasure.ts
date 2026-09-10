@@ -24,6 +24,12 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // Regression Guard's standing rule that a new User-owned model ships with its entry).
     await tx.rating.deleteMany({ where: { userId } })
     await tx.partRequest.deleteMany({ where: { requestedById: userId } })
+    // Phase 12: ClubMessage rows are NOT deleted on account erasure — authorId is a plain
+    // string column (same pattern as AuditLog.actorId), so the personal link is severed by the
+    // User row's own anonymization below while the messages survive for the other club
+    // members (Art. 17(3): erasing them would let a user retroactively delete chat history
+    // other members already read). Anonymization rewrites displayName/username, which is what
+    // the chat renders.
     // Decks/builds a user made: delete the deck join rows and the deck itself (builds are shared
     // catalog-adjacent rows referenced by other decks/matches too — never delete Build itself here).
     const decks = await tx.deck.findMany({ where: { userId }, select: { id: true } })
@@ -44,7 +50,7 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     })
     // Club ownership can't dangle (onDelete: Restrict in spec §3) — reassign to another admin
     // member, or dissolve the club if the departing owner was its only member.
-    const ownedClubs = await tx.club.findMany({ where: { ownerId: userId }, include: { members: { where: { isAdmin: true, userId: { not: userId } } } } })
+    const ownedClubs = await tx.club.findMany({ where: { ownerId: userId }, include: { members: { where: { isAdmin: true, status: 'ACTIVE', userId: { not: userId } } } } })
     for (const club of ownedClubs) {
       if (club.members[0]) await tx.club.update({ where: { id: club.id }, data: { ownerId: club.members[0].userId } })
       else await tx.club.delete({ where: { id: club.id } }) // no other admin — dissolve

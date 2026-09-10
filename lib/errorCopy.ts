@@ -78,6 +78,12 @@ const COPY: Record<string, string> = {
   already_member: 'Du bist bereits Mitglied dieses Clubs.',
   not_member: 'Dieses Mitglied existiert nicht.',
   invalid_member: 'Das Mitglied ist ungültig.',
+  // clubs — Phase 13 join policies
+  join_requires_invite: 'Dieser Club ist nur auf Einladung beitretbar.',
+  invalid_join_policy: 'Die angegebene Beitrittsregel ist ungültig.',
+  invalid_club_url: 'Der angegebene Link ist ungültig (maximal 200 Zeichen).',
+  invalid_action: 'Die angegebene Aktion ist ungültig.',
+  invalid_transition: 'Diese Änderung ist für den aktuellen Status nicht möglich.',
   // admin
   invalid_role: 'Die angegebene Rolle ist ungültig.',
 }

@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { Textarea } from '@/components/ui/Textarea'
+import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
+import { PART_REQUEST_NOTES_MAX } from '@/lib/markdownFieldCaps'
 
 export function PartRequestCTA({ defaultName = '', loggedIn = true }: { defaultName?: string; loggedIn?: boolean }) {
   const router = useRouter()
@@ -71,8 +72,8 @@ export function PartRequestCTA({ defaultName = '', loggedIn = true }: { defaultN
           </Select>
         </FormField>
       </div>
-      <FormField label="Notiz (optional)">
-        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={500} placeholder="z. B. erscheint im Set X mit …" />
+      <FormField label="Notiz (optional, Markdown)">
+        <MarkdownEditor value={notes} onChange={setNotes} rows={2} maxLength={PART_REQUEST_NOTES_MAX} placeholder="z. B. erscheint im Set X mit …" />
       </FormField>
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
       <div className="flex gap-2">

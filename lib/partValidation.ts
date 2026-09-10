@@ -1,6 +1,8 @@
 // lib/partValidation.ts (Phase 5 Part A)
 // Shared input parsing for the parts-catalog curation API (POST/PATCH /api/admin/parts).
 // Everything is validated here so both methods enforce exactly the same shape.
+import { PART_REQUEST_NOTES_MAX } from '@/lib/markdownFieldCaps'
+
 const NAME_MAX = 120
 
 const MANUFACTURERS = ['TT', 'HASBRO'] as const
@@ -115,7 +117,7 @@ export function parsePartRequestInput(body: unknown): { data?: PartRequestInput;
     else manufacturerGuess = b.manufacturerGuess
   }
 
-  const notes = takeString(b, 'notes', 500)
+  const notes = takeString(b, 'notes', PART_REQUEST_NOTES_MAX)
 
   return errors.length > 0 ? { errors } : { data: { name: name!, manufacturerGuess, notes: notes ?? null } }
 }

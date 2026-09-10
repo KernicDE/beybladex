@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { RatingForm } from '@/components/beyblade/RatingForm'
 
 export interface RatingListItem {
@@ -62,7 +63,7 @@ export function RatingList({
                   <span className="text-current/30">{'★'.repeat(5 - rating.stars)}</span>{' '}
                   <span className="text-sm font-normal text-current/60">@{rating.username}</span>
                 </p>
-                {rating.comment && <p className="mt-1 text-sm">{rating.comment}</p>}
+                {rating.comment && <MarkdownContent className="mt-1 text-sm">{rating.comment}</MarkdownContent>}
                 <p className="mt-1 text-xs text-current/50">{new Date(rating.createdAt).toLocaleDateString('de-DE')}</p>
               </div>
               <div className="flex gap-2">

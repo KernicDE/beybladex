@@ -30,17 +30,34 @@ function notificationContent(t: Tournament): { title: string; message: string; l
   }
 }
 
-/**
- * Phase 7 — single-user notification: durable Notification row (source of truth) + a per-user
- * Redis pub/sub publish for the SSE stream. Per-user channel ONLY — a global channel would leak
- * every user's notification content to every connected SSE client ([REVIEW-FIX: frontend-pwa I9]).
- * Published with the command connection; the SSE route subscribes on redisSubscriber.
- */
-export async function notifyUser(userId: string, title: string, message: string, link?: string): Promise<void> {
+// Phase 13: single-user notification (club applications/invites, approvals; also used by
+// Phase 7's payment/check-in/arena notifications). Reuses the same durable row + per-user
+// pub/sub channel as the radius blast; email honors the same minor ceiling (no email to
+// isMinor users, in-app notification always reaches them).
+export async function notifyUser(
+  userId: string,
+  content: { title: string; message: string; link?: string },
+): Promise<void> {
   const row = await prisma.notification.create({
-    data: { userId, title, message, link },
+    data: { userId, title: content.title, message: content.message, link: content.link ?? null },
   })
   await redis.publish(notifyChannel(userId), JSON.stringify(row))
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { notifyEmail: true, isMinor: true, email: true },
+  })
+  if (user?.notifyEmail && !user.isMinor && user.email) {
+    try {
+      await sendNotificationEmail({
+        to: user.email,
+        subject: content.title,
+        text: `${content.message}\n\nDetails: ${content.link ?? '/'}`,
+      })
+    } catch (err) {
+      console.error(`[notify] email to ${userId} failed:`, err)
+    }
+  }
 }
 
 export async function notifyUsersInRadius(tournament: Tournament): Promise<void> {
