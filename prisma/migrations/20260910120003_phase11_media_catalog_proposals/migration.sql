@@ -54,7 +54,7 @@ SELECT
         'manufacturerGuess', "manufacturerGuess",
         'notes', "notes"
     ),
-    CASE "status" WHEN 'RESOLVED' THEN 'APPROVED'::"ProposalStatus" ELSE "status"::"ProposalStatus" END,
+    CASE "status"::text WHEN 'RESOLVED' THEN 'APPROVED'::"ProposalStatus" ELSE "status"::text::"ProposalStatus" END,
     "createdAt"
 FROM "PartRequest";
 
