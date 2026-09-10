@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { JudgeBracketView, eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
 import { OrganizerConsole } from '@/components/tournament/OrganizerConsole'
+import { renderQrSvg } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic' // live tournament surface [REVIEW-FIX: performance P16]
 
@@ -66,6 +67,19 @@ export default async function TournamentBracketPage({ params }: { params: Promis
   const judges = isOrganizer
     ? await prismaJudges()
     : []
+  // Phase 7: the tournament's own check-in QR (organizer-only — the token is a self-service
+  // check-in credential, never rendered for non-organizers) and its per-tournament staff roster.
+  const [checkInQrSvg, tournamentJudgeRows] = isOrganizer
+    ? await Promise.all([
+        renderQrSvg(`${process.env.NEXTAUTH_URL ?? 'https://beybladex.de'}/events/${id}/checkin?t=${tournament.checkInToken}`),
+        prisma.tournamentJudge.findMany({
+          where: { tournamentId: id },
+          select: { userId: true, user: { select: { username: true, displayName: true } } },
+          orderBy: { createdAt: 'asc' },
+        }),
+      ])
+    : [null, []]
+  const tournamentJudges = tournamentJudgeRows.map((j) => ({ id: j.userId, name: j.user.displayName ?? j.user.username }))
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -138,6 +152,7 @@ export default async function TournamentBracketPage({ params }: { params: Promis
             name: p.user.displayName ?? p.user.username,
             checkedIn: p.checkedIn,
             withdrawn: p.withdrawn,
+            paidAt: p.paidAt?.toISOString() ?? null,
           }))}
           stages={tournament.stages.map((stage) => {
             const wbRounds = stageWinnersRounds(stage)
@@ -174,7 +189,21 @@ export default async function TournamentBracketPage({ params }: { params: Promis
           })}
           judges={judges}
           completedAt={tournament.completedAt?.toISOString() ?? null}
+          tournamentJudges={tournamentJudges}
+          entryFeeCent={tournament.entryFeeCent}
         />
+      )}
+
+      {isOrganizer && checkInQrSvg && (
+        <details className="rounded-md border border-x-cyan/20 p-3">
+          <summary className="cursor-pointer text-sm font-medium">Check-in-QR-Code (Venue)</summary>
+          <p className="mt-2 text-xs text-current/60">
+            Aushängen oder auf einem Bildschirm anzeigen — Teilnehmer:innen scannen und checken
+            sich damit selbst ein.
+          </p>
+          {/* Server-generated SVG from our own trusted lib/qr.ts — not user content. */}
+          <div className="mt-3 flex justify-center [&_svg]:h-48 [&_svg]:w-48" dangerouslySetInnerHTML={{ __html: checkInQrSvg }} />
+        </details>
       )}
 
       <p className="text-sm">

@@ -30,9 +30,10 @@ function notificationContent(t: Tournament): { title: string; message: string; l
   }
 }
 
-// Phase 13: single-user notification (club applications/invites, approvals). Reuses the same
-// durable row + per-user pub/sub channel as the radius blast; email honors the same minor
-// ceiling (no email to isMinor users, in-app notification always reaches them).
+// Phase 13: single-user notification (club applications/invites, approvals; also used by
+// Phase 7's payment/check-in/arena notifications). Reuses the same durable row + per-user
+// pub/sub channel as the radius blast; email honors the same minor ceiling (no email to
+// isMinor users, in-app notification always reaches them).
 export async function notifyUser(
   userId: string,
   content: { title: string; message: string; link?: string },
@@ -83,26 +84,8 @@ export async function notifyUsersInRadius(tournament: Tournament): Promise<void>
 
   const content = notificationContent(tournament)
   for (const user of eligible) {
-    const row = await prisma.notification.create({
-      data: { userId: user.id, ...content },
-    })
-
-    // Per-user channel ONLY — a global channel would leak every user's notification content
-    // to every connected SSE client ([REVIEW-FIX: frontend-pwa I9]). Published with the
-    // command connection; the SSE route subscribes on redisSubscriber.
-    await redis.publish(notifyChannel(user.id), JSON.stringify(row))
-
-    if (user.notifyEmail && !user.isMinor && user.email) {
-      try {
-        await sendNotificationEmail({
-          to: user.email,
-          subject: content.title,
-          text: `${content.message}\n\nDetails: ${content.link}`,
-        })
-      } catch (err) {
-        // A broken mail server must never lose or block the durable in-app notification.
-        console.error(`[notify] email to ${user.id} failed:`, err)
-      }
-    }
+    // notifyUser (above) already creates the row, publishes to Redis, AND sends the email
+    // (same minor-ceiling rule) — do not duplicate the email send here.
+    await notifyUser(user.id, content)
   }
 }

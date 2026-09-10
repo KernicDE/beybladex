@@ -149,6 +149,7 @@ model User {
   ownedClubs           Club[]         @relation("ClubOwner")
   clubMemberships      ClubMember[]
   organizedTournaments Tournament[]   @relation("TournamentOrganizer")
+  judgedTournaments    TournamentJudge[]
   ratings              Rating[]
   partRequests         PartRequest[]
   stageStandings       StageStanding[]
@@ -321,8 +322,16 @@ model Tournament {
   // Phase 5 Part C — "Turnier abschließen" from the organizer console; null while running.
   completedAt     DateTime?
 
+  // Phase 7 — QR-Workflows & Zahlungsverfolgung: organizer-configured count of physical
+  // arenas/stadiums at the venue; null = no arena management (matches get no arenaNumber).
+  arenaCount      Int?
+  // Phase 7 — server-issued, event-scoped token for the QR self-service check-in. The bare
+  // tournament id must never be accepted as a check-in credential, hence a per-event uuid.
+  checkInToken    String                  @unique @default(uuid())
+
   participants    TournamentParticipant[]
   matches         Match[]
+  judges          TournamentJudge[]
   // Phase 5 Part C2 — the tournament's ordered stages (each with its own format/bracket).
   stages          TournamentStage[]
 }
@@ -340,8 +349,24 @@ model TournamentParticipant {
   // skipped by bracket generation and, if their match already exists, the opponent is
   // auto-advanced.
   withdrawn    Boolean    @default(false)
+  // Phase 7 — Zahlungsverfolgung: null = entry fee unpaid; timestamp lets the organizer
+  // console show when the payment was recorded.
+  paidAt       DateTime?
 
   @@unique([tournamentId, userId])
+}
+
+// Phase 7 — additional judges for a tournament (besides the creator): the QR check-in /
+// arena-console flows accept judge actions from any user in this join. Composite PK mirrors
+// TournamentParticipant's @@unique([tournamentId, userId]).
+model TournamentJudge {
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@id([tournamentId, userId])
 }
 
 // Phase 5 Part C2 — a tournament stage: one ordered, independently-formatted segment of a
@@ -514,6 +539,14 @@ model Match {
   // Idempotency key for offline-synced scores: one client-generated UUID per judge action, unique
   // DB-wide — a replayed POST with the same clientEventId is a server-side no-op.
   clientEventId  String?     @unique
+
+  // Phase 7 — arena/stadium assignment: which physical arena the match plays on (1..arenaCount);
+  // null = unassigned (waiting for the dynamic pass after another match frees its arena).
+  arenaNumber    Int?
+  // Phase 7 — QR self-service check-in: when each player scanned the arena QR and confirmed
+  // their presence; null until checked in.
+  player1ArenaCheckedInAt DateTime?
+  player2ArenaCheckedInAt DateTime?
 
   @@index([tournamentId, round, bracketOrder])
   @@index([stageId, round, bracketOrder])

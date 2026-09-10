@@ -28,6 +28,8 @@ function makeTournament(overrides: Partial<Tournament>): Tournament {
     clubId: null,
     createdById: 'u-1',
     completedAt: null,
+    arenaCount: null,
+    checkInToken: 'token-1',
     ...overrides,
   }
 }

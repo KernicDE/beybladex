@@ -86,6 +86,12 @@ const COPY: Record<string, string> = {
   invalid_transition: 'Diese Änderung ist für den aktuellen Status nicht möglich.',
   // admin
   invalid_role: 'Die angegebene Rolle ist ungültig.',
+  // tournaments — Phase 7 QR/Zahlungsverfolgung
+  token_mismatch: 'Dieser QR-Code ist ungültig oder abgelaufen.',
+  already_checked_in: 'Bereits eingecheckt.',
+  invalid_arena_count: 'Die Anzahl der Arenen muss zwischen 1 und 64 liegen.',
+  not_a_player: 'Du bist keine:r der beiden Spieler:innen dieses Matches.',
+  already_judge: 'Diese Person ist bereits als Judge für dieses Turnier eingetragen.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).
