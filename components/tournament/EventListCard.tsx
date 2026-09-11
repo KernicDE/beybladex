@@ -1,10 +1,13 @@
-// components/tournament/EventListCard.tsx (RC9 #32)
+// components/tournament/EventListCard.tsx (RC9 #32, #27 adds the tournament badges)
 // The /events list's event card, extracted from app/events/page.tsx so its rendering is
 // unit-testable and stays consistent:
 // - #32 — price, location and participants are VISUALLY separated: date/time as a muted prefix,
 //   the title link contains only the title, the price is its own chip, and the second line
 //   renders Ort / Land / Teilnehmer as distinct middot-separated spans (previously
 //   "10,00 €DE, Hessen, Wiesbaden" ran together in one link text).
+// - #27 — the Event↔Turnier link is visible without opening the event: a started tournament
+//   gets a "Turnier live" badge, one with generated stages a "Bracket verfügbar" badge;
+//   events without either show NO badge (no misleading hint).
 // Map-variant note: LeafletMap markers show only the title tooltip, so there is no metadata
 // to separate there; the event detail page already renders each meta on its own labeled row.
 import Link from 'next/link'
@@ -31,6 +34,10 @@ export interface EventListCardProps {
   isRecurring: boolean
   participantCount: number
   headerImageId: string | null
+  /** #27 — stages generated for this event's tournament (Bracket vorhanden). */
+  stageCount: number
+  /** #27 — set once the organizer started the tournament (Turnier live). */
+  startedAt: Date | null
 }
 
 function formatDate(date: Date): string {
@@ -58,6 +65,8 @@ export function EventListCard({
   isRecurring,
   participantCount,
   headerImageId,
+  stageCount,
+  startedAt,
 }: EventListCardProps) {
   return (
     <Card className="p-4">
@@ -74,6 +83,11 @@ export function EventListCard({
               {title}
             </Link>
             {isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}
+            {startedAt ? (
+              <Badge tone="green">Turnier live</Badge>
+            ) : stageCount > 0 ? (
+              <Badge tone="cyan">Bracket verfügbar</Badge>
+            ) : null}
             <Badge tone="neutral">{formatFee(entryFeeCent, currency)}</Badge>
           </p>
           {/* Line 2 — location/country/participants as distinct, middot-separated spans. */}

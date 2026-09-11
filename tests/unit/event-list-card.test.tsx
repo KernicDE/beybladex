@@ -1,8 +1,11 @@
-// tests/unit/event-list-card.test.tsx (RC9 issue #32)
+// tests/unit/event-list-card.test.tsx (RC9 issue #32, #27 adds the tournament-badge tests)
 // #32 — the event card's metadata must be visually separated: the title link contains ONLY
 // the title (previously date/title/price/location ran together as "10,00 €DE, Hessen,
 // Wiesbaden"), the price is its own chip, and location/country/participants are distinct
 // middot-separated spans.
+// #27 — the Event↔Turnier link is visible in the list: "Turnier live" once the organizer
+// started the tournament, "Bracket verfügbar" when stages exist, and NO badge at all for a
+// plain event (no misleading hint).
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { EventListCard, type EventListCardProps } from '@/components/tournament/EventListCard'
@@ -19,6 +22,8 @@ const BASE: EventListCardProps = {
   isRecurring: false,
   participantCount: 12,
   headerImageId: null,
+  stageCount: 0,
+  startedAt: null,
 }
 
 describe('EventListCard — metadata separation (#32)', () => {
@@ -49,5 +54,31 @@ describe('EventListCard — metadata separation (#32)', () => {
     expect(screen.getByText('12 Teilnehmer')).toBeInTheDocument()
     // The old fused form "DE, Hessen, Wiesbaden" must be gone.
     expect(screen.queryByText(/DE, Hessen/)).not.toBeInTheDocument()
+  })
+})
+
+describe('EventListCard — tournament badge (#27)', () => {
+  it('shows no badge for a plain event', () => {
+    render(<EventListCard {...BASE} />)
+    expect(screen.queryByText('Turnier live')).not.toBeInTheDocument()
+    expect(screen.queryByText('Bracket verfügbar')).not.toBeInTheDocument()
+  })
+
+  it('shows "Bracket verfügbar" when stages exist but the tournament has not started', () => {
+    render(<EventListCard {...BASE} stageCount={2} />)
+    expect(screen.getByText('Bracket verfügbar')).toBeInTheDocument()
+    expect(screen.queryByText('Turnier live')).not.toBeInTheDocument()
+  })
+
+  it('shows "Turnier live" once the organizer started the tournament', () => {
+    render(<EventListCard {...BASE} stageCount={2} startedAt={new Date('2026-10-03T14:05:00')} />)
+    expect(screen.getByText('Turnier live')).toBeInTheDocument()
+    expect(screen.queryByText('Bracket verfügbar')).not.toBeInTheDocument()
+  })
+
+  it('shows "Turnier live" even when a started tournament has no stages yet', () => {
+    render(<EventListCard {...BASE} startedAt={new Date()} />)
+    expect(screen.getByText('Turnier live')).toBeInTheDocument()
+    expect(screen.queryByText('Bracket verfügbar')).not.toBeInTheDocument()
   })
 })

@@ -119,7 +119,9 @@ export default async function EventsPage({
           currency: true,
           isRecurring: true,
           headerImageId: true,
-          _count: { select: { participants: true } },
+          // #27 — the list card's Turnier/Bracket badges read these two.
+          startedAt: true,
+          _count: { select: { participants: true, stages: true } },
         },
       }),
   )
@@ -233,6 +235,8 @@ export default async function EventsPage({
                 isRecurring={t.isRecurring}
                 participantCount={t._count.participants}
                 headerImageId={t.headerImageId}
+                stageCount={t._count.stages}
+                startedAt={t.startedAt}
               />
             </li>
           ))}
