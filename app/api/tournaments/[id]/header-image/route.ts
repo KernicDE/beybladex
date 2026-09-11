@@ -10,6 +10,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { EVENT_HEADER_TARGET, processAndStoreImage, isUploadedFile } from '@/lib/media'
 import { authorizeTournamentOrganizer } from '@/lib/tournamentService'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -44,5 +45,7 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
   }
 
   await prisma.tournament.update({ where: { id }, data: { headerImageId: assetId } })
+  // Hotfix #99: the cached public detail page SELECTs headerImageId.
+  await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ headerImageId: assetId }, { status: 200 })
 }

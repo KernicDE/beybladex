@@ -17,8 +17,19 @@
 //   serialization and revived on read, so cached rows behave byte-identically to fresh ones.
 // - null/undefined results are NOT cached (a just-created row must appear immediately).
 // - Redis failures degrade to "run the query" — the cache is an optimization, never a
-//   dependency. Mutation-triggered invalidation is unnecessary at these TTLs; a stale entry
-//   lives at most one TTL window.
+//   dependency.
+//
+// KEY INVENTORY (who writes / who invalidates — hotfix #99):
+// - public:v1:events:list:<filter-signature>  — app/events/page.tsx (TTL 60s). NOT
+//   invalidated by tournament routes: the signature is filter/pagination state, so there is
+//   no single key to DEL; a PATCH can leave the list stale for at most one TTL window.
+// - public:v1:tournament:<id>                 — app/events/[id]/page.tsx (TTL 60s).
+//   Invalidated (invalidatePublicCache) by every route that mutates state the public
+//   detail SELECT reads: PATCH/DELETE [id], join (POST/DELETE withdraw), checkin,
+//   header-image, stages (create/delete), stages generate/complete, start, complete,
+//   noshow, and /api/matches/[id]/score (match status/winner feed the bracket preview).
+// - public:v1:club:<slug>, public:v1:club-events:<clubId> — clubs pages (TTL 120s).
+//   Tournament routes do not touch club state; TTL-bounded.
 import { redis } from '@/lib/redis'
 
 function encode(value: unknown): string {
@@ -53,4 +64,22 @@ export async function withPublicCache<T>(key: string, ttlSeconds: number, produc
     console.error(`[publicCache] SET ${key} failed:`, err)
   }
   return value
+}
+
+/** Redis key of the cached PUBLIC detail query for one tournament (app/events/[id]/page.tsx). */
+export function publicTournamentKey(id: string): string {
+  return `public:v1:tournament:${id}`
+}
+
+/**
+ * Mutation-triggered invalidation (hotfix #99). Call AFTER the DB write succeeded. Degrades
+ * to a logged no-op on Redis failure — same contract as withPublicCache: the cache is an
+ * optimization, never a dependency, so a missed DEL must never fail the mutation.
+ */
+export async function invalidatePublicCache(key: string): Promise<void> {
+  try {
+    await redis.del(key)
+  } catch (err) {
+    console.error(`[publicCache] DEL ${key} failed:`, err)
+  }
 }

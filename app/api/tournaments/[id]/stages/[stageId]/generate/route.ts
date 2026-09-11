@@ -30,6 +30,7 @@ import { requireUser } from '@/lib/guards'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseArenaCount } from '@/lib/arenaAssign'
 import { generateStage, StageGenerateError } from '@/lib/stageGenerate'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
 
@@ -52,6 +53,10 @@ export async function POST(req: Request, { params }: Ctx) {
 
   try {
     const result = await generateStage({ userId: gate.userId, tournamentId: id, stageId, arenaCount: parseArenaCount(body.arenaCount) })
+    // Hotfix #99: matches now exist — the cached public detail page's bracket preview changed.
+    if (result.status >= 200 && result.status < 300) {
+      await invalidatePublicCache(publicTournamentKey(id))
+    }
     return Response.json(result.payload, { status: result.status })
   } catch (e) {
     if (e instanceof StageGenerateError) return Response.json(e.payload, { status: e.status })

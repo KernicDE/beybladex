@@ -6,6 +6,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -26,5 +27,8 @@ export async function POST(_req: Request, { params }: Ctx) {
 
   const completedAt = tournament.completedAt ?? new Date()
   await prisma.tournament.update({ where: { id }, data: { completedAt } })
+  // Hotfix #99: keeps the cached public detail consistent if completion state ever joins the
+  // public SELECT; one DEL, same cost as the TTL path it replaces.
+  await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ id, completedAt })
 }

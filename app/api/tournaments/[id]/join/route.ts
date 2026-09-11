@@ -18,6 +18,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { validateDeckForFormat } from '@/lib/deckValidation'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -105,6 +106,8 @@ export async function POST(req: Request, { params }: Ctx) {
     const participant = await prisma.tournamentParticipant.create({
       data: { tournamentId: id, userId: session.user.id, deckId: (deckId as string | undefined) ?? null },
     })
+    // Hotfix #99: the participants list/count on the cached public detail page changed.
+    await invalidatePublicCache(publicTournamentKey(id))
     return Response.json({ id: participant.id, checkedIn: participant.checkedIn }, { status: 201 })
   } catch (e) {
     // P2002: the @@unique([tournamentId, userId]) pair already exists — a duplicate join.
@@ -186,5 +189,7 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (!participant) return Response.json({ error: 'not_joined' }, { status: 404 })
 
   await prisma.tournamentParticipant.delete({ where: { id: participant.id } })
+  // Hotfix #99: the participants list/count on the cached public detail page changed.
+  await invalidatePublicCache(publicTournamentKey(id))
   return new Response(null, { status: 204 })
 }

@@ -9,16 +9,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const redisGet = vi.fn()
 const redisSet = vi.fn()
+const redisDel = vi.fn()
 vi.mock('@/lib/redis', () => ({
-  redis: { get: (...a: unknown[]) => redisGet(...a), set: (...a: unknown[]) => redisSet(...a) },
+  redis: {
+    get: (...a: unknown[]) => redisGet(...a),
+    set: (...a: unknown[]) => redisSet(...a),
+    del: (...a: unknown[]) => redisDel(...a),
+  },
 }))
 
-import { withPublicCache } from '@/lib/publicCache'
+import { withPublicCache, invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 beforeEach(() => {
   vi.clearAllMocks()
   redisGet.mockResolvedValue(null)
   redisSet.mockResolvedValue('OK')
+  redisDel.mockResolvedValue(1)
 })
 
 describe('withPublicCache (issue #43)', () => {
@@ -71,6 +77,22 @@ describe('withPublicCache (issue #43)', () => {
     const produce = vi.fn().mockResolvedValue(['fresh'])
 
     await expect(withPublicCache('public:v1:clubs:z', 120, produce)).resolves.toEqual(['fresh'])
+    consoleError.mockRestore()
+  })
+})
+
+describe('invalidatePublicCache (hotfix #99)', () => {
+  it('DELs the exact public tournament detail key', async () => {
+    await invalidatePublicCache(publicTournamentKey('t1'))
+    expect(redisDel).toHaveBeenCalledWith('public:v1:tournament:t1')
+  })
+
+  it('degrades to a logged no-op when Redis fails — invalidation never throws', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    redisDel.mockRejectedValue(new Error('ECONNREFUSED'))
+
+    await expect(invalidatePublicCache(publicTournamentKey('t1'))).resolves.toBeUndefined()
+    expect(consoleError).toHaveBeenCalled()
     consoleError.mockRestore()
   })
 })

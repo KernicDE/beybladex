@@ -9,7 +9,8 @@ import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { withPublicCache } from '@/lib/publicCache'
+import { withPublicCache, publicTournamentKey } from '@/lib/publicCache'
+import { formatDateTime } from '@/lib/formatDateTime'
 import { stageWinnersRounds } from '@/lib/bracket'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
@@ -21,21 +22,10 @@ import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 
 // [RC5 #43] No `revalidate` export: auth() (join flow, organizer badges) forces per-request
 // rendering, so an ISR revalidate export never applied. The public tournament query is cached
-// in Redis for 60s instead (lib/publicCache.ts). Participant/check-in freshness is unchanged
-// in practice: the cache TTL matches the old revalidate value, and session-dependent UI still
-// renders per request.
+// in Redis for 60s instead (lib/publicCache.ts). Session-dependent UI still renders per
+// request; mutations that change the public payload invalidate the key immediately
+// (invalidatePublicCache, hotfix #99), so organizer edits show up without waiting out the TTL.
 const PUBLIC_DETAIL_TTL = 60
-
-function formatDateTime(date: Date): string {
-  return date.toLocaleString('de-DE', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 function formatFee(cent: number, currency: string): string {
   if (cent === 0) return 'Eintritt frei'
@@ -49,7 +39,7 @@ function isSameDay(a: Date, b: Date): boolean {
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [tournament, session] = await Promise.all([
-    withPublicCache(`public:v1:tournament:${id}`, PUBLIC_DETAIL_TTL, () =>
+    withPublicCache(publicTournamentKey(id), PUBLIC_DETAIL_TTL, () =>
       prisma.tournament.findUnique({
         where: { id },
         select: {
