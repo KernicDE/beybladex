@@ -50,6 +50,13 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
                   blade: build.blade,
                   ratchet: build.ratchet,
                   bit: build.bit,
+                  // [Fix while touching this object for productCode] name/isOfficialSet/imageId
+                  // were never passed here, so BuildCard always fell back to the blade name and
+                  // never showed the "Set" badge — even for official Sets like "Sword Dran 3-60F".
+                  name: build.name,
+                  isOfficialSet: build.isOfficialSet,
+                  imageId: build.imageId,
+                  productCode: build.productCode,
                 }}
                 winRate={winRates.get(build.id) ?? null}
               />
