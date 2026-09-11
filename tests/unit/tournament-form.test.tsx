@@ -6,8 +6,8 @@
 //    selection,
 //  - coordinates stay manually editable and are not silently overwritten by a later
 //    automatic full-address geocode result.
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { TournamentForm, type AddressSuggestion } from '@/components/tournament/TournamentForm'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
@@ -54,7 +54,14 @@ const field = (name: string) => screen.getByLabelText(name)
 const combobox = (name: string) => screen.getByRole('combobox', { name })
 
 beforeEach(() => {
+  // Debounced autocomplete (300ms) / geocode (600ms) effects run on fake timers — no real
+  // sleeps anywhere in this file (#68).
+  vi.useFakeTimers()
   fetchMock.mockClear()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('TournamentForm — currency auto-selected by country (Phase 9)', () => {
@@ -81,7 +88,8 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
   it('does not query suggestions for inputs under 3 characters', async () => {
     renderForm()
     fireEvent.change(field('Veranstaltungsort'), { target: { value: 'Sp' } })
-    await new Promise((r) => setTimeout(r, 400))
+    // Advance well past the 300ms autocomplete debounce — still no fetch.
+    await act(() => vi.advanceTimersByTimeAsync(400))
     expect(
       fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/geo/autocomplete')),
     ).toBe(false)
@@ -91,12 +99,11 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
     renderForm()
     fireEvent.change(field('Veranstaltungsort'), { target: { value: 'Marienplatz Arena' } })
 
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/geo/autocomplete')),
-      ).toBe(true),
-    )
-    const option = await screen.findByRole('option', { name: MUNICH_SUGGESTION.displayName })
+    await act(() => vi.advanceTimersByTimeAsync(300)) // autocomplete debounce
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/geo/autocomplete')),
+    ).toBe(true)
+    const option = screen.getByRole('option', { name: MUNICH_SUGGESTION.displayName })
     fireEvent.click(option)
 
     expect(field('Straße (optional)')).toHaveValue('Marienplatz 1')
@@ -116,10 +123,9 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
     fireEvent.change(field('PLZ'), { target: { value: '80331' } })
     fireEvent.change(field('Stadt'), { target: { value: 'München' } })
 
-    await waitFor(() =>
-      expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/geo/geocode'))).toBe(true),
-    )
-    await waitFor(() => expect(field('Breitengrad (Lat)')).toHaveValue(52.5219))
+    await act(() => vi.advanceTimersByTimeAsync(600)) // geocode debounce (rescheduled by each change)
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/geo/geocode'))).toBe(true)
+    expect(field('Breitengrad (Lat)')).toHaveValue(52.5219)
     expect(field('Längengrad (Lng)')).toHaveValue(13.4132)
     expect(field('Bundesland / Kanton')).toHaveValue('Berlin')
   })
@@ -128,7 +134,7 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
     renderForm()
     // 1. pick the Munich suggestion → coordinates autofilled
     fireEvent.change(field('Veranstaltungsort'), { target: { value: 'Marienplatz Arena' } })
-    await screen.findByRole('option', { name: MUNICH_SUGGESTION.displayName })
+    await act(() => vi.advanceTimersByTimeAsync(300)) // autocomplete debounce
     fireEvent.click(screen.getByRole('option', { name: MUNICH_SUGGESTION.displayName }))
     expect(field('Breitengrad (Lat)')).toHaveValue(48.1371)
 
@@ -137,7 +143,7 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
 
     // 3. …then edits the street, which triggers a full-address geocode resolving to Berlin
     fireEvent.change(field('Straße (optional)'), { target: { value: 'Karl-Liebknecht-Str. 1' } })
-    await waitFor(() => expect(field('Bundesland / Kanton')).toHaveValue('Berlin'))
+    await act(() => vi.advanceTimersByTimeAsync(600)) // geocode debounce
 
     // the automatic result refreshed the region name, but must not clobber the hand-set pin
     expect(field('Breitengrad (Lat)')).toHaveValue(48.2)
