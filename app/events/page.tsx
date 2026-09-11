@@ -1,8 +1,10 @@
 // app/events/page.tsx
 // Public DACH event calendar: Leaflet map + chronological list + filters (country, state, text
-// search over title/city via ?q=). Radius-from-postal-code search needs the geo track's
-// lib/geocodePostalCode — until it lands, the API's lat/lng/radiusKm params are the only radius
-// entry point and this page links none of them TODO(geo track): postal-code radius UI.
+// search over title/city via ?q=, date range, and — since RC9 #33 — a postal-code radius:
+// ?plz=65189&radiusKm=50 geocodes the PLZ via lib/geo.ts's Nominatim-backed geocodePostalCode
+// (against the selected country, DE when none is selected), prefilters SQL by a bounding box
+// and applies the exact haversine pass to the result rows. An unresolvable PLZ degrades to a
+// notice + unfiltered list, never to an error.
 // EmptyState renders a "Turnier erstellen" CTA for ORGANIZER/ADMIN sessions AND for users who
 // administer at least one club (Phase 4's Club membership path — the same rule the API enforces).
 import Link from 'next/link'
@@ -10,6 +12,7 @@ import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { geocodePostalCode, isWithinRadiusKm, radiusBoundingBox, type DachCountry } from '@/lib/geo'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -27,6 +30,9 @@ const PAGE_SIZE = 24
 // YYYY-MM-DD only — anything else is a malformed date input and must not 500 the page
 // (Phase 10 item 8's explicit requirement).
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+// Radius sanity bounds: the UI offers 25/50/100 km, hand-crafted URLs may pick anything in (0, 500].
+const MAX_RADIUS_KM = 500
+const DEFAULT_RADIUS_KM = 50
 
 // Center of the DACH region when no result pins the map.
 const DEFAULT_CENTER = { lat: 48.5, lng: 10 }
@@ -47,15 +53,16 @@ function formatFee(cent: number, currency: string): string {
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string; from?: string; to?: string }>
+  searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string; from?: string; to?: string; plz?: string; radiusKm?: string }>
 }) {
-  const { country, state, q, cursor, from, to } = await searchParams
+  const { country, state, q, cursor, from, to, plz, radiusKm } = await searchParams
   // Malformed/unparseable input is ignored (no bound on that side) rather than erroring the
   // whole list — a mistyped date must not 500 the page.
   const fromDate = from && DATE_RE.test(from) ? new Date(`${from}T00:00:00`) : null
   const toDate = to && DATE_RE.test(to) ? new Date(`${to}T23:59:59`) : null
   const session = await auth()
   const query = (q ?? '').trim()
+  const plzQuery = (plz ?? '').trim()
 
   const caller = session?.user?.id
     ? await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
@@ -68,8 +75,26 @@ export default async function EventsPage({
     : 0
   const canCreate = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN' || adminClubCount > 0
 
+  // RC9 #33 — postal-code radius. Geocode against the country filter when it is one of the
+  // DACH codes, else DE (the dominant share of the calendar and the geocoder's safest guess
+  // for a bare 5-digit PLZ). An unresolvable PLZ (invalid format, Nominatim miss, rate-limit
+  // lock) degrades to a notice + unfiltered list — geo features never error the page.
+  const radiusNum = radiusKm !== undefined && radiusKm !== '' ? Number(radiusKm) : null
+  const validRadius = radiusNum !== null && Number.isFinite(radiusNum) && radiusNum > 0 && radiusNum <= MAX_RADIUS_KM
+  let radiusCenter: { lat: number; lng: number; radiusKm: number } | null = null
+  let plzNotice: string | null = null
+  if (plzQuery) {
+    const geocodeCountry: DachCountry = country === 'AT' || country === 'CH' || country === 'DE' ? country : 'DE'
+    const point = await geocodePostalCode(geocodeCountry, plzQuery)
+    if (point) {
+      radiusCenter = { ...point, radiusKm: validRadius ? radiusNum! : DEFAULT_RADIUS_KM }
+    } else {
+      plzNotice = `Die PLZ „${plzQuery}“ konnte nicht gefunden werden — die Liste ist ungefiltert.`
+    }
+  }
+
   const rows = await withPublicCache(
-    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${query}|${cursor ?? ''}|${from ?? ''}|${to ?? ''}`,
+    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${query}|${cursor ?? ''}|${from ?? ''}|${to ?? ''}|${plzQuery}|${radiusCenter?.radiusKm ?? ''}`,
     PUBLIC_LIST_TTL,
     () =>
       prisma.tournament.findMany({
@@ -81,6 +106,16 @@ export default async function EventsPage({
             : {}),
           ...(fromDate || toDate
             ? { startDate: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
+            : {}),
+          ...(radiusCenter
+            ? (() => {
+                // Bounding-box prefilter keeps the exact haversine pass below cheap.
+                const box = radiusBoundingBox(radiusCenter, radiusCenter.radiusKm)
+                return {
+                  latitude: { gte: box.latMin, lte: box.latMax },
+                  longitude: { gte: box.lngMin, lte: box.lngMax },
+                }
+              })()
             : {}),
         },
         orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
@@ -103,8 +138,14 @@ export default async function EventsPage({
         },
       }),
   )
-  const hasMore = rows.length > PAGE_SIZE
-  const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
+  // Exact pass over the bounding-box prefilter's survivors (the box's corners overcover).
+  // Runs outside the cache so cached rows stay usable for every radius. May yield short pages
+  // at boundaries — acceptable at DACH scale, same tradeoff as GET /api/tournaments.
+  const filtered = radiusCenter
+    ? rows.filter((t) => isWithinRadiusKm(radiusCenter, radiusCenter.radiusKm, { lat: t.latitude, lng: t.longitude }))
+    : rows
+  const hasMore = filtered.length > PAGE_SIZE
+  const page = hasMore ? filtered.slice(0, PAGE_SIZE) : filtered
   const nextCursor = hasMore ? page[page.length - 1].id : null
 
   const filterParams = new URLSearchParams()
@@ -113,6 +154,8 @@ export default async function EventsPage({
   if (query) filterParams.set('q', query)
   if (from) filterParams.set('from', from)
   if (to) filterParams.set('to', to)
+  if (plzQuery) filterParams.set('plz', plzQuery)
+  if (radiusCenter) filterParams.set('radiusKm', String(radiusCenter.radiusKm))
   const filterQuery = filterParams.toString()
 
   return (
@@ -131,7 +174,7 @@ export default async function EventsPage({
 
       <MapView
         className="z-0 h-72 w-full rounded-xl border border-x-cyan/20 sm:h-96"
-        center={page[0] ? { lat: page[0].latitude, lng: page[0].longitude } : DEFAULT_CENTER}
+        center={radiusCenter ? { lat: radiusCenter.lat, lng: radiusCenter.lng } : page[0] ? { lat: page[0].latitude, lng: page[0].longitude } : DEFAULT_CENTER}
         markers={page.map((t) => ({
           id: t.id,
           lat: t.latitude,
@@ -142,14 +185,16 @@ export default async function EventsPage({
       />
 
       {/* Filter bar: plain GET form so every filter combination is a shareable URL. Country/
-          state/date-range are the interactive client piece (EventsFilterBar); the query text
-          field and submit stay here. */}
+          state/date-range/PLZ-radius are the interactive client piece (EventsFilterBar); the
+          query text field and submit stay here. */}
       <form method="GET" className="flex flex-col flex-wrap gap-3 sm:flex-row sm:items-end">
         <EventsFilterBar
           initialCountry={country ?? ''}
           initialState={state ?? ''}
           initialFrom={from ?? ''}
           initialTo={to ?? ''}
+          initialPlz={plzQuery}
+          initialRadiusKm={radiusCenter ? String(radiusCenter.radiusKm) : ''}
         />
         <button
           type="submit"
@@ -160,13 +205,21 @@ export default async function EventsPage({
         <SearchInput action="/events" className="sm:ml-auto sm:w-64" />
       </form>
 
+      {plzNotice && (
+        <p role="status" className="rounded-md border border-current/20 px-3 py-2 text-sm text-current/70">
+          {plzNotice}
+        </p>
+      )}
+
       {page.length === 0 ? (
         <EmptyState
           title="Keine Turniere gefunden"
           description={
-            query || country || state
-              ? 'Für diese Filter gibt es aktuell keine Turniere. Passe die Suche an.'
-              : 'Sobald ein Turnier erstellt wird, erscheint es hier und auf der Karte.'
+            radiusCenter
+              ? 'Im gewählten Umkreis gibt es aktuell keine Turniere. Vergrößere den Radius oder ändere die PLZ.'
+              : query || country || state
+                ? 'Für diese Filter gibt es aktuell keine Turniere. Passe die Suche an.'
+                : 'Sobald ein Turnier erstellt wird, erscheint es hier und auf der Karte.'
           }
           action={
             canCreate ? (

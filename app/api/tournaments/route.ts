@@ -1,8 +1,8 @@
 // app/api/tournaments/route.ts
 // GET — public list with filters (?country=&state=&lat=&lng=&radiusKm=&q=), paginated take/cursor.
-// The radius filter is a bounding-box prefilter in SQL plus an exact haversine pass in JS. This
-// inline haversine is a deliberate stopgap: once the parallel geo track's lib/geo.ts lands it can
-// be swapped for a shared import — don't duplicate it a third time.
+// The radius filter is a bounding-box prefilter in SQL plus an exact haversine pass in JS,
+// both shared with the /events page via lib/geo.ts (RC9 #33 — the inline stopgap haversine is
+// gone; extend lib/geo.ts instead of re-introducing a local copy).
 // POST — create a Tournament. AUTHZ RULE (standing Global-Constraints requirement): succeeds
 // if EITHER the session has the ORGANIZER/ADMIN role, OR the body carries a clubId the session
 // user administers (ClubMember.isAdmin === true for THAT club — verified by query, never
@@ -14,19 +14,9 @@ import { getActiveAdminMembership } from '@/lib/clubMembers'
 import { notifyUsersInRadius } from '@/lib/notify'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
+import { isWithinRadiusKm, radiusBoundingBox } from '@/lib/geo'
 
 const PAGE_SIZE = 24
-const KM_PER_LAT_DEG = 111.32
-
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return 2 * 6371 * Math.asin(Math.sqrt(a))
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -67,18 +57,15 @@ export async function GET(req: Request) {
         ? { OR: [{ title: { contains: q, mode: 'insensitive' } }, { city: { contains: q, mode: 'insensitive' } }] }
         : {}),
       ...(center
-        ? {
+        ? (() => {
             // Bounding-box prefilter keeps the haversine pass cheap; the exact distance filter
             // runs in JS below (may yield short pages at page boundaries — acceptable at DACH scale).
-            latitude: {
-              gte: center.lat - center.radiusKm / KM_PER_LAT_DEG,
-              lte: center.lat + center.radiusKm / KM_PER_LAT_DEG,
-            },
-            longitude: {
-              gte: center.lng - center.radiusKm / (KM_PER_LAT_DEG * Math.cos((center.lat * Math.PI) / 180)),
-              lte: center.lng + center.radiusKm / (KM_PER_LAT_DEG * Math.cos((center.lat * Math.PI) / 180)),
-            },
-          }
+            const box = radiusBoundingBox(center, center.radiusKm)
+            return {
+              latitude: { gte: box.latMin, lte: box.latMax },
+              longitude: { gte: box.lngMin, lte: box.lngMax },
+            }
+          })()
         : {}),
     },
     orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
@@ -101,7 +88,7 @@ export async function GET(req: Request) {
   })
 
   const filtered = center
-    ? rows.filter((t) => haversineKm(center.lat, center.lng, t.latitude, t.longitude) <= center.radiusKm)
+    ? rows.filter((t) => isWithinRadiusKm(center, center.radiusKm, { lat: t.latitude, lng: t.longitude }))
     : rows
 
   const hasMore = filtered.length > take

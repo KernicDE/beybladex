@@ -1,11 +1,13 @@
-// components/tournament/EventsFilterBar.tsx (Phase 10, items 1 + 8)
+// components/tournament/EventsFilterBar.tsx (Phase 10, items 1 + 8; RC9 #33 adds postal-code radius)
 // The /events filter bar's interactive half: country + Bundesland/Kanton dropdown (item 1 —
 // replaces the old free-text state input; the dropdown's options are filtered to the
 // currently-selected country's region list, disabled with "Land auswählen" when no country is
-// picked) plus a Von/Bis date range (item 8). Still a plain GET form (server component parent
-// keeps the SearchInput/submit button around this), so every filter combination stays a
-// shareable URL — the client-side piece is ONLY the reactive state-options filtering, which a
-// server-rendered <select> can't do without a page reload.
+// picked) plus a Von/Bis date range (item 8) and the PLZ + Umkreis radius pair (#33 — the
+// server geocodes the PLZ against the selected country, or DE when none is selected).
+// Still a plain GET form (server component parent keeps the SearchInput/submit button around
+// this), so every filter combination stays a shareable URL — the client-side piece is ONLY the
+// reactive state-options filtering, which a server-rendered <select> can't do without a page
+// reload.
 'use client'
 
 import { useState } from 'react'
@@ -25,11 +27,15 @@ export function EventsFilterBar({
   initialState,
   initialFrom,
   initialTo,
+  initialPlz,
+  initialRadiusKm,
 }: {
   initialCountry: string
   initialState: string
   initialFrom: string
   initialTo: string
+  initialPlz: string
+  initialRadiusKm: string
 }) {
   const [country, setCountry] = useState(initialCountry)
   // The state value stays whatever the URL had, even if it doesn't match the newly-selected
@@ -83,6 +89,31 @@ export function EventsFilterBar({
           Bis
         </label>
         <Input id="filter-to" name="to" type="date" defaultValue={initialTo} />
+      </div>
+      <div className="sm:w-28">
+        <label htmlFor="filter-plz" className="mb-1 block text-sm">
+          PLZ
+        </label>
+        <Input
+          id="filter-plz"
+          name="plz"
+          inputMode="numeric"
+          autoComplete="postal-code"
+          maxLength={5}
+          placeholder="65189"
+          defaultValue={initialPlz}
+        />
+      </div>
+      <div className="sm:w-36">
+        <label htmlFor="filter-radius" className="mb-1 block text-sm">
+          Umkreis
+        </label>
+        <Select id="filter-radius" name="radiusKm" defaultValue={initialRadiusKm}>
+          <option value="">Egal</option>
+          <option value="25">25 km</option>
+          <option value="50">50 km</option>
+          <option value="100">100 km</option>
+        </Select>
       </div>
     </>
   )

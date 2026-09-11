@@ -6,6 +6,8 @@ import { redis } from '@/lib/redis'
 import { canonicalRegionName, DACH_REGIONS, normalizeRegionName, type DachCountry } from '@/lib/dachRegions'
 
 const EARTH_RADIUS_KM = 6371
+// Mean km covered by one degree of latitude — used to turn a radius into a SQL bounding box.
+export const KM_PER_LAT_DEG = 111.32
 
 export interface GeoPoint {
   lat: number
@@ -20,6 +22,27 @@ export function haversineKm(a: GeoPoint, b: GeoPoint): number {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h))
+}
+
+/**
+ * Axis-aligned bounding box around `center` covering `radiusKm` in every direction — the
+ * cheap SQL prefilter for radius searches (latitude/longitude range conditions); the exact
+ * haversine pass then runs on the surviving rows (isWithinRadiusKm below).
+ */
+export function radiusBoundingBox(center: GeoPoint, radiusKm: number): { latMin: number; latMax: number; lngMin: number; lngMax: number } {
+  const latDelta = radiusKm / KM_PER_LAT_DEG
+  const lngDelta = radiusKm / (KM_PER_LAT_DEG * Math.cos((center.lat * Math.PI) / 180))
+  return {
+    latMin: center.lat - latDelta,
+    latMax: center.lat + latDelta,
+    lngMin: center.lng - lngDelta,
+    lngMax: center.lng + lngDelta,
+  }
+}
+
+/** Exact radius check — the bounding-box prefilter's corners overcover, this decides for real. Inclusive: a point exactly on the radius boundary counts as within. */
+export function isWithinRadiusKm(center: GeoPoint, radiusKm: number, point: GeoPoint): boolean {
+  return haversineKm(center, point) <= radiusKm
 }
 
 // ---------------------------------------------------------------------------
