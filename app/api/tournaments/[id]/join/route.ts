@@ -17,8 +17,8 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
-import { validateDeckForFormat } from '@/lib/deckValidation'
 import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
+import { validateDeckAgainstTournamentFormat } from '@/lib/deckRegistration'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -27,39 +27,6 @@ async function ownDeck(deckId: unknown, userId: string): Promise<boolean> {
   if (typeof deckId !== 'string') return false
   const deck = await prisma.deck.findUnique({ where: { id: deckId }, select: { userId: true } })
   return deck?.userId === userId
-}
-
-// Phase 16 item 5 — re-validates a chosen deck against the TOURNAMENT'S linked
-// Ruleset.deckFormat: a genuinely new check (join previously accepted any deckId belonging to
-// the caller with no format cross-check at all). Returns null (valid) or the error payload.
-async function validateDeckAgainstTournamentFormat(
-  deckId: string,
-  tournamentId: string
-): Promise<{ error: string; conflicts?: string[] } | null> {
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    select: { ruleset: { select: { deckFormat: true } } },
-  })
-  if (!tournament) return { error: 'not_found' }
-  const deck = await prisma.deck.findUnique({
-    where: { id: deckId },
-    include: {
-      builds: {
-        include: {
-          build: {
-            select: {
-              id: true, bladeId: true, ratchetId: true, bitId: true,
-              blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
-            },
-          },
-        },
-      },
-    },
-  })
-  if (!deck) return { error: 'invalid_deck' }
-  const { valid, conflicts } = validateDeckForFormat(deck.builds.map((db) => db.build), tournament.ruleset.deckFormat)
-  if (!valid) return { error: 'deck_format_mismatch', conflicts }
-  return null
 }
 
 export async function POST(req: Request, { params }: Ctx) {
@@ -73,9 +40,12 @@ export async function POST(req: Request, { params }: Ctx) {
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
-    select: { startDate: true, startedAt: true, stages: { select: { _count: { select: { matches: true } } } } },
+    select: { startDate: true, startedAt: true, teamMode: true, stages: { select: { _count: { select: { matches: true } } } } },
   })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
+  // RC15 #12 — team tournaments register TEAMS (TeamTournamentEntry), never solo participants;
+  // without this gate a solo row would sit invisibly in the pool-less void of a team event.
+  if (tournament.teamMode) return Response.json({ error: 'team_mode' }, { status: 409 })
   const bracketGenerated = tournament.stages.some((s) => s._count.matches > 0)
   // [REVIEW-FIX P16-5] registration also closes once the organizer has explicitly "started" the
   // tournament (Phase 16 item 6, Tournament.startedAt) — not just at startDate/bracket

@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true } })
+  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true, teamMode: true } })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
   if (tournament.createdById !== session.user.id && caller?.role !== 'ADMIN') {
@@ -49,6 +49,12 @@ export async function POST(req: Request, { params }: Ctx) {
   const format = typeof body.format === 'string' ? body.format : ''
   if (name.length === 0 || name.length > 80 || !FORMATS.has(format)) {
     return Response.json({ error: 'invalid_stage' }, { status: 400 })
+  }
+  // RC15 #12 — team mode composes TeamMatch encounters (elimination only in v1): refuse the
+  // standings-ranked formats at stage-creation time rather than surfacing the refusal only at
+  // generate time.
+  if (tournament.teamMode && (format === 'SWISS' || format === 'ROUND_ROBIN')) {
+    return Response.json({ error: 'team_format_unsupported' }, { status: 409 })
   }
   const swissRounds = typeof body.swissRounds === 'number' && Number.isInteger(body.swissRounds) ? body.swissRounds : null
   if (format === 'SWISS' && (swissRounds === null || swissRounds < 1)) {

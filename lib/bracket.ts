@@ -109,6 +109,21 @@ export async function loadTournamentBracket(tournamentId: string) {
         orderBy: { id: 'asc' },
         include: { user: { select: { id: true, username: true, displayName: true } } },
       },
+      // RC15 #12 — team-mode registrations and encounters (slots + users resolve sub-game
+      // players; the bracket renders TeamMatch rows instead of solo matches).
+      teamEntries: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          team: { select: { id: true, name: true, slug: true } },
+          slots: {
+            orderBy: { position: 'asc' },
+            include: {
+              user: { select: { id: true, username: true, displayName: true } },
+              deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, ratchet: true, bit: true } } } } } },
+            },
+          },
+        },
+      },
       stages: {
         orderBy: { order: 'asc' },
         include: {
@@ -118,6 +133,17 @@ export async function loadTournamentBracket(tournamentId: string) {
               judge: { select: { id: true, username: true, displayName: true } },
               player1Build: { include: { blade: true, ratchet: true, bit: true } },
               player2Build: { include: { blade: true, ratchet: true, bit: true } },
+            },
+          },
+          teamMatches: {
+            orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }],
+            include: {
+              team1Entry: { select: { id: true, team: { select: { name: true } } } },
+              team2Entry: { select: { id: true, team: { select: { name: true } } } },
+              games: {
+                orderBy: { bracketOrder: 'asc' },
+                include: { judge: { select: { id: true, username: true, displayName: true } } },
+              },
             },
           },
           standings: {

@@ -13,7 +13,7 @@ export async function GET() {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
 
-  const [user, collection, decks, ratings, catalogProposals, mediaAssets, friendships, clubMemberships, tournamentParticipations, stageStandings, clubMessages] =
+  const [user, collection, decks, ratings, catalogProposals, mediaAssets, friendships, clubMemberships, tournamentParticipations, stageStandings, clubMessages, teamMemberships, teamCreations, teamSlots] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
       prisma.collectionItem.findMany({ where: { userId }, include: { pricePoints: true } }),
@@ -29,6 +29,12 @@ export async function GET() {
       // Phase 12 — authored club-chat messages (erasure: rows survive author erasure,
       // authorId is a plain string column, so the query scopes by authorId, not a User FK).
       prisma.clubMessage.findMany({ where: { authorId: userId } }),
+      // RC15 #12 — 3-vs-3 team rosters the user belongs to, teams they created, and their
+      // team-tournament lineup slots (the competitive-record counterparts of the solo
+      // tournamentParticipations above).
+      prisma.teamMember.findMany({ where: { userId }, include: { team: true } }),
+      prisma.team.findMany({ where: { createdById: userId } }),
+      prisma.teamTournamentSlot.findMany({ where: { userId }, include: { entry: { include: { team: { select: { name: true, slug: true } }, tournament: { select: { title: true, startDate: true } } } } } }),
     ])
   if (!user) return Response.json({ error: 'not_found' }, { status: 404 })
 
@@ -68,6 +74,9 @@ export async function GET() {
     tournamentParticipations,
     stageStandings,
     clubMessages,
+    teamMemberships,
+    teamCreations,
+    teamSlots,
   }
 
   return Response.json(document, {

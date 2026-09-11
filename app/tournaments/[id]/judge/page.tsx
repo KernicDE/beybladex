@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { JudgeScorePad, type PadPlayer } from '@/components/judge/JudgeScorePad'
 import { eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
+import { stageWinnersRounds } from '@/lib/bracket'
 import { pointValuesFor } from '@/lib/scoring'
 
 export const dynamic = 'force-dynamic'
@@ -34,12 +35,38 @@ export default async function JudgePage({
       ruleset: true,
       stages: {
         orderBy: { order: 'asc' },
-        include: { matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] } },
+        include: {
+          matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] },
+          // RC15 #12 — team mode: a judged match is a sub-game; its parent encounter supplies
+          // the round label and the team-vs-team context.
+          teamMatches: {
+            orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }],
+            include: {
+              team1Entry: { select: { team: { select: { name: true } } } },
+              team2Entry: { select: { team: { select: { name: true } } } },
+              games: { orderBy: { bracketOrder: 'asc' } },
+            },
+          },
+        },
       },
       participants: {
         include: {
           user: { select: { username: true, displayName: true } },
           deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, ratchet: true, bit: true } } } } } },
+        },
+      },
+      // RC15 #12 — team mode: sub-game players (deck + build snapshot) resolve via slots.
+      teamEntries: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          team: { select: { name: true } },
+          slots: {
+            orderBy: { position: 'asc' },
+            include: {
+              user: { select: { username: true, displayName: true } },
+              deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, ratchet: true, bit: true } } } } } },
+            },
+          },
         },
       },
     },
@@ -49,7 +76,13 @@ export default async function JudgePage({
   // Phase 16 item 6 — once a locked-decks tournament has started, a participant's
   // lockedBuildIds SNAPSHOT (not their live deck) is authoritative: it may reference builds no
   // longer in their currently-editable Deck.builds, so it's fetched separately by id.
-  const lockedBuildIds = [...new Set(tournament.participants.flatMap((p) => p.lockedBuildIds))]
+  // RC15 #12 — in team mode the snapshot lives on the team-entry slots instead.
+  const lockedBuildIds = [
+    ...new Set([
+      ...tournament.participants.flatMap((p) => p.lockedBuildIds),
+      ...tournament.teamEntries.flatMap((e) => e.slots.flatMap((s) => s.lockedBuildIds)),
+    ]),
+  ]
   const lockedBuilds = lockedBuildIds.length
     ? await prisma.build.findMany({ where: { id: { in: lockedBuildIds } }, include: { blade: true, ratchet: true, bit: true } })
     : []
@@ -90,6 +123,12 @@ export default async function JudgePage({
   }
 
   const stage = stageOf(match.id)! // match comes from the flattened stage list — always found
+  // RC15 #12 — team mode: the judged match is a sub-game (round 0); label + team context come
+  // from its parent encounter.
+  const encounter = tournament.teamMode
+    ? stage.teamMatches.find((tm) => tm.games.some((g) => g.id === match.id))
+    : undefined
+  const gameIndex = encounter ? encounter.games.findIndex((g) => g.id === match.id) : -1
   const maxRound = Math.max(0, ...stage.matches.map((m) => m.round))
   const wbRounds =
     maxRound > 0
@@ -98,9 +137,13 @@ export default async function JudgePage({
         : maxRound
       : 0
   const matchRoundLabel =
-    stage.format === 'SWISS'
-      ? `Swiss-Runde ${match.swissRound ?? '?'}`
-      : eliminationRoundLabel(match.round, wbRounds)
+    encounter && gameIndex >= 0
+      ? `${eliminationRoundLabel(encounter.round, stageWinnersRounds(stage.teamMatches))} · ` +
+        `${encounter.team1Entry?.team.name ?? 'Offen'} vs. ${encounter.team2Entry?.team.name ?? 'Offen'} · ` +
+        `Spiel ${gameIndex + 1} (${encounter.winsTeam1}:${encounter.winsTeam2})`
+      : stage.format === 'SWISS'
+        ? `Swiss-Runde ${match.swissRound ?? '?'}`
+        : eliminationRoundLabel(match.round, wbRounds)
   // Phase 16 items 1-2 — a build's dual-spin status and suggested mode: true/suggested if ANY
   // of its three parts is dualSpin (priority blade → ratchet → bit for the suggestion, an
   // arbitrary but deterministic tie-break when more than one part is dual-spin).
@@ -111,17 +154,22 @@ export default async function JudgePage({
 
   const padPlayer = (userId: string | null): PadPlayer | null => {
     if (userId === null) return null
-    const participant = tournament.participants.find((p) => p.userId === userId)
-    if (!participant) return { id: userId, name: 'Unbekannt', builds: [] }
+    // RC15 #12 — team mode: the player row is a team-entry SLOT (deck + build snapshot live on
+    // the slot); solo mode: the tournament participant. Both carry the same shape below.
+    const slot = tournament.teamMode
+      ? tournament.teamEntries.flatMap((e) => e.slots).find((s) => s.userId === userId)
+      : undefined
+    const row = slot ?? (tournament.teamMode ? undefined : tournament.participants.find((p) => p.userId === userId))
+    if (!row) return { id: userId, name: 'Unbekannt', builds: [] }
     // Phase 16 item 6 — a non-empty lockedBuildIds snapshot (tournament started, locked-decks
     // ruleset) is authoritative over the live deck; see this file's own comment above.
     const buildRows =
-      participant.lockedBuildIds.length > 0
-        ? participant.lockedBuildIds.map((buildId) => lockedBuildById.get(buildId)).filter((b) => b !== undefined)
-        : (participant.deck?.builds ?? []).map((db) => db.build)
+      row.lockedBuildIds.length > 0
+        ? row.lockedBuildIds.map((buildId) => lockedBuildById.get(buildId)).filter((b) => b !== undefined)
+        : (row.deck?.builds ?? []).map((db) => db.build)
     return {
       id: userId,
-      name: participant.user.displayName ?? participant.user.username,
+      name: row.user.displayName ?? row.user.username,
       builds: buildRows.map((build) => ({
         id: build.id,
         label: `${build.blade.name} · ${build.ratchet.name} · ${build.bit.name}`,

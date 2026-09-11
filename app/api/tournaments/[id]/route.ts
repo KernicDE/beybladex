@@ -42,6 +42,19 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const ruleset = await prisma.ruleset.findUnique({ where: { id: data.rulesetId } })
     if (!ruleset) return Response.json({ error: 'invalid_ruleset' }, { status: 400 })
   }
+  if (data.teamMode !== undefined) {
+    // RC15 #12 — team mode changes the registration aggregate (solo participants vs team
+    // entries); flipping it after either kind of registration exists would silently strand
+    // those rows, so the flag is frozen at the first registration (UI disables the toggle).
+    const current = await prisma.tournament.findUnique({
+      where: { id },
+      select: { teamMode: true, _count: { select: { participants: true, teamEntries: true } } },
+    })
+    if (current && current.teamMode !== data.teamMode &&
+        (current._count.participants > 0 || current._count.teamEntries > 0)) {
+      return Response.json({ error: 'registrations_exist' }, { status: 409 })
+    }
+  }
   if (data.endDate) {
     // Compare against the patched startDate if one is given, else the stored one.
     const current = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true } })
@@ -87,6 +100,9 @@ export async function DELETE(_req: Request, { params }: Ctx) {
 
   await prisma.$transaction([
     prisma.match.deleteMany({ where: { tournamentId: id } }),
+    // RC15 #12 — team-mode rows (cascade would cover them; explicit like the rows above).
+    prisma.teamMatch.deleteMany({ where: { tournamentId: id } }),
+    prisma.teamTournamentEntry.deleteMany({ where: { tournamentId: id } }),
     prisma.stageStanding.deleteMany({ where: { stage: { tournamentId: id } } }),
     prisma.tournamentStage.deleteMany({ where: { tournamentId: id } }),
     prisma.tournamentParticipant.deleteMany({ where: { tournamentId: id } }),

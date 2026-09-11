@@ -21,7 +21,8 @@
     "rules": "Rules",
     "leaderboard": "Rankings",
     "home": "Home",
-    "profile": "Profile"
+    "profile": "Profile",
+    "teams": "Teams"
   },
   "legal": {
     "label": "Legal",

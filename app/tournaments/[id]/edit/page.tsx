@@ -31,6 +31,7 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
       locationName: true, street: true, postalCode: true, city: true, state: true, country: true,
       latitude: true, longitude: true, entryFeeCent: true, currency: true, isRecurring: true,
       recurringDays: true, rulesetId: true, clubId: true, createdById: true, rankedEligible: true,
+      teamMode: true, _count: { select: { participants: true, teamEntries: true } },
     },
   })
   if (!tournament) notFound()
@@ -68,9 +69,14 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
     isRecurring: tournament.isRecurring,
     recurringDays: tournament.recurringDays === null ? '' : String(tournament.recurringDays),
     rankedEligible: tournament.rankedEligible,
+    teamMode: tournament.teamMode,
     rulesetId: tournament.rulesetId,
     clubId: tournament.clubId ?? '',
   }
+
+  // RC15 #12 — team mode is frozen at the first registration (server returns 409
+  // registrations_exist); the checkbox reflects that so the organizer sees WHY it is locked.
+  const teamModeLocked = tournament._count.participants > 0 || tournament._count.teamEntries > 0
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -81,6 +87,7 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
         mode="edit"
         tournamentId={tournament.id}
         initialValues={initialValues}
+        teamModeLocked={teamModeLocked}
       />
     </main>
   )

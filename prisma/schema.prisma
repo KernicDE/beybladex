@@ -198,6 +198,13 @@ model User {
   avatarImage   MediaAsset? @relation("UserAvatar", fields: [avatarImageId], references: [id], onDelete: SetNull)
   avatarImageId String?
   stageStandings       StageStanding[]
+  // RC15 #12 — teams the user created (captain-by-default membership is a TeamMember row) and
+  // the 3-vs-3 team rosters / tournament lineups they belong to. TeamMember cascades with the
+  // account (a roster slot simply opens); TeamTournamentSlot rows survive erasure like
+  // TournamentParticipant (opponents' match history is Art. 17(3) data — see accountErasure).
+  createdTeams         Team[]                @relation("TeamCreator")
+  teamMemberships      TeamMember[]
+  teamSlots            TeamTournamentSlot[]
   // Phase 14 — real FK (not a plain String like AuditLog.actorId/MediaAsset.uploadedById):
   // account erasure ANONYMIZES the User row in place (lib/accountErasure.ts), it never hard-
   // deletes it, so this FK never actually cascades in practice — kept as a real relation
@@ -301,6 +308,9 @@ model Club {
   owner       User           @relation("ClubOwner", fields: [ownerId], references: [id])
   members     ClubMember[]
   tournaments Tournament[]
+  // RC15 #12 — a Club MAY have competitive 3-vs-3 teams ("Club X Team A"); teams survive their
+  // club's dissolution (SetNull), a club never owns its teams' lifecycle.
+  teams       Team[]
   // Phase 12: capped chat stream (max 50 messages, enforced synchronously on insert) —
   // messages die with the club (onDelete: Cascade).
   messages    ClubMessage[]
@@ -418,11 +428,19 @@ model Tournament {
   // retroactive change of intent (see the plan's own note).
   rankedEligible Boolean @default(true)
 
+  // RC15 #12 — MVP3 3-vs-3 team competition (WBO Masters League parity). Registration is
+  // "one team, three players' decks" via TeamTournamentEntry instead of solo
+  // TournamentParticipant rows; bracket nodes are TeamMatch encounters (best-of-3 over three
+  // slot-vs-slot sub-matches). Immutable once any registration exists (route-enforced).
+  teamMode Boolean @default(false)
+
   participants TournamentParticipant[]
   matches      Match[]
   judges       TournamentJudge[]
   // Phase 5 Part C2 — the tournament's ordered stages (each with its own format/bracket).
   stages       TournamentStage[]
+  teamEntries  TeamTournamentEntry[]
+  teamMatches  TeamMatch[]
 
   // RC7 (#36): public listing/filter queries — club calendar and country-filtered event list,
   // both ordered by startDate.
@@ -538,6 +556,8 @@ model TournamentStage {
 
   matches   Match[]
   standings StageStanding[]
+  // RC15 #12 — team-mode bracket nodes for this stage (TeamMatch); solo matches stay [].
+  teamMatches TeamMatch[]
 
   @@unique([tournamentId, order])
 }
@@ -662,6 +682,9 @@ model Deck {
   user        User                    @relation(fields: [userId], references: [id])
   builds      DeckBuild[]
   tournaments TournamentParticipant[]
+  // RC15 #12 — team-mode lineup slots reference a member's deck (SetNull mirrors the solo
+  // TournamentParticipant.deck treatment).
+  teamSlots   TeamTournamentSlot[]
 
   // RC7 (#36): per-user deck list.
   @@index([userId])
@@ -735,8 +758,131 @@ model Match {
   player1ArenaCheckedInAt DateTime?
   player2ArenaCheckedInAt DateTime?
 
+  // RC15 #12 — set when this match is a TEAM-MODE sub-game: one slot-vs-slot game of a
+  // TeamMatch encounter (best-of-3). Sub-games are judged with the regular solo machinery
+  // (score route, JudgeScorePad) but never bracket/standings/Elo on their own — their
+  // completion feeds the parent encounter (lib/teamStage.ts). Null = a regular solo match.
+  teamMatchId String?
+  teamMatch   TeamMatch? @relation(fields: [teamMatchId], references: [id], onDelete: Cascade)
+
   @@index([tournamentId, round, bracketOrder])
   @@index([stageId, round, bracketOrder])
+}
+
+// ─── RC15 #12 — MVP3 3-vs-3 team competition (WBO Masters League parity) ───────────────
+// Deliberately a SEPARATE aggregate from Club (master-plan MVP3 decision): Club = persistent
+// social community; Team = competitive roster of exactly 3 players, optionally club-affiliated
+// via the nullable clubId. Lifecycle differences (ad-hoc per event vs. persistent) are why a
+// repurposed Club would break one of the two use cases.
+enum TeamRole {
+  CAPTAIN
+  MEMBER
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  // Nullable FK per the MVP3 sketch: a team MAY be club-affiliated ("Club X Team A") or stand
+  // alone. SetNull — the team survives its club's dissolution.
+  clubId      String?
+  club        Club?    @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  createdById String
+  createdBy   User     @relation("TeamCreator", fields: [createdById], references: [id])
+  members     TeamMember[]
+  entries     TeamTournamentEntry[]
+  createdAt   DateTime @default(now())
+}
+
+// A team's roster. Capped at 3 ACTIVE members by the route layer (TeamTournamentEntry's
+// unique pair with the @@id([entryId, position]) below make the roster the lineup: a team
+// registers for a team tournament with exactly its 3 members, one per slot).
+model TeamMember {
+  id       String   @id @default(uuid())
+  teamId   String
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+  // "my teams" listing (profile/team pages, registration pickers).
+  @@index([userId])
+}
+
+// A team's registration for ONE team-mode tournament. Mirrors TournamentParticipant's shape
+// (checkedIn/withdrawn/seed) so the organizer-console and generation flows stay symmetric.
+model TeamTournamentEntry {
+  id           String     @id @default(uuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  teamId       String
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  checkedIn    Boolean    @default(false)
+  // No-show handling, mirroring TournamentParticipant.withdrawn: skipped by bracket generation.
+  withdrawn    Boolean    @default(false)
+  // Phase-15-style seed placeholder for future team seeding; null = deterministic id order.
+  seed         Int?
+  createdAt    DateTime   @default(now())
+  slots        TeamTournamentSlot[]
+  // Both sides of every TeamMatch this entry plays in the tournament.
+  teamMatches1 TeamMatch[] @relation("TeamMatchSide1")
+  teamMatches2 TeamMatch[] @relation("TeamMatchSide2")
+
+  @@unique([tournamentId, teamId])
+  @@index([tournamentId, checkedIn])
+}
+
+// One lineup slot of a TeamTournamentEntry: position 1..3. Encounter games pair slot i of
+// team 1 against slot i of team 2 (fixed order — no captain-order shenanigans in v1).
+model TeamTournamentSlot {
+  entryId  String
+  entry    TeamTournamentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  position Int // 1..3 — (entryId, position) is the row's identity within the lineup (cf. DeckBuild)
+  userId   String
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckId   String?
+  deck     Deck?               @relation(fields: [deckId], references: [id], onDelete: SetNull)
+  // Phase-16-style snapshot of this slot's deck builds at "Turnier starten" (only when the
+  // linked Ruleset locks decks) — same snapshot-not-live-reference contract as
+  // TournamentParticipant.lockedBuildIds. Empty = no snapshot.
+  lockedBuildIds String[]      @default([])
+
+  @@id([entryId, position])
+  @@unique([entryId, userId])
+}
+
+// A team-vs-team ENCOUNTER: the bracket node in team mode. Groups exactly three sub-Match
+// rows (Match.teamMatchId, one per lineup slot); the encounter is a BEST-OF-3 over those
+// games — first team to 2 game wins takes the encounter and advances in the bracket. The
+// bracket-shape columns mirror Match so the elimination pure libs (lib/bracket.ts,
+// lib/doubleElimination.ts) and ranking logic apply unchanged.
+model TeamMatch {
+  id           String          @id @default(uuid())
+  tournamentId String
+  tournament   Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  stageId      String
+  stage        TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  team1EntryId String?
+  team1Entry   TeamTournamentEntry? @relation("TeamMatchSide1", fields: [team1EntryId], references: [id], onDelete: Cascade)
+  team2EntryId String?
+  team2Entry   TeamTournamentEntry? @relation("TeamMatchSide2", fields: [team2EntryId], references: [id], onDelete: Cascade)
+
+  round        Int          @default(0) // same semantics as Match.round (1-based per stage)
+  bracketOrder Int          @default(0)
+  bracketSide  BracketSide? // DOUBLE_ELIMINATION only, same as Match.bracketSide
+  status       MatchStatus  @default(PENDING)
+  // Running sub-game win counts (first to 2 ends the encounter; the third game only plays
+  // when the first two split).
+  winsTeam1    Int          @default(0)
+  winsTeam2    Int          @default(0)
+  winnerEntryId String?
+
+  games Match[]
+
+  @@index([stageId, round, bracketOrder])
+  @@index([tournamentId])
 }
 
 model CollectionItem {

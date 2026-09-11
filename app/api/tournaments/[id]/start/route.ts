@@ -79,6 +79,24 @@ export async function POST(_req: Request, { params }: Ctx) {
             data: { lockedBuildIds: deckBuilds.map((db) => db.buildId) },
           })
         }
+        // RC15 #12 — the same snapshot contract for team-mode lineup slots: each slot's
+        // CURRENT deck builds become authoritative for this tournament (snapshot, not a live
+        // reference). Slots without a deck are skipped, exactly like deck-less participants.
+        const teamSlots = await tx.teamTournamentSlot.findMany({
+          where: { entry: { tournamentId: id }, deckId: { not: null } },
+          select: { entryId: true, position: true, deckId: true },
+        })
+        for (const slot of teamSlots) {
+          const deckBuilds = await tx.deckBuild.findMany({
+            where: { deckId: slot.deckId! },
+            orderBy: { position: 'asc' },
+            select: { buildId: true },
+          })
+          await tx.teamTournamentSlot.update({
+            where: { entryId_position: { entryId: slot.entryId, position: slot.position } },
+            data: { lockedBuildIds: deckBuilds.map((db) => db.buildId) },
+          })
+        }
       }
       return { startedAt: updated.startedAt! }
     })

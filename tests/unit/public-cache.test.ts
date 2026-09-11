@@ -84,7 +84,7 @@ describe('withPublicCache (issue #43)', () => {
 describe('invalidatePublicCache (hotfix #99)', () => {
   it('DELs the exact public tournament detail key', async () => {
     await invalidatePublicCache(publicTournamentKey('t1'))
-    expect(redisDel).toHaveBeenCalledWith('public:v1:tournament:t1')
+    expect(redisDel).toHaveBeenCalledWith('public:v2:tournament:t1')
   })
 
   it('degrades to a logged no-op when Redis fails — invalidation never throws', async () => {

@@ -35,12 +35,40 @@ export async function POST(_req: Request, { params }: Ctx) {
 
   const stage = await prisma.tournamentStage.findUnique({
     where: { id: stageId },
-    include: { tournament: { select: { createdById: true } } },
+    include: { tournament: { select: { createdById: true, teamMode: true } } },
   })
   if (!stage || stage.tournamentId !== id) return Response.json({ error: 'not_found' }, { status: 404 })
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
   if (stage.tournament.createdById !== session.user.id && caller?.role !== 'ADMIN') {
     return Response.json({ error: 'forbidden' }, { status: 403 })
+  }
+
+  // RC15 #12 — team mode: the stage's bracket nodes are TeamMatch encounters; the completion
+  // gate and the placement ranking run over them (entry ids in place of user ids — the stage's
+  // qualifiedUserIds then carries ENTRY ids forward to the next stage's generate, which looks
+  // them up as TeamTournamentEntries).
+  if (stage.tournament.teamMode) {
+    const teamMatches = await prisma.teamMatch.findMany({ where: { stageId } })
+    if (teamMatches.some((m) => m.status !== 'COMPLETED')) {
+      return Response.json({ error: 'matches_open' }, { status: 409 })
+    }
+    const pool = stage.order === 1
+      ? (await prisma.teamTournamentEntry.findMany({ where: { tournamentId: id }, select: { id: true } })).map((e) => e.id)
+      : ((await prisma.tournamentStage.findUnique({ where: { tournamentId_order: { tournamentId: id, order: stage.order - 1 } } }))?.qualifiedUserIds ?? [])
+    const ranking = eliminationRanking(
+      teamMatches.map((m) => ({
+        id: m.id, round: m.round, bracketOrder: m.bracketOrder, bracketSide: m.bracketSide,
+        player1Id: m.team1EntryId, player2Id: m.team2EntryId, winnerId: m.winnerEntryId, status: m.status,
+      })),
+      pool
+    )
+    const qualified = stage.qualifyCount !== null ? ranking.slice(0, stage.qualifyCount) : []
+    await prisma.tournamentStage.update({
+      where: { id: stageId },
+      data: { status: 'COMPLETED', qualifiedUserIds: qualified },
+    })
+    await invalidatePublicCache(publicTournamentKey(id))
+    return Response.json({ id: stageId, status: 'COMPLETED', ranking, qualified: qualified.length > 0 ? qualified : undefined })
   }
 
   const matches = await prisma.match.findMany({ where: { stageId } })

@@ -44,6 +44,7 @@ import { markMetaDirty } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
 import { assignFreedArena } from '@/lib/arenaAssign'
 import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
+import { resolveTeamEncounter } from '@/lib/teamStage'
 import { getActiveSeason, applyMatchResultToRatings } from '@/lib/season'
 import { notifyMatchReady } from '@/lib/notify'
 import { isKnownEventType, applyEvent, isMonotonicDecrease, winThreshold } from '@/lib/scoring'
@@ -190,18 +191,45 @@ export async function POST(req: Request, { params }: Ctx) {
   const player2BuildId = buildId(body.player2BuildId)
 
   // Phase 16 item 6 — once a tournament has been started with a locked-decks ruleset, every
-  // registered participant's TournamentParticipant.lockedBuildIds is the authoritative build
-  // list for their matches: a build confirmation for a build outside that snapshot is rejected.
+  // registered participant's TournamentParticipant.lockedBuildIds (or, for RC15 #12 team-mode
+  // sub-games, the slot's TeamTournamentSlot.lockedBuildIds) is the authoritative build list
+  // for their matches: a build confirmation for a build outside that snapshot is rejected.
   // An empty lockedBuildIds (tournament not started yet, or its ruleset doesn't lock decks)
   // means no restriction — the live deck keeps being read as before this phase.
   const tournamentId = match.tournamentId
-  async function assertBuildIsLocked(playerId: string | null, buildIdToConfirm: string | undefined): Promise<Response | null> {
-    if (!buildIdToConfirm || !playerId) return null
+  // RC15 #12 — captured BEFORE the closure: the sub-game's parent encounter id (null = solo
+  // match). Closures don't see the outer `match` null-narrowing, so this is its own const.
+  const subGameTeamMatchId: string | null = match.teamMatchId
+  // Lazy one-load cache for the team sub-game's slot snapshots (keyed by slot userId).
+  let teamSlotLocks: Map<string, string[]> | null = null
+  async function lockedBuildIdsFor(playerId: string | null): Promise<string[]> {
+    if (!playerId) return []
+    if (subGameTeamMatchId) {
+      if (!teamSlotLocks) {
+        const teamMatch = await prisma.teamMatch.findUnique({
+          where: { id: subGameTeamMatchId },
+          include: {
+            team1Entry: { include: { slots: { select: { userId: true, lockedBuildIds: true } } } },
+            team2Entry: { include: { slots: { select: { userId: true, lockedBuildIds: true } } } },
+          },
+        })
+        teamSlotLocks = new Map(
+          [...(teamMatch?.team1Entry?.slots ?? []), ...(teamMatch?.team2Entry?.slots ?? [])]
+            .map((s) => [s.userId, s.lockedBuildIds])
+        )
+      }
+      return teamSlotLocks.get(playerId) ?? []
+    }
     const participant = await prisma.tournamentParticipant.findUnique({
       where: { tournamentId_userId: { tournamentId, userId: playerId } },
       select: { lockedBuildIds: true },
     })
-    if (participant && participant.lockedBuildIds.length > 0 && !participant.lockedBuildIds.includes(buildIdToConfirm)) {
+    return participant?.lockedBuildIds ?? []
+  }
+  async function assertBuildIsLocked(playerId: string | null, buildIdToConfirm: string | undefined): Promise<Response | null> {
+    if (!buildIdToConfirm || !playerId) return null
+    const lockedBuildIds = await lockedBuildIdsFor(playerId)
+    if (lockedBuildIds.length > 0 && !lockedBuildIds.includes(buildIdToConfirm)) {
       return Response.json({ error: 'build_not_locked' }, { status: 400 })
     }
     return null
@@ -312,7 +340,15 @@ export async function POST(req: Request, { params }: Ctx) {
     // repeatable (slot writes are conditional updateManies writing the same values; standings
     // increments run exactly once, under the claim above).
     if (completed && winnerId) {
-      if (match.stage.format === 'SWISS' || match.stage.format === 'ROUND_ROBIN') {
+      if (match.teamMatchId) {
+        // RC15 #12 — a TEAM-MODE sub-game just ended: it is not a bracket node, so none of
+        // the solo propagation (standings/bracket slots/arena/Elo) applies. The win feeds the
+        // parent encounter (best-of-3) instead; completing the encounter advances the ENTRY
+        // through the TeamMatch bracket (lib/teamStage.ts). Elo is deliberately not accrued
+        // for team-mode sub-games — whether/how the ladder should treat team results is the
+        // master plan's documented open question, not a silent decision.
+        await resolveTeamEncounter(match.teamMatchId, tx)
+      } else if (match.stage.format === 'SWISS' || match.stage.format === 'ROUND_ROBIN') {
         const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
         await recordSwissResult(match.stageId, winnerId, loserId, tx)
       } else if (match.stage.format === 'DOUBLE_ELIMINATION') {
@@ -349,8 +385,9 @@ export async function POST(req: Request, { params }: Ctx) {
       // season existing (a fresh install with no season created yet must not throw — ratings
       // simply don't accrue until an admin creates one). Idempotency is inherited from the
       // conditional claim above: this block only runs once per real COMPLETED transition, never
-      // on a replayed clientEventId or a lost race.
-      if (match.tournament.rankedEligible && match.player1Id && match.player2Id) {
+      // on a replayed clientEventId or a lost race. RC15 #12: team-mode sub-games never accrue
+      // Elo (the match.teamMatchId branch above already skipped this whole block).
+      if (!match.teamMatchId && match.tournament.rankedEligible && match.player1Id && match.player2Id) {
         const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id
         const activeSeason = await getActiveSeason(tx)
         if (activeSeason) {

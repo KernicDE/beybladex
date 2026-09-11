@@ -66,6 +66,9 @@ export interface TournamentFormValues {
   recurringDays: string
   // Phase 14 — opts a casual/friendly/test event out of Elo impact; defaults to ranked (true).
   rankedEligible: boolean
+  // RC15 #12 — 3-vs-3 team mode (WBO Masters League parity): teams of 3 register instead of
+  // solo players; frozen once any registration exists (server-enforced).
+  teamMode: boolean
   rulesetId: string
   clubId: string
 }
@@ -89,6 +92,7 @@ export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
   isRecurring: false,
   recurringDays: '',
   rankedEligible: true,
+  teamMode: false,
   rulesetId: '',
   clubId: '',
 }
@@ -122,6 +126,8 @@ export function TournamentForm({
   mode = 'create',
   tournamentId,
   initialValues,
+  /** RC15 #12 — true once any registration exists: team mode is frozen (server-enforced 409). */
+  teamModeLocked = false,
 }: {
   rulesets: RulesetOption[]
   clubs?: ClubOption[]
@@ -132,6 +138,7 @@ export function TournamentForm({
   tournamentId?: string
   /** Required when mode === 'edit' — pre-filled from the loaded Tournament row. */
   initialValues?: TournamentFormValues
+  teamModeLocked?: boolean
 }) {
   const router = useRouter()
   const [values, setValues] = useState<TournamentFormValues>(
@@ -322,6 +329,7 @@ export function TournamentForm({
       isRecurring: values.isRecurring,
       recurringDays: values.recurringDays === '' ? null : Number(values.recurringDays),
       rankedEligible: values.rankedEligible,
+      teamMode: values.teamMode,
       rulesetId: values.rulesetId,
       clubId: values.clubId || null,
     }
@@ -555,6 +563,24 @@ export function TournamentForm({
           Gewertet (Elo-Rangliste)
           <span className="block text-xs text-current/60">
             Abgeschlossene Matches dieses Turniers fließen in die Elo-Rangliste der Teilnehmer:innen ein. Für lockere/Test-Events deaktivieren.
+          </span>
+        </label>
+      </div>
+
+      <div className="flex items-start gap-3">
+        <input
+          id="tournament-teamMode"
+          type="checkbox"
+          checked={values.teamMode}
+          disabled={teamModeLocked}
+          onChange={(e) => setValues((v) => ({ ...v, teamMode: e.target.checked }))}
+          className="mt-0.5 size-4 shrink-0 accent-x-cyan"
+        />
+        <label htmlFor="tournament-teamMode" className="text-sm">
+          3-gegen-3 Team-Turnier
+          <span className="block text-xs text-current/60">
+            Teams aus genau 3 Spieler:innen melden sich als Team an; Matches sind Best-of-3-Duelle
+            pro Lineup-Platz (WBO-Masters-League-Format). Nach der ersten Anmeldung nicht mehr änderbar.
           </span>
         </label>
       </div>
