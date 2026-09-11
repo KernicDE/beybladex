@@ -34,15 +34,22 @@ const BERLIN_SUGGESTION: AddressSuggestion = {
   lng: 13.4132,
 }
 
-// fetch router: autocomplete vs full-address geocode get different canned responses.
+// fetch router: autocomplete vs full-address geocode get different canned responses. A
+// geocode for the city «Nowhere» deliberately resolves to nothing (#100's unresolvable case).
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const url = String(input)
   if (url.includes('/api/geo/geocode')) {
+    if (url.includes('city=Nowhere')) return new Response(JSON.stringify({}), { status: 200 })
     return new Response(JSON.stringify({ suggestion: BERLIN_SUGGESTION }), { status: 200 })
   }
   return new Response(JSON.stringify({ suggestions: [MUNICH_SUGGESTION] }), { status: 200 })
 })
 vi.stubGlobal('fetch', fetchMock)
+
+// #100 — the Lat/Lng fields live behind the advanced disclosure and stay hidden by default.
+function expandAdvanced() {
+  fireEvent.click(screen.getByRole('button', { name: /Erweitert/ }))
+}
 
 function renderForm() {
   return render(<TournamentForm rulesets={[{ id: 'r1', title: 'Standard' }]} />)
@@ -111,10 +118,15 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
     expect(field('Stadt')).toHaveValue('München')
     expect(field('Bundesland / Kanton')).toHaveValue('Bayern')
     expect(combobox('Land')).toHaveValue('DE')
-    expect(field('Breitengrad (Lat)')).toHaveValue(48.1371)
-    expect(field('Längengrad (Lng)')).toHaveValue(11.5754)
     // the dropdown closes after applying
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+
+    // #100 — coordinates land in form state invisibly; they only become visible after
+    // expanding the advanced disclosure.
+    expect(screen.queryByLabelText('Breitengrad (Lat)')).not.toBeInTheDocument()
+    expandAdvanced()
+    expect(field('Breitengrad (Lat)')).toHaveValue(48.1371)
+    expect(field('Längengrad (Lng)')).toHaveValue(11.5754)
   })
 
   it('auto-geocodes once street+PLZ+Stadt+Land are filled by hand', async () => {
@@ -125,6 +137,9 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(600)) // geocode debounce (rescheduled by each change)
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/geo/geocode'))).toBe(true)
+    // #100 — the background resolution surfaces as a status line, not as visible fields.
+    expect(screen.getByRole('status')).toHaveTextContent('Standort gefunden')
+    expandAdvanced()
     expect(field('Breitengrad (Lat)')).toHaveValue(52.5219)
     expect(field('Längengrad (Lng)')).toHaveValue(13.4132)
     expect(field('Bundesland / Kanton')).toHaveValue('Berlin')
@@ -136,6 +151,7 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
     fireEvent.change(field('Veranstaltungsort'), { target: { value: 'Marienplatz Arena' } })
     await act(() => vi.advanceTimersByTimeAsync(300)) // autocomplete debounce
     fireEvent.click(screen.getByRole('option', { name: MUNICH_SUGGESTION.displayName }))
+    expandAdvanced()
     expect(field('Breitengrad (Lat)')).toHaveValue(48.1371)
 
     // 2. organizer hand-corrects the pin…
@@ -148,5 +164,75 @@ describe('TournamentForm — address autocomplete (Phase 9)', () => {
     // the automatic result refreshed the region name, but must not clobber the hand-set pin
     expect(field('Breitengrad (Lat)')).toHaveValue(48.2)
     expect(field('Längengrad (Lng)')).toHaveValue(11.5754)
+  })
+})
+
+describe('TournamentForm — background geocoding UX (RC11 #100)', () => {
+  it('keeps the Lat/Lng inputs hidden behind the advanced disclosure by default', () => {
+    renderForm()
+    expect(screen.queryByLabelText('Breitengrad (Lat)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Längengrad (Lng)')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Erweitert: Standort manuell setzen/ }))
+    expect(screen.getByLabelText('Breitengrad (Lat)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Längengrad (Lng)')).toBeInTheDocument()
+  })
+
+  it('shows an actionable alert for an unresolvable address and blocks submit', async () => {
+    renderForm()
+    // Fill an address the geocoder cannot resolve.
+    fireEvent.change(field('Straße (optional)'), { target: { value: 'Nirgendwo 1' } })
+    fireEvent.change(field('PLZ'), { target: { value: '00000' } })
+    fireEvent.change(field('Stadt'), { target: { value: 'Nowhere' } })
+    await act(() => vi.advanceTimersByTimeAsync(600)) // geocode debounce
+
+    const alerts = screen.getAllByRole('alert')
+    expect(alerts.some((a) => a.textContent?.includes('konnte nicht automatisch gefunden werden'))).toBe(true)
+
+    // Try to submit an otherwise valid form — the guard must stop before POSTing (0/0 would
+    // be a "valid" coordinate pair and pin the event in the Gulf of Guinea).
+    fireEvent.change(field('Titel'), { target: { value: 'Test Event' } })
+    fireEvent.change(field('Datum'), { target: { value: '2026-10-03' } })
+    fireEvent.change(field('Uhrzeit von'), { target: { value: '10:00' } })
+    fireEvent.change(field('Veranstaltungsort'), { target: { value: 'Test-Arena' } })
+    fireEvent.change(field('Bundesland / Kanton'), { target: { value: 'Hessen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Turnier erstellen' }))
+
+    // The guard runs synchronously in the submit handler — no findBy* (fake timers stall it).
+    expect(screen.getByText(/Der Standort konnte nicht automatisch aus der Adresse ermittelt werden/)).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/tournaments'))).toBe(false)
+  })
+
+  it('starts with the advanced disclosure expanded in edit mode (existing coordinates)', () => {
+    render(
+      <TournamentForm
+        rulesets={[{ id: 'r1', title: 'Standard' }]}
+        mode="edit"
+        tournamentId="t-1"
+        initialValues={{
+          title: 'Bestehendes Event',
+          description: '',
+          date: '2026-10-03',
+          startTime: '10:00',
+          endTime: '',
+          locationName: 'Arena',
+          street: 'Marienplatz 1',
+          postalCode: '80331',
+          city: 'München',
+          state: 'Bayern',
+          country: 'DE',
+          latitude: '48.1371',
+          longitude: '11.5754',
+          entryFeeCent: '0',
+          currency: 'EUR',
+          isRecurring: false,
+          recurringDays: '',
+          rankedEligible: true,
+          rulesetId: 'r1',
+          clubId: '',
+        }}
+      />,
+    )
+    expect(screen.getByLabelText('Breitengrad (Lat)')).toHaveValue(48.1371)
+    expect(screen.getByLabelText('Längengrad (Lng)')).toHaveValue(11.5754)
   })
 })
