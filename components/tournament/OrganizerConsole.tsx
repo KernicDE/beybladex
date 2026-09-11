@@ -91,7 +91,7 @@ export function OrganizerConsole({
   const [arenaCount, setArenaCount] = useState('')
 
   const base = `/api/tournaments/${tournamentId}`
-  const call = async (fn: () => Promise<Response>, successMessage?: string) => {
+  const call = async (fn: () => Promise<Response>) => {
     setBusy(true)
     setError(null)
     try {
@@ -99,7 +99,7 @@ export function OrganizerConsole({
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         setError(body.error ?? `Fehler (${res.status})`)
-      } else if (successMessage) {
+      } else {
         router.refresh()
       }
     } catch {
@@ -130,7 +130,6 @@ export function OrganizerConsole({
             ...(arenaCount !== '' ? { arenaCount: Number(arenaCount) } : {}),
           }),
         }),
-      'ok'
     )
 
   return (
@@ -160,7 +159,7 @@ export function OrganizerConsole({
             disabled={busy}
             onClick={() => {
               if (window.confirm('Turnier starten? Dies kann nicht rückgängig gemacht werden — bei einem Regelwerk mit gesperrten Decks werden alle angemeldeten Decks jetzt eingefroren.')) {
-                void call(() => fetch(`${base}/start`, { method: 'POST' }), 'ok')
+                void call(() => fetch(`${base}/start`, { method: 'POST' }))
               }
             }}
           >
@@ -320,7 +319,7 @@ export function OrganizerConsole({
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   disabled={busy || checkedIn.length < minPlayers}
-                  onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }), 'ok')}
+                  onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }))}
                 >
                   {/* Distinct copy per format (plan convention): Round Robin generates the whole
                       fixture list in one shot — "Spielplan", not "Bracket". */}
@@ -336,7 +335,7 @@ export function OrganizerConsole({
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   disabled={busy || swissDone}
-                  onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }), 'ok')}
+                  onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }))}
                 >
                   Runde {Math.min(stage.swissRoundsDone + 1, stage.swissRounds ?? 0)} pairen
                 </Button>
@@ -350,7 +349,7 @@ export function OrganizerConsole({
                 disabled={busy}
                 onClick={() => {
                   if (window.confirm(`Stage „${stage.name}" abschließen?`)) {
-                    void call(() => fetch(`${base}/stages/${stage.id}/complete`, { method: 'POST' }), 'ok')
+                    void call(() => fetch(`${base}/stages/${stage.id}/complete`, { method: 'POST' }))
                   }
                 }}
               >
@@ -455,7 +454,6 @@ export function OrganizerConsole({
                         fetch(`/api/tournaments/${tournamentId}/participants/${p.userId}/paid`, {
                           method: p.paidAt ? 'DELETE' : 'PATCH',
                         }),
-                        'ok'
                       )
                     }
                   >
@@ -492,7 +490,6 @@ export function OrganizerConsole({
                 onClick={() =>
                   void call(
                     () => fetch(`/api/tournaments/${tournamentId}/judges?userId=${j.id}`, { method: 'DELETE' }),
-                    'ok'
                   )
                 }
               >
@@ -526,7 +523,6 @@ export function OrganizerConsole({
                       headers: { 'content-type': 'application/json' },
                       body: JSON.stringify({ userId: id }),
                     }),
-                  'ok'
                 )
               }}
             >
@@ -574,7 +570,7 @@ export function OrganizerConsole({
             disabled={busy}
             onClick={() => {
               if (window.confirm('Turnier abschließen? Dies kann nicht rückgängig gemacht werden.')) {
-                void call(() => fetch(`${base}/complete`, { method: 'POST' }), 'ok')
+                void call(() => fetch(`${base}/complete`, { method: 'POST' }))
               }
             }}
           >

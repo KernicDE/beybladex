@@ -4,7 +4,7 @@
 // Covers: in-order flush, per-item error isolation (no head-of-line blocking), exponential
 // backoff on failure, 409 conflict parking (no silent retry loop), and single-flight (two
 // concurrent flushQueue triggers share one run — the double-flush race is closed).
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { doFlush, flushQueue, backoffMs, type QueueEntry, type QueueStore, type MatchScoreState } from '@/lib/offline/matchQueue'
 
 function state(clientEventId: string, score = 1): MatchScoreState {
@@ -119,19 +119,24 @@ describe('matchQueue flush semantics', () => {
   })
 
   it('single-flight: two concurrent flushQueue triggers share one run (double-flush closed)', async () => {
-    const store = memoryStore([entry(1, 'm1', 'c1')])
-    let postCount = 0
-    const post = async () => {
-      postCount++
-      // Slow enough that both flushQueue calls overlap while the first is in flight.
-      await new Promise((r) => setTimeout(r, 20))
-      return { ok: true, status: 200, json: async () => ({}) }
+    vi.useFakeTimers()
+    try {
+      const store = memoryStore([entry(1, 'm1', 'c1')])
+      let postCount = 0
+      const post = async () => {
+        postCount++
+        // Slow enough that both flushQueue calls overlap while the first is in flight.
+        await new Promise((r) => setTimeout(r, 20))
+        return { ok: true, status: 200, json: async () => ({}) }
+      }
+      const [a, b] = [flushQueue({ store, post, now: () => 1000 }), flushQueue({ store, post, now: () => 1000 })]
+      expect(b).toBe(a) // same in-flight promise
+      const [sa, sb] = await Promise.all([a, b, vi.advanceTimersByTimeAsync(20)])
+      expect(sa.attempted).toBe(1)
+      expect(sb.attempted).toBe(1)
+      expect(postCount).toBe(1) // exactly one POST — not zero, not two
+    } finally {
+      vi.useRealTimers()
     }
-    const [a, b] = [flushQueue({ store, post, now: () => 1000 }), flushQueue({ store, post, now: () => 1000 })]
-    expect(b).toBe(a) // same in-flight promise
-    const [sa, sb] = await Promise.all([a, b])
-    expect(sa.attempted).toBe(1)
-    expect(sb.attempted).toBe(1)
-    expect(postCount).toBe(1) // exactly one POST — not zero, not two
   })
 })

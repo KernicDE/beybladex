@@ -231,6 +231,8 @@ model Friendship {
   createdAt   DateTime         @default(now())
 
   @@unique([requesterId, addresseeId])
+  // RC7 (#36): inbox listing filters by status for the addressee (pending requests view).
+  @@index([status, addresseeId])
 }
 
 model Notification {
@@ -242,6 +244,10 @@ model Notification {
   link      String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  // RC7 (#36): hot per-user path — inbox list & SSE stream query
+  // where: { userId }, orderBy: { createdAt: 'desc' }.
+  @@index([userId, createdAt])
 }
 
 // Phase 18 — Web Push subscriptions. A user may have several (one per device/browser); each is
@@ -413,6 +419,11 @@ model Tournament {
   judges       TournamentJudge[]
   // Phase 5 Part C2 — the tournament's ordered stages (each with its own format/bracket).
   stages       TournamentStage[]
+
+  // RC7 (#36): public listing/filter queries — club calendar and country-filtered event list,
+  // both ordered by startDate.
+  @@index([clubId, startDate])
+  @@index([country, startDate])
 }
 
 // Phase 14 — Ranked Ladder & Elo Rating System. One Season is ACTIVE at a time (enforced in
@@ -482,6 +493,9 @@ model TournamentParticipant {
   lockedBuildIds String[]   @default([])
 
   @@unique([tournamentId, userId])
+  // RC7 (#36): "all tournaments of a user" (profile page, account export) — the @@unique above
+  // starts with tournamentId, so it can't serve it.
+  @@index([userId])
 }
 
 // Phase 7 — additional judges for a tournament (besides the creator): the QR check-in /
@@ -644,6 +658,9 @@ model Deck {
   user        User                    @relation(fields: [userId], references: [id])
   builds      DeckBuild[]
   tournaments TournamentParticipant[]
+
+  // RC7 (#36): per-user deck list.
+  @@index([userId])
 }
 
 model DeckBuild {
@@ -738,6 +755,8 @@ model CollectionItem {
   pricePoints PricePoint[]
 
   @@index([partOrBeyId])
+  // RC7 (#36): per-user collection list.
+  @@index([userId])
 }
 
 // MediaAsset (Phase 11, item 0) — ONE generic owned-asset model behind every image upload.
