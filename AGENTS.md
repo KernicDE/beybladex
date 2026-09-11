@@ -14,6 +14,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Merge nach `main` → `ci.yml` (Tests + Docker-Boot-Test) → `deploy.yml` (baut Image, pusht `ghcr.io/kernicde/beybladex:latest`) → Watchtower auf dem Server (nicolas@kernic.net, `/opt/docker/beybladex/app-beybladex`) pullt und recreated den Container. Migrationen laufen im Container-CMD bei jedem Start (`npx prisma migrate deploy`). **Kein lokaler Docker** — Entwickeln, mergen, builden lassen (CI), auf dem Server testen. Manuelle Updates auf dem Server: `docker compose pull app && docker compose up -d app`.
 
+**Achtung Compose-Drift (Lesson vom 11.09.2026, Hotfix #115):** Die auf dem Server liegende `compose.yml` ist eine eigene Kopie — sie driftet leise hinter dem Repo-Stand. Nach JEDER manuellen Server-Änderung und vor jedem GoLive: Server-Kopie gegen das Repo diffen (`diff <(ssh nicolas@kernic.net "cat /opt/docker/beybladex/app-beybladex/compose.yml") compose.yml`). Fehlende Volume-Mounts (z. B. `media_uploads`) führen zu **stillen Datenverlusten bei jedem Deploy** — der Container-Fs ist ephemeral, Uploads ohne Bind-Mount sind beim nächsten Recreate weg, die DB-Zeilen bleiben als 404er zurück.
+
 ## Versionsschema: CalVer + Build-Identifier
 
 `YYYY.MM.DD+shortsha` — z. B. `2026.09.10+2282d4c` (UTC-Datum des Merges + Kurz-SHA des deployed Commits). Bewusst **kein SemVer**: jeder Merge ist ein Release, manuelle Bump-Entscheidungen würden im AI-getriebenen Flow verrotten.
