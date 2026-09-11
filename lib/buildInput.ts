@@ -6,6 +6,7 @@
 import { parseBody, type BodySchema } from '@/lib/parseBody'
 
 const SET_NAME_MAX = 160
+const PRODUCT_CODE_MAX = 32
 
 const BEY_TYPES = ['ATTACK', 'DEFENSE', 'STAMINA', 'BALANCE'] as const
 
@@ -20,11 +21,13 @@ export interface BuildInput {
   bitId: string
   type: (typeof BEY_TYPES)[number] | null
   name: string | null
+  productCode: string | null
 }
 
 // The three slot ids are required non-empty strings; type/name tolerate absence as an
-// explicit null (the Build columns default to null). The Set `name` field is only in the
-// schema for official creates — user combos force it back to null below.
+// explicit null (the Build columns default to null). The Set `name`/`productCode` fields are
+// only in the schema for official creates — user combos force them back to null below (a
+// personal combo is not a retail product and has no manufacturer SKU).
 function buildSchema(official: boolean): BodySchema {
   return {
     bladeId: { type: 'string', minLength: 1, required: true, token: 'invalid_bladeId' },
@@ -32,18 +35,32 @@ function buildSchema(official: boolean): BodySchema {
     bitId: { type: 'string', minLength: 1, required: true, token: 'invalid_bitId' },
     type: { type: 'enum', enum: BEY_TYPES, nullable: true, absentNull: true, token: 'invalid_type' },
     ...(official
-      ? { name: { type: 'string', trim: true, maxLength: SET_NAME_MAX, nullable: true, absentNull: true, token: 'invalid_name' } }
+      ? {
+          name: { type: 'string', trim: true, maxLength: SET_NAME_MAX, nullable: true, absentNull: true, token: 'invalid_name' },
+          productCode: {
+            type: 'string',
+            trim: true,
+            maxLength: PRODUCT_CODE_MAX,
+            nullable: true,
+            absentNull: true,
+            token: 'invalid_productCode',
+          },
+        }
       : {}),
   }
 }
 
-/** Parses a build-create payload. `official` allows the Set name field (only meaningful for
- *  isOfficialSet=true creates; user combos never carry one). Returns `{ data }` or `{ errors }`. */
+/** Parses a build-create payload. `official` allows the Set name/productCode fields (only
+ *  meaningful for isOfficialSet=true creates; user combos never carry one). Returns `{ data }`
+ *  or `{ errors }`. */
 export function parseBuildInput(body: unknown, opts: { official: boolean }): { data?: BuildInput; errors?: string[] } {
   const { data, errors } = parseBody(body, buildSchema(opts.official), { partial: false })
   if (errors.length > 0) return { errors }
   const input = data as unknown as BuildInput
-  if (!opts.official) input.name = null
+  if (!opts.official) {
+    input.name = null
+    input.productCode = null
+  }
   return { data: input }
 }
 

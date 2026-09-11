@@ -125,14 +125,20 @@ describe('parseBuildInput', () => {
   it('requires the three slots; type/name tolerate absence as null', () => {
     expect(parseBuildInput({}, { official: false }).errors).toEqual(['invalid_bladeId', 'invalid_ratchetId', 'invalid_bitId'])
     const { data } = parseBuildInput({ bladeId: 'b', ratchetId: 'r', bitId: 't' }, { official: false })
-    expect(data).toEqual({ bladeId: 'b', ratchetId: 'r', bitId: 't', type: null, name: null })
+    expect(data).toEqual({ bladeId: 'b', ratchetId: 'r', bitId: 't', type: null, name: null, productCode: null })
   })
 
-  it('user combos never carry a name even when one is sent; official sets validate it', () => {
-    const user = parseBuildInput({ bladeId: 'b', ratchetId: 'r', bitId: 't', name: 'Retail Box' }, { official: false })
+  it('user combos never carry a name/productCode even when sent; official sets validate them', () => {
+    const user = parseBuildInput(
+      { bladeId: 'b', ratchetId: 'r', bitId: 't', name: 'Retail Box', productCode: 'F9580' },
+      { official: false },
+    )
     expect(user.data!.name).toBeNull()
+    expect(user.data!.productCode).toBeNull()
     expect(parseBuildInput({ bladeId: 'b', ratchetId: 'r', bitId: 't', name: '  ' }, { official: true }).errors).toEqual(['invalid_name'])
     expect(parseBuildInput({ bladeId: 'b', ratchetId: 'r', bitId: 't', type: 'NOPE' }, { official: true }).errors).toEqual(['invalid_type'])
+    const official = parseBuildInput({ bladeId: 'b', ratchetId: 'r', bitId: 't', productCode: 'F9580' }, { official: true })
+    expect(official.data!.productCode).toBe('F9580')
   })
 })
 

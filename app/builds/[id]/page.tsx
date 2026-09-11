@@ -70,8 +70,13 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">{build.blade.name}</h1>
-            <p className="text-current/60">{build.ratchet.name} · {build.bit.name}</p>
+            {/* [Fix while adding productCode] title always rendered the blade name, never the
+                curated Set name (e.g. "Sword Dran 3-60F") — same fallback BuildCard already uses. */}
+            <h1 className="text-2xl font-semibold">
+              {build.name ?? build.blade.name}
+              {build.productCode && <span className="ml-2 text-base font-normal text-current/50">{build.productCode}</span>}
+            </h1>
+            <p className="text-current/60">{build.blade.name} · {build.ratchet.name} · {build.bit.name}</p>
           </div>
           <TypeBadge type={build.type} />
         </div>

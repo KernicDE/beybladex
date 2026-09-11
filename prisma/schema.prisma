@@ -615,6 +615,12 @@ model Build {
   isOfficialSet Boolean     @default(false)
   imageId       String?
   image         MediaAsset? @relation("BuildImage", fields: [imageId], references: [id], onDelete: SetNull)
+  // Manufacturer retail product/SKU code for an official Set (e.g. Hasbro "F9580", Takara Tomy
+  // "BX-01") — printed on the box, distinct from our own internal `id`. Only meaningful for
+  // isOfficialSet: true; a user's personal combo has no product code. Unique when present so
+  // the same retail SKU can't be catalogued twice, but nullable since older/non-official rows
+  // and not-yet-researched Sets have none.
+  productCode String? @unique
 
   ratings                Rating[]
   deckBuilds             DeckBuild[]

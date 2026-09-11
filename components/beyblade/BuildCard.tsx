@@ -22,6 +22,8 @@ export interface BuildCardData {
   isOfficialSet?: boolean
   imageId?: string | null
   available?: boolean | null
+  // Manufacturer retail SKU (e.g. Hasbro "F9580") — official Sets only, see Build.productCode.
+  productCode?: string | null
 }
 
 export function BuildCard({ build, winRate }: { build: BuildCardData; winRate?: WinRateStats | null }) {
@@ -46,6 +48,7 @@ export function BuildCard({ build, winRate }: { build: BuildCardData; winRate?: 
           <p className="truncate font-medium">
             {title}
             {build.isOfficialSet && <span className="ml-2"><Badge tone="cyan">Set</Badge></span>}
+            {build.productCode && <span className="ml-2 text-xs font-normal text-current/50">{build.productCode}</span>}
           </p>
           <p className="truncate text-sm text-current/60">
             {build.blade.name} · {build.ratchet.name} · {build.bit.name}
