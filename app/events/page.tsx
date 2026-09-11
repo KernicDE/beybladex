@@ -9,6 +9,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { withPublicCache } from '@/lib/publicCache'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -16,7 +17,11 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EventsFilterBar } from '@/components/tournament/EventsFilterBar'
 
-export const revalidate = 60 // public, frequently-added content [REVIEW-FIX: performance P16]
+// [RC5 #43] No `revalidate` export: this page reads searchParams (filters) AND auth()
+// (session-gated CTA), which force per-request rendering in Next 16's non-cacheComponents
+// model — a revalidate export would be dead config. The public list query is cached in Redis
+// for 60s instead (lib/publicCache.ts), which is the caching the revalidate line promised.
+const PUBLIC_LIST_TTL = 60
 
 const PAGE_SIZE = 24
 // YYYY-MM-DD only — anything else is a malformed date input and must not 500 the page
@@ -63,36 +68,41 @@ export default async function EventsPage({
     : 0
   const canCreate = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN' || adminClubCount > 0
 
-  const rows = await prisma.tournament.findMany({
-    where: {
-      ...(country ? { country: country as 'DE' | 'AT' | 'CH' } : {}),
-      ...(state ? { state } : {}),
-      ...(query
-        ? { OR: [{ title: { contains: query, mode: 'insensitive' } }, { city: { contains: query, mode: 'insensitive' } }] }
-        : {}),
-      ...(fromDate || toDate
-        ? { startDate: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
-        : {}),
-    },
-    orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
-    take: PAGE_SIZE + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: {
-      id: true,
-      title: true,
-      startDate: true,
-      city: true,
-      state: true,
-      country: true,
-      latitude: true,
-      longitude: true,
-      entryFeeCent: true,
-      currency: true,
-      isRecurring: true,
-      headerImageId: true,
-      _count: { select: { participants: true } },
-    },
-  })
+  const rows = await withPublicCache(
+    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${query}|${cursor ?? ''}|${from ?? ''}|${to ?? ''}`,
+    PUBLIC_LIST_TTL,
+    () =>
+      prisma.tournament.findMany({
+        where: {
+          ...(country ? { country: country as 'DE' | 'AT' | 'CH' } : {}),
+          ...(state ? { state } : {}),
+          ...(query
+            ? { OR: [{ title: { contains: query, mode: 'insensitive' } }, { city: { contains: query, mode: 'insensitive' } }] }
+            : {}),
+          ...(fromDate || toDate
+            ? { startDate: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
+            : {}),
+        },
+        orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+        take: PAGE_SIZE + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          title: true,
+          startDate: true,
+          city: true,
+          state: true,
+          country: true,
+          latitude: true,
+          longitude: true,
+          entryFeeCent: true,
+          currency: true,
+          isRecurring: true,
+          headerImageId: true,
+          _count: { select: { participants: true } },
+        },
+      }),
+  )
   const hasMore = rows.length > PAGE_SIZE
   const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
   const nextCursor = hasMore ? page[page.length - 1].id : null
