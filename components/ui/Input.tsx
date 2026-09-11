@@ -7,7 +7,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 const BASE =
-  'w-full rounded-md border bg-white px-3 py-2 text-zinc-900 placeholder:text-current/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-x-cyan-text dark:bg-base-dark-alt dark:text-zinc-50'
+  'h-10 w-full rounded-md border bg-white px-3 py-2 text-zinc-900 placeholder:text-current/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-x-cyan-text dark:bg-base-dark-alt dark:text-zinc-50'
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   { invalid = false, className = '', 'aria-invalid': ariaInvalid, ...rest },
