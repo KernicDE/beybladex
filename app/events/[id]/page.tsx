@@ -9,6 +9,7 @@ import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { withPublicCache } from '@/lib/publicCache'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -17,7 +18,12 @@ import { JoinPanel } from '@/components/tournament/JoinPanel'
 import { EventShareQR } from '@/components/tournament/EventShareQR'
 import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 
-export const revalidate = 60 // public, frequently-mutated content [REVIEW-FIX: performance P16]
+// [RC5 #43] No `revalidate` export: auth() (join flow, organizer badges) forces per-request
+// rendering, so an ISR revalidate export never applied. The public tournament query is cached
+// in Redis for 60s instead (lib/publicCache.ts). Participant/check-in freshness is unchanged
+// in practice: the cache TTL matches the old revalidate value, and session-dependent UI still
+// renders per request.
+const PUBLIC_DETAIL_TTL = 60
 
 function formatDateTime(date: Date): string {
   return date.toLocaleString('de-DE', {
@@ -51,49 +57,51 @@ function stageWinnersRounds(matches: { round: number; bracketSide: string | null
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [tournament, session] = await Promise.all([
-    prisma.tournament.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        startDate: true,
-        endDate: true,
-        locationName: true,
-        street: true,
-        postalCode: true,
-        city: true,
-        state: true,
-        country: true,
-        latitude: true,
-        longitude: true,
-        entryFeeCent: true,
-        currency: true,
-        isRecurring: true,
-        createdById: true,
-        headerImageId: true,
-        ruleset: { select: { title: true, slug: true } },
-        participants: {
-          orderBy: { id: 'asc' },
-          select: { userId: true, checkedIn: true, user: { select: { username: true, displayName: true } } },
-        },
-        // Phase 10 item 6 — read-only bracket/standings preview, reusing JudgeBracketView (the
-        // same component /tournaments/[id]'s full page uses) instead of a second renderer. Only
-        // the LAST stage is shown here — a compact "where things stand" glance; the full
-        // multi-stage view remains behind the "Turnierbaum & Judge-Bereich" link below.
-        stages: {
-          orderBy: { order: 'desc' },
-          take: 1,
-          include: {
-            matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] },
-            standings: {
-              orderBy: [{ wins: 'desc' }, { buchholz: 'desc' }],
-              include: { user: { select: { username: true, displayName: true } } },
+    withPublicCache(`public:v1:event:${id}`, PUBLIC_DETAIL_TTL, () =>
+      prisma.tournament.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          startDate: true,
+          endDate: true,
+          locationName: true,
+          street: true,
+          postalCode: true,
+          city: true,
+          state: true,
+          country: true,
+          latitude: true,
+          longitude: true,
+          entryFeeCent: true,
+          currency: true,
+          isRecurring: true,
+          createdById: true,
+          headerImageId: true,
+          ruleset: { select: { title: true, slug: true } },
+          participants: {
+            orderBy: { id: 'asc' },
+            select: { userId: true, checkedIn: true, user: { select: { username: true, displayName: true } } },
+          },
+          // Phase 10 item 6 — read-only bracket/standings preview, reusing JudgeBracketView (the
+          // same component /tournaments/[id]'s full page uses) instead of a second renderer. Only
+          // the LAST stage is shown here — a compact "where things stand" glance; the full
+          // multi-stage view remains behind the "Turnierbaum & Judge-Bereich" link below.
+          stages: {
+            orderBy: { order: 'desc' },
+            take: 1,
+            include: {
+              matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] },
+              standings: {
+                orderBy: [{ wins: 'desc' }, { buchholz: 'desc' }],
+                include: { user: { select: { username: true, displayName: true } } },
+              },
             },
           },
         },
-      },
-    }),
+      }),
+    ),
     auth(),
   ])
   if (!tournament) notFound()

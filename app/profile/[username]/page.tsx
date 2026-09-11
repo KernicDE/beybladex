@@ -31,7 +31,18 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
   const session = await auth()
   const viewerId = session?.user?.id ?? null
 
-  const subject = await prisma.user.findUnique({ where: { username } })
+  // [RC5 #59] select with ONLY the fields this page renders (via resolveVisibleFields) —
+  // passwordHash/totpSecret never leave the DB. The SubjectUser type in lib/privacy.ts pins
+  // exactly this field set.
+  const subject = await prisma.user.findUnique({
+    where: { username },
+    select: {
+      id: true, username: true, displayName: true, city: true, discordTag: true,
+      bio: true, birthDate: true, isMinor: true,
+      profileVisibility: true, locationVisibility: true, collectionVisibility: true,
+      decksVisibility: true, ageVisibility: true, avatarImageId: true,
+    },
+  })
   if (!subject) {
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 p-4 sm:p-6">
@@ -43,12 +54,14 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
   // Phase 4: real Friendship lookup — isFriend is true ONLY for status === 'ACCEPTED' in
   // either direction (lib/friendship.ts semantics, fixed in Phase 1 Task 7). BLOCKED rows
   // resolve to isFriend = false and simply gate nothing extra here.
-  const isFriend = viewerId ? await isFriendWith(viewerId, subject.id) : false
-
-  // The FriendButton's initial state: the row between viewer and subject, if any.
-  const existingFriendship = viewerId && viewerId !== subject.id
-    ? await friendshipBetween(viewerId, subject.id)
-    : null
+  // [RC5 #59] both friendship reads are independent of each other — run them in parallel
+  // instead of awaiting one after the other.
+  const [isFriend, existingFriendship] = await Promise.all([
+    viewerId ? isFriendWith(viewerId, subject.id) : Promise.resolve(false),
+    viewerId && viewerId !== subject.id
+      ? friendshipBetween(viewerId, subject.id)
+      : Promise.resolve(null),
+  ])
 
   const view = resolveVisibleFields(subject, viewerId, isFriend)
   const isOwner = viewerId === subject.id

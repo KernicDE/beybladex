@@ -160,12 +160,22 @@ export async function POST(req: Request) {
     select: { id: true, title: true, startDate: true, city: true },
   })
 
-  // Radius blast (Phase 3's lib/notify.ts): creation must succeed even if notifying fails.
-  try {
-    const full = await prisma.tournament.findUnique({ where: { id: tournament.id } })
-    if (full) await notifyUsersInRadius(full)
-  } catch {
-    // Notification delivery is best-effort — the tournament itself was created.
+  // Radius blast (Phase 3's lib/notify.ts) — [RC5 #44] deliberately FIRE-AND-FORGET: the
+  // response must not wait for the bounded-concurrency fan-out (DB rows + Redis publishes +
+  // SMTP/WebPush per local user), so POST latency is independent of how many users are in
+  // range. The durable Notification rows land milliseconds later; a failing blast is logged,
+  // never turned into a create failure (creation must succeed even if notifying fails).
+  const blastTarget = await prisma.tournament.findUnique({
+    where: { id: tournament.id },
+    select: {
+      id: true, title: true, locationName: true, city: true, postalCode: true, startDate: true,
+      latitude: true, longitude: true, isRecurring: true, createdById: true,
+    },
+  })
+  if (blastTarget) {
+    notifyUsersInRadius(blastTarget).catch((err) => {
+      console.error('[notify] radius blast after tournament create failed:', err)
+    })
   }
 
   return Response.json(tournament, { status: 201 })

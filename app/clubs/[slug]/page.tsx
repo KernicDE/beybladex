@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { withPublicCache } from '@/lib/publicCache'
 import { resolveVisibleFields } from '@/lib/privacy'
 import { getActiveRoster, getPendingMemberships, getViewerMembership } from '@/lib/clubMembers'
 import { Badge } from '@/components/ui/Badge'
@@ -27,7 +28,11 @@ import { ClubActions, type ClubMemberRow } from '@/components/clubs/ClubActions'
 import { ClubChat } from '@/components/clubs/ClubChat'
 import { ClubForm } from '@/components/clubs/ClubForm'
 
-export const revalidate = 120 // public, infrequently-mutated content [REVIEW-FIX: performance P16]
+// [RC5 #43] No `revalidate` export: auth() (viewer membership/role gates the roster
+// projection, manage tier and chat) forces per-request rendering, so the old revalidate line
+// never applied. Only the PUBLIC core — the club row and its event list — is cached in Redis
+// for 120s (lib/publicCache.ts); every viewer-dependent read stays live per request.
+const PUBLIC_CORE_TTL = 120
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })
@@ -37,10 +42,12 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const session = await auth()
 
-  const club = await prisma.club.findUnique({
-    where: { slug },
-    select: { id: true, name: true, slug: true, description: true, websiteUrl: true, discordUrl: true, joinPolicy: true, ownerId: true },
-  })
+  const club = await withPublicCache(`public:v1:club:${slug}`, PUBLIC_CORE_TTL, () =>
+    prisma.club.findUnique({
+      where: { slug },
+      select: { id: true, name: true, slug: true, description: true, websiteUrl: true, discordUrl: true, joinPolicy: true, ownerId: true },
+    }),
+  )
   if (!club) notFound()
 
   const viewerId = session?.user?.id ?? null
@@ -65,12 +72,14 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
     }
   })
 
-  const tournaments = await prisma.tournament.findMany({
-    where: { clubId: club.id },
-    orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
-    take: 24,
-    select: { id: true, title: true, startDate: true, city: true, state: true, country: true, isRecurring: true },
-  })
+  const tournaments = await withPublicCache(`public:v1:club-events:${club.id}`, PUBLIC_CORE_TTL, () =>
+    prisma.tournament.findMany({
+      where: { clubId: club.id },
+      orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+      take: 24,
+      select: { id: true, title: true, startDate: true, city: true, state: true, country: true, isRecurring: true },
+    }),
+  )
 
   const canManage =
     viewerMembership?.status === 'ACTIVE' && (viewerMembership.isAdmin || viewerId === club.ownerId)

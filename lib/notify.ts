@@ -8,6 +8,15 @@
 // - Only the columns needed are selected before the JS-side haversine pass
 //   ([REVIEW-FIX: performance P5]) — the DB prefilter is "has a location + a radius", the
 //   precise distance check happens in haversineKm.
+//
+// [RC5 #44] Radius-blast performance contract:
+// - The geographic prefilter is a SQL bounding box (users outside the largest possible radius
+//   can never be in range, so the DB never ships them), the per-user radius check stays the
+//   exact JS haversine.
+// - The fan-out runs with bounded concurrency instead of one sequential await per user.
+// - Email and push sends are wrapped in an explicit timeout — an unresponsive SMTP/WebPush
+//   endpoint must not stall the blast (and, being fire-and-forget from the create route, the
+//   response either — see app/api/tournaments/route.ts).
 import type { Tournament, User } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { redis } from '@/lib/redis'
@@ -22,7 +31,70 @@ type NotifiableUser = Pick<
   'id' | 'latitude' | 'longitude' | 'notifyRadiusKm' | 'notifyRecurring' | 'notifyEmail' | 'isMinor' | 'email'
 >
 
-function notificationContent(t: Tournament): { title: string; message: string; link: string } {
+// [RC5 #44] The blast only needs these fields — the caller (POST /api/tournaments) selects
+// exactly this set instead of shipping the full tournament row.
+export type RadiusBlastTarget = Pick<
+  Tournament,
+  'id' | 'title' | 'locationName' | 'city' | 'postalCode' | 'startDate' | 'latitude' | 'longitude' | 'isRecurring' | 'createdById'
+>
+
+// [RC5 #44] notifyRadiusKm is validated to 1..500 km at the settings route
+// (NOTIFY_RADIUS_MAX_KM) — bounding the prefilter box by that max is sound: anyone outside the
+// box has a distance > 500 km ≥ their own radius and can never be notified.
+const MAX_NOTIFY_RADIUS_KM = 500
+const KM_PER_LAT_DEG = 111.32
+
+/** Latitude/longitude box around a point at the given radius — pure SQL-prefilter geometry. */
+export function boundingBoxForRadius(lat: number, lng: number, radiusKm: number) {
+  return {
+    latMin: lat - radiusKm / KM_PER_LAT_DEG,
+    latMax: lat + radiusKm / KM_PER_LAT_DEG,
+    lngMin: lng - radiusKm / (KM_PER_LAT_DEG * Math.cos((lat * Math.PI) / 180)),
+    lngMax: lng + radiusKm / (KM_PER_LAT_DEG * Math.cos((lat * Math.PI) / 180)),
+  }
+}
+
+// [RC5 #44] bounded fan-out: at most `limit` notifyUser calls in flight. Sequential awaited
+// one-at-a-time delivery made the blast O(n) in SMTP/server round-trips; an unbounded
+// Promise.all would spike DB/email connections for large local user bases. A rejected item
+// is logged and skipped — one failing recipient must not starve the rest.
+export async function mapWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++]
+      try {
+        await fn(item)
+      } catch (err) {
+        console.error('[notify] fan-out item failed:', err)
+      }
+    }
+  })
+  await Promise.all(workers)
+}
+
+// [RC5 #44] Explicit ceiling on the SMTP/WebPush round-trips: an unresponsive mail server or
+// push endpoint must not stall a notification (or, transitively, the blast that awaits it).
+// The underlying promise keeps running but is no longer awaited; its own catch/log handling is
+// unchanged.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  // The losing side of the race must never surface as an unhandledRejection: if the timeout
+  // wins, the still-in-flight delivery promise rejects later with no one awaiting it.
+  promise.catch(() => {})
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`delivery timeout after ${ms}ms`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+const DELIVERY_TIMEOUT_MS = 10_000
+
+function notificationContent(t: RadiusBlastTarget): { title: string; message: string; link: string } {
   const date = t.startDate.toLocaleDateString('de-DE', { dateStyle: 'medium' })
   return {
     title: `Neues Turnier: ${t.title}`,
@@ -89,11 +161,15 @@ export async function notifyUser(
   const emailEnabled = category === 'matchLifecycle' ? user.notifyMatchLifecycleEmail : user.notifyEmail
   if (emailEnabled && !user.isMinor && user.email) {
     try {
-      await sendNotificationEmail({
-        to: user.email,
-        subject: content.title,
-        text: `${content.message}\n\nDetails: ${content.link ?? '/'}`,
-      })
+      // [RC5 #44] explicit delivery timeout — a hanging SMTP session must not stall the caller.
+      await withTimeout(
+        sendNotificationEmail({
+          to: user.email,
+          subject: content.title,
+          text: `${content.message}\n\nDetails: ${content.link ?? '/'}`,
+        }),
+        DELIVERY_TIMEOUT_MS,
+      )
     } catch (err) {
       console.error(`[notify] email to ${userId} failed:`, err)
     }
@@ -101,20 +177,29 @@ export async function notifyUser(
 
   if (category === 'matchLifecycle' && user.notifyMatchLifecycle) {
     try {
-      await sendPushToUser(userId, { title: content.title, message: content.message, link: content.link })
+      await withTimeout(
+        sendPushToUser(userId, { title: content.title, message: content.message, link: content.link }),
+        DELIVERY_TIMEOUT_MS,
+      )
     } catch (err) {
       console.error(`[notify] push to ${userId} failed:`, err)
     }
   }
 }
 
-export async function notifyUsersInRadius(tournament: Tournament): Promise<void> {
+// [RC5 #44] at most this many deliveries (DB row + Redis publish + email/push) in flight at
+// once during a radius blast — enough to overlap SMTP/Redis latency, small enough to keep DB
+// and connection pools flat.
+const FANOUT_CONCURRENCY = 8
+
+export async function notifyUsersInRadius(tournament: RadiusBlastTarget): Promise<void> {
+  const box = boundingBoxForRadius(tournament.latitude, tournament.longitude, MAX_NOTIFY_RADIUS_KM)
   const candidates = await prisma.user.findMany({
     where: {
       // The organizer is not a candidate for their own tournament's radius blast.
       id: { not: tournament.createdById },
-      latitude: { not: null },
-      longitude: { not: null },
+      latitude: { not: null, gte: box.latMin, lte: box.latMax },
+      longitude: { not: null, gte: box.lngMin, lte: box.lngMax },
       notifyRadiusKm: { not: null },
     },
     select: {
@@ -131,11 +216,10 @@ export async function notifyUsersInRadius(tournament: Tournament): Promise<void>
   })
 
   const content = notificationContent(tournament)
-  for (const user of eligible) {
-    // notifyUser (above) already creates the row, publishes to Redis, AND sends the email
-    // (same minor-ceiling rule) — do not duplicate the email send here.
-    await notifyUser(user.id, content)
-  }
+  // [RC5 #44] bounded-concurrency fan-out (was: one sequential await per user inside the
+  // create-request). notifyUser (above) already creates the row, publishes to Redis, AND sends
+  // the email (same minor-ceiling rule) — do not duplicate the email send here.
+  await mapWithConcurrency(eligible, FANOUT_CONCURRENCY, (user) => notifyUser(user.id, content))
 }
 
 // ---------------------------------------------------------------------------

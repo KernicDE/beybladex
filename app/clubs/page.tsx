@@ -6,12 +6,16 @@
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { withPublicCache } from '@/lib/publicCache'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchInput } from '@/components/ui/SearchInput'
 
-export const revalidate = 120 // public, infrequently-mutated content [REVIEW-FIX: performance P16]
+// [RC5 #43] No `revalidate` export: searchParams (?q= / cursor) and auth() (CTA gating) force
+// per-request rendering, so the old revalidate line never applied. The public directory query
+// is cached in Redis for 120s instead (lib/publicCache.ts).
+const PUBLIC_LIST_TTL = 120
 
 const PAGE_SIZE = 24
 
@@ -24,15 +28,20 @@ export default async function ClubsPage({
   const session = await auth()
   const query = (q ?? '').trim()
 
-  const rows = await prisma.club.findMany({
-    where: query
-      ? { OR: [{ name: { contains: query, mode: 'insensitive' } }, { description: { contains: query, mode: 'insensitive' } }] }
-      : {},
-    orderBy: { name: 'asc' },
-    take: PAGE_SIZE + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: { id: true, name: true, slug: true, description: true, _count: { select: { members: { where: { status: 'ACTIVE' } } } } }, // Phase 13: pending rows don't count
-  })
+  const rows = await withPublicCache(
+    `public:v1:clubs:list:${query}|${cursor ?? ''}`,
+    PUBLIC_LIST_TTL,
+    () =>
+      prisma.club.findMany({
+        where: query
+          ? { OR: [{ name: { contains: query, mode: 'insensitive' } }, { description: { contains: query, mode: 'insensitive' } }] }
+          : {},
+        orderBy: { name: 'asc' },
+        take: PAGE_SIZE + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: { id: true, name: true, slug: true, description: true, _count: { select: { members: { where: { status: 'ACTIVE' } } } } }, // Phase 13: pending rows don't count
+      }),
+  )
 
   const hasMore = rows.length > PAGE_SIZE
   const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
