@@ -4,8 +4,13 @@
 // @/ imports (auth/rateLimit/db/geo) — the route module runs for real around them.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const userUpdate = vi.fn()
-const findUnique = vi.fn()
+// vi.mock factories are hoisted ABOVE top-level declarations — the spies must come from
+// vi.hoisted() or the factory hits the const's TDZ ("Cannot access before initialization"),
+// which surfaces whenever the mock graph initializes eagerly (CI runs test:all = unit+integration).
+const { userUpdate, findUnique } = vi.hoisted(() => ({
+  userUpdate: vi.fn(),
+  findUnique: vi.fn(),
+}))
 
 vi.mock('@/lib/auth', () => ({
   auth: vi.fn(async () => ({ user: { id: 'user-1', name: 'kai' } })),
