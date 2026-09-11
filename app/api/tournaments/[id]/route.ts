@@ -11,18 +11,9 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
+import { authorizeTournamentOrganizer } from '@/lib/tournamentService'
 
 type Ctx = { params: Promise<{ id: string }> }
-
-async function loadAuthorized(id: string, userId: string) {
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { id: true, createdById: true, startedAt: true } })
-  if (!tournament) return { error: Response.json({ error: 'not_found' }, { status: 404 }) }
-  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  if (tournament.createdById !== userId && caller?.role !== 'ADMIN') {
-    return { error: Response.json({ error: 'forbidden' }, { status: 403 }) }
-  }
-  return { tournament }
-}
 
 export async function PATCH(req: Request, { params }: Ctx) {
   const session = await auth()
@@ -33,7 +24,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
-  const { error } = await loadAuthorized(id, session.user.id)
+  const { error } = await authorizeTournamentOrganizer(id, session.user.id, { id: true, createdById: true })
   if (error) return error
 
   let body: unknown
@@ -77,14 +68,18 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
-  const { error, tournament } = await loadAuthorized(id, session.user.id)
+  const { error, tournament } = await authorizeTournamentOrganizer(id, session.user.id, {
+    id: true,
+    createdById: true,
+    startedAt: true,
+  })
   if (error) return error
 
   // Phase 16 item 6 — a started tournament is a real, already-running event (and may have
   // locked-deck snapshots other participants are relying on); "Turnier absagen" is only for
   // the pre-start planning stage. The UI already hides the button once started, this is the
   // server-side backstop (standing rule: never trust the client-side gate alone).
-  if (tournament!.startedAt) return Response.json({ error: 'already_started' }, { status: 409 })
+  if (tournament.startedAt) return Response.json({ error: 'already_started' }, { status: 409 })
 
   await prisma.$transaction([
     prisma.match.deleteMany({ where: { tournamentId: id } }),
