@@ -89,7 +89,7 @@ export function Header({ session, avatarImageId, unreadNotifications, locale, t 
           submitLabel={t.common.search}
         />
         {session && <NotificationBell unreadCount={unreadNotifications ?? 0} />}
-        <LanguageSwitcher current={locale} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} />
+        <LanguageSwitcher current={locale} authed={Boolean(session)} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} />
         <ThemeToggle />
         {session ? (
           <UserMenu username={username ?? ''} avatarImageId={avatarImageId} />

@@ -1,8 +1,9 @@
-// components/layout/LanguageSwitcher.tsx (RC14 #17)
-// Guest-facing language switcher: writes the beybladex-locale cookie and refreshes the RSC
-// payload, so the NEXT request resolves the new locale via lib/i18n/server.ts's cookie step.
-// For signed-in users the profile setting (User.language) wins over the cookie — the switcher
-// stays visible as a hint, but profile settings are the binding control per #17.
+// components/layout/LanguageSwitcher.tsx (RC14 #17, fix #129)
+// Language switcher: writes the beybladex-locale cookie and refreshes the RSC payload, so the
+// NEXT request resolves the new locale via lib/i18n/server.ts's cookie step. For signed-in
+// users (issue #129) the profile setting User.language would win over the cookie and silently
+// undo the switch — so the switcher additionally PATCHes the profile via the existing
+// /api/profile endpoint (same call ProfileForm makes), making the control work for everyone.
 'use client'
 
 import { useRouter } from 'next/navigation'
@@ -24,19 +25,33 @@ function useRouterSafe() {
 export function LanguageSwitcher({
   current,
   labels,
+  authed = false,
 }: {
   current: Locale
   /** Display name per locale (t.language.<locale>) + the control's accessible label. */
   labels: Record<Locale, string> & { label: string }
+  /** Whether the viewer is signed in. When true, the choice is also written to User.language
+   *  (#129) — otherwise the profile setting would override the cookie on the next request and
+   *  the switcher would appear broken. */
+  authed?: boolean
 }) {
   const router = useRouterSafe()
   const [pending, startTransition] = useTransition()
 
-  function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const locale = e.target.value as Locale
     // Plain, expiry-free guest preference; the server validates membership in
     // SUPPORTED_LOCALES, an arbitrary cookie value is harmless.
     document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=31536000; samesite=lax`
+    if (authed) {
+      // Best-effort: a failed write leaves the cookie in place, which still applies to the
+      // signed-OUT case — never block the refresh on the network.
+      await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: locale }),
+      }).catch(() => {})
+    }
     if (router) startTransition(() => router.refresh())
     else window.location.reload()
   }
