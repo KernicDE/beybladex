@@ -3,7 +3,7 @@
 // seeding (ascending userId), n−1 total matches for n participants, byes as auto-completed
 // round-1 matches (see the bye policy documented in lib/bracket.ts).
 import { describe, it, expect } from 'vitest'
-import { generateSingleEliminationBracket, stageWinnersRounds, type BracketNode } from '@/lib/bracket'
+import { generateSingleEliminationBracket, nextSingleEliminationSlot, stageWinnersRounds, type BracketNode } from '@/lib/bracket'
 
 function participants(n: number, prefix = 'p'): { userId: string }[] {
   // Reverse order on purpose: the generator must sort deterministically, not use input order.
@@ -96,5 +96,16 @@ describe('stageWinnersRounds', () => {
 
   it('an empty stage returns 0 (round numbers unused for Swiss/round-robin)', () => {
     expect(stageWinnersRounds([])).toBe(0)
+  })
+})
+
+// RC6 #35 — single-elimination winner forwarding is pure bracket-shape math (extracted from the
+// score route so the progression engine is unit-testable without the route's HTTP/DB stack).
+describe('nextSingleEliminationSlot', () => {
+  it('adjacent winners fill the two slots of the next-round match (2i, 2i+1) → i', () => {
+    expect(nextSingleEliminationSlot({ round: 1, bracketOrder: 0 })).toEqual({ round: 2, bracketOrder: 0, slot: 'player1Id' })
+    expect(nextSingleEliminationSlot({ round: 1, bracketOrder: 1 })).toEqual({ round: 2, bracketOrder: 0, slot: 'player2Id' })
+    expect(nextSingleEliminationSlot({ round: 2, bracketOrder: 2 })).toEqual({ round: 3, bracketOrder: 1, slot: 'player1Id' })
+    expect(nextSingleEliminationSlot({ round: 2, bracketOrder: 3 })).toEqual({ round: 3, bracketOrder: 1, slot: 'player2Id' })
   })
 })

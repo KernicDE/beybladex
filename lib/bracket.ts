@@ -80,6 +80,22 @@ export function stageWinnersRounds(matches: { round: number; bracketSide: Match[
   return matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
 }
 
+/** Next-round slot target for an elimination match winner (the (2i, 2i+1) → i pairing). */
+export type NextSlotTarget = { round: number; bracketOrder: number; slot: 'player1Id' | 'player2Id' }
+
+/**
+ * Where a SINGLE-ELIMINATION match winner advances (RC6 #35 — extracted from the score route so
+ * the progression rule lives with the other pure bracket-shape decisions and is unit-testable):
+ * winners of adjacent matches (2i, 2i+1) fill slots player1/player2 of next-round match i.
+ */
+export function nextSingleEliminationSlot(match: { round: number; bracketOrder: number }): NextSlotTarget {
+  return {
+    round: match.round + 1,
+    bracketOrder: Math.floor(match.bracketOrder / 2),
+    slot: match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id',
+  }
+}
+
 // One-query bracket loader for the tournament/judge pages: matches and participants in a single
 // findUnique — do not replace this with per-match lookups ([REVIEW-FIX: performance P6]).
 // Phase 5 Part C2: matches live on STAGES (each with its own format + standings), loaded in the
