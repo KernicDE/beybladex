@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { ClubJoinPolicyBadge } from '@/components/clubs/ClubJoinPolicyBadge'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -29,7 +30,9 @@ export default async function ClubsPage({
   const query = (q ?? '').trim()
 
   const rows = await withPublicCache(
-    `public:v1:clubs:list:${query}|${cursor ?? ''}`,
+    // v2 (#83): the cached payload now includes joinPolicy for the badge — a fresh key
+    // avoids up to 120s of stale v1 rows without the field.
+    `public:v2:clubs:list:${query}|${cursor ?? ''}`,
     PUBLIC_LIST_TTL,
     () =>
       prisma.club.findMany({
@@ -39,7 +42,7 @@ export default async function ClubsPage({
         orderBy: { name: 'asc' },
         take: PAGE_SIZE + 1,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        select: { id: true, name: true, slug: true, description: true, _count: { select: { members: { where: { status: 'ACTIVE' } } } } }, // Phase 13: pending rows don't count
+        select: { id: true, name: true, slug: true, description: true, joinPolicy: true, _count: { select: { members: { where: { status: 'ACTIVE' } } } } }, // Phase 13: pending rows don't count
       }),
   )
 
@@ -99,6 +102,7 @@ export default async function ClubsPage({
                     {club.name}
                   </Link>
                   <Badge tone="neutral">{club._count.members} {club._count.members === 1 ? 'Mitglied' : 'Mitglieder'}</Badge>
+                  <ClubJoinPolicyBadge policy={club.joinPolicy} />
                 </div>
                 {club.description && (
                   <p className="mt-1 line-clamp-2 text-sm text-current/60">{club.description}</p>

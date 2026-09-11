@@ -1,5 +1,5 @@
 // components/layout/Footer.tsx
-// Desktop-only static footer with legal page links (Impressum, Datenschutz, AGB)
+// Desktop-only static footer with legal page links (Impressum, Datenschutz)
 // and the deploy version (issue #77) so any visitor can reference the running build
 // in bug reports; the machine-readable form is /api/version.
 import Link from 'next/link'
