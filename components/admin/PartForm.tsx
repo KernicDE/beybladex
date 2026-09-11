@@ -135,8 +135,10 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
         <FormField label="Bild (optional)">
           <div className="flex items-center gap-3">
             {values.imageId && (
+              // object-contain, not object-cover: this shows the actual part photo, not a
+              // decorative crop — cropping can cut off the part itself in a non-square image.
               // eslint-disable-next-line @next/next/no-img-element -- small admin-only catalog thumbnail
-              <img src={`/api/media/${values.imageId}`} alt="" className="size-16 rounded-md object-cover" />
+              <img src={`/api/media/${values.imageId}`} alt="" className="size-16 rounded-md bg-current/5 object-contain" />
             )}
             <input type="file" accept="image/*" onChange={uploadImage} disabled={imagePending} className="text-sm" />
           </div>
