@@ -233,7 +233,7 @@ export async function generateStage({ userId, tournamentId, stageId, arenaCount:
 
   // Buchholz is "at time of pairing" — recompute and persist it so the standings table the
   // organizer sees matches what the pairing used.
-  const bh = computeBuchholz(standings as SwissPlayer[])
+  const bh = computeBuchholz(standings)
   for (const [userId, value] of bh) {
     await prisma.stageStanding.updateMany({ where: { stageId, userId }, data: { buchholz: value } })
   }

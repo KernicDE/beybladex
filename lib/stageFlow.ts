@@ -5,7 +5,7 @@
 // lib/swiss.ts); this module only persists their results.
 import { prisma } from '@/lib/db'
 import { winnerPropagation, loserPropagation, winnersRounds } from '@/lib/doubleElimination'
-import { computeBuchholz, type SwissPlayer } from '@/lib/swiss'
+import { computeBuchholz } from '@/lib/swiss'
 import { notifyMatchReady } from '@/lib/notify'
 import type { Match } from '@prisma/client'
 import type { Prisma, PrismaClient } from '@prisma/client'
@@ -210,7 +210,7 @@ export async function recordSwissResult(
     })
   }
   const standings = await db.stageStanding.findMany({ where: { stageId } })
-  const buchholz = computeBuchholz(standings as SwissPlayer[])
+  const buchholz = computeBuchholz(standings)
   for (const [userId, value] of buchholz) {
     await db.stageStanding.updateMany({ where: { stageId, userId }, data: { buchholz: value } })
   }

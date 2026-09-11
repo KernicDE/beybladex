@@ -96,8 +96,12 @@ export function pairSwissRound(standings: SwissPlayer[]): { pairings: SwissPairi
 /**
  * Buchholz recompute: sum of CURRENT win counts over everyone in opponentIds. A withdrawn
  * opponent contributes their wins up to withdrawal (their remaining matches never happened).
+ * Parametertyp bewusst minimal (RC7 #66): Aufrufstellen liefern ganze StageStanding-Zeilen, die
+ * ohne Cast hier hineinpassen.
  */
-export function computeBuchholz(standings: SwissPlayer[]): Map<string, number> {
+export function computeBuchholz(
+  standings: Pick<StageStanding, 'userId' | 'wins' | 'opponentIds'>[],
+): Map<string, number> {
   const winsByUser = new Map(standings.map((s) => [s.userId, s.wins]))
   return new Map(standings.map((s) => [s.userId, s.opponentIds.reduce((sum, id) => sum + (winsByUser.get(id) ?? 0), 0)]))
 }
