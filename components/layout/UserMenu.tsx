@@ -1,6 +1,6 @@
 // components/layout/UserMenu.tsx
 // Session-aware avatar/username dropdown: Profil, Einstellungen, Abmelden — plus the
-// three legal links (Impressum/Datenschutz/AGB). The Footer that carries them is
+// two legal links (Impressum/Datenschutz). The Footer that carries them is
 // desktop-only (Task 10), so this menu is the mobile path to the legal pages
 // (binding per the plan's "Mobile legal-page access" note — ≤2 clicks on any viewport).
 // Phase 21: the trigger renders the viewer's OWN uploaded avatar (avatarImageId, fetched

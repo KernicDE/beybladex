@@ -14,7 +14,7 @@ Ein Next.js-PWA-Monolith mit offline-fähiger Turnier-Judge-UI, Regel-Editor, DA
 - **Sammlung & Decks**: Teile-Katalog, Deckbuilder mit Server-seitiger Duplikatsprüfung, Sammlungsverwaltung mit Mehrwährungsumrechnung (EUR/CHF/USD) und Preisverlauf
 - **Social**: Freundschaften, Clubs, Benachrichtigungen (SSE, Redis Pub/Sub), Profil mit granularer Feld-Sichtbarkeit (`PUBLIC` / `FRIENDS_ONLY` / `PRIVATE`)
 - **DACH-Eventkalender**: Umkreissuche, Leaflet-Karte (server-seitig gecachte OSM-Tiles), RSS-Feeds pro Land/Bundesland
-- **Datenschutz**: Impressum/Datenschutzerklärung/AGB, Art.-16/17/20-Selbstbedienung (Berichtigung, Löschung/Anonymisierung, Datenexport), datensparsame Defaults
+- **Datenschutz**: Impressum/Datenschutzerklärung, Art.-16/17/20-Selbstbedienung (Berichtigung, Löschung/Anonymisierung, Datenexport), datensparsame Defaults
 
 ## Tech-Stack
 

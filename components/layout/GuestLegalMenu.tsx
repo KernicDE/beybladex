@@ -1,5 +1,5 @@
 // components/layout/GuestLegalMenu.tsx
-// Issue #22: mobile guests had no path at all to Impressum/Datenschutz/AGB — the Footer
+// Issue #22: mobile guests had no path at all to Impressum/Datenschutz — the Footer
 // carrying those links is desktop-only (`md:block`), and the only other place they lived,
 // UserMenu, only renders for a signed-in session. This gives every guest (any viewport,
 // since it renders in the always-visible sticky Header) a ≤2-click path to the legal pages:
