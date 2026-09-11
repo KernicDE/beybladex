@@ -21,6 +21,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { sortSwiss } from '@/lib/swiss'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
 
@@ -67,6 +68,8 @@ export async function POST(_req: Request, { params }: Ctx) {
     where: { id: stageId },
     data: { status: 'COMPLETED', qualifiedUserIds: qualified },
   })
+  // Hotfix #99: the cached public detail page previews the latest stage's matches/standings.
+  await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ id: stageId, status: 'COMPLETED', ranking, qualified: qualified.length > 0 ? qualified : undefined })
 }
 

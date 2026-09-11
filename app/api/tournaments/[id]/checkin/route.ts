@@ -17,6 +17,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { isTournamentStaff } from '@/lib/tournamentJudges'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -69,5 +70,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     where: { id: participant.id },
     data: { checkedIn: true },
   })
+  // Hotfix #99: the check-in badge on the cached public detail page changed.
+  await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ id: updated.id, userId: updated.userId, checkedIn: updated.checkedIn })
 }

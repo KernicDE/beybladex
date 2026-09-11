@@ -16,6 +16,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseArenaCount } from '@/lib/arenaAssign'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,6 +83,8 @@ export async function POST(req: Request, { params }: Ctx) {
   if (arenaCount !== null) {
     await prisma.tournament.update({ where: { id }, data: { arenaCount } })
   }
+  // Hotfix #99: stages (and arenaCount) feed the cached public detail page's preview section.
+  await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ id: stage.id, order: stage.order }, { status: 201 })
 }
 

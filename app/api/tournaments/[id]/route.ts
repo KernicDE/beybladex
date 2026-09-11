@@ -12,6 +12,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseTournamentInput } from '@/lib/tournamentValidation'
 import { authorizeTournamentOrganizer } from '@/lib/tournamentService'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -56,6 +57,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
     where: { id },
     data: { ...rest, ...(description !== undefined ? { description: description ?? '' } : {}) },
   })
+  // Hotfix #99: the public detail page caches this query for 60s — drop the stale entry so an
+  // organizer edit (time/place/title/fee/…) is visible immediately.
+  await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ id: updated.id, title: updated.title, startDate: updated.startDate })
 }
 
@@ -88,5 +92,8 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     prisma.tournamentParticipant.deleteMany({ where: { tournamentId: id } }),
     prisma.tournament.delete({ where: { id } }),
   ])
+  // Hotfix #99: drop the cached public detail so the page 404s immediately instead of showing a
+  // ghost of the cancelled event for the rest of the TTL window.
+  await invalidatePublicCache(publicTournamentKey(id))
   return new Response(null, { status: 204 })
 }

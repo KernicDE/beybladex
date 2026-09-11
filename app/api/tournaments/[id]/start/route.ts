@@ -18,6 +18,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { notifyTournamentStarted } from '@/lib/notify'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -96,6 +97,10 @@ export async function POST(_req: Request, { params }: Ctx) {
   } catch (err) {
     console.error(`[start] notifyTournamentStarted(${id}) failed:`, err)
   }
+
+  // Hotfix #99: starting the tournament changes what the public detail surface may show
+  // (started state, deck lock-in side effects); drop the cached public detail query.
+  await invalidatePublicCache(publicTournamentKey(id))
 
   return Response.json({ startedAt: result.startedAt })
 }

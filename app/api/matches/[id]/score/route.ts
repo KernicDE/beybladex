@@ -48,6 +48,7 @@ import { getActiveSeason, applyMatchResultToRatings } from '@/lib/season'
 import { notifyMatchReady } from '@/lib/notify'
 import { isKnownEventType, applyEvent, isMonotonicDecrease, winThreshold } from '@/lib/scoring'
 import { nextSingleEliminationSlot } from '@/lib/bracket'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -414,6 +415,11 @@ export async function POST(req: Request, { params }: Ctx) {
       // documented degradation — see comment above
     }
   }
+
+  // Hotfix #99: the match row's status/winner (and bracket-adjacent slots) feed the cached
+  // public detail page's bracket preview — drop the stale entry. Best-effort by contract inside
+  // invalidatePublicCache, so a Redis hiccup never fails a persisted score.
+  await invalidatePublicCache(publicTournamentKey(match.tournamentId))
 
   return Response.json({
     id: updated.id,

@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 
 export function QrCodeSvg({ svg, className = '' }: { svg: string; className?: string }) {
   const [ready, setReady] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: the post-hydration flip IS the point (server HTML stays placeholder-only; the SVG is injected after hydration).
   useEffect(() => setReady(true), [])
 
   if (!ready) {

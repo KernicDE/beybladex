@@ -23,6 +23,7 @@ import { assignFreedArena } from '@/lib/arenaAssign'
 import { winnerPropagation } from '@/lib/doubleElimination'
 import { markEliminated, recordSwissResult, resolveStuckByes } from '@/lib/stageFlow'
 import { notifyMatchReady } from '@/lib/notify'
+import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -169,6 +170,10 @@ export async function POST(req: Request, { params }: Ctx) {
       })
     }
   }
+
+  // Hotfix #99: open matches were auto-completed — the cached public detail page's bracket
+  // preview (match status/winner) changed.
+  await invalidatePublicCache(publicTournamentKey(id))
 
   return Response.json({ withdrawn: true, advancedMatches: advanced })
 }
