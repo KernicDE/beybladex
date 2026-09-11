@@ -1,8 +1,9 @@
 // components/tournament/JoinPanel.tsx
 // Client-side join / check-in / withdraw controls for the public event detail page. Guests never
 // reach this component — the page renders the "Anmelden, um teilzunehmen" prompt for them per
-// Task 13's anonymous-vs-member convention. Deck selection at join time stays out of the UI until
-// Phase 5 ships the deck surfaces (the API already accepts deckId) — TODO(Phase 5): deck picker.
+// Task 13's anonymous-vs-member convention. Deck selection at join time is still not offered here
+// — the API accepts an optional deckId (POST/PATCH /api/tournaments/[id]/join), but there is no
+// picker yet: TODO(RC-folge): join-time deck picker.
 'use client'
 
 import { useState } from 'react'
