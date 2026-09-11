@@ -47,6 +47,7 @@ import { propagateEliminationResult, recordSwissResult } from '@/lib/stageFlow'
 import { getActiveSeason, applyMatchResultToRatings } from '@/lib/season'
 import { notifyMatchReady } from '@/lib/notify'
 import { isKnownEventType, applyEvent, isMonotonicDecrease, winThreshold } from '@/lib/scoring'
+import { nextSingleEliminationSlot } from '@/lib/bracket'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -319,17 +320,15 @@ export async function POST(req: Request, { params }: Ctx) {
         const R = (maxRound + 1) / 3
         await propagateEliminationResult(match, winnerId, 2 ** R, tx)
       } else {
-        const slot = match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
-        const nextRound = match.round + 1
-        const nextBracketOrder = Math.floor(match.bracketOrder / 2)
+        const target = nextSingleEliminationSlot(match)
         await tx.match.updateMany({
-          where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
-          data: { [slot]: winnerId },
+          where: { stageId: match.stageId, round: target.round, bracketOrder: target.bracketOrder },
+          data: { [target.slot]: winnerId },
         })
         // Phase 18 item 2 — "Dein nächstes Match beginnt": self-guarded by notifyMatchReady
         // (no-op unless this write was the SECOND slot filled). Best-effort.
         const nextMatch = await tx.match.findFirst({
-          where: { stageId: match.stageId, round: nextRound, bracketOrder: nextBracketOrder },
+          where: { stageId: match.stageId, round: target.round, bracketOrder: target.bracketOrder },
           select: { id: true },
         })
         if (nextMatch) {

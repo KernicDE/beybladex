@@ -14,7 +14,7 @@
 // recipient, so bracket rendering and advancement propagation stay uniform (the winner slot
 // feeds the next round exactly like a played match).
 import { prisma } from '@/lib/db'
-import type { MatchStatus, TournamentParticipant } from '@prisma/client'
+import type { Match, MatchStatus, TournamentParticipant } from '@prisma/client'
 import { sortBySeed } from '@/lib/seeding'
 
 export type BracketNode = {
@@ -65,6 +65,35 @@ export function generateSingleEliminationBracket(participants: (Pick<TournamentP
     matchesInRound /= 2
   }
   return nodes
+}
+
+/**
+ * Per-stage winners-bracket round count R (RC6 #56 — single source of truth, moved here from the
+ * two page-local copies and the dead/faulty lib/stageFlow.ts copy): double-elimination's grand
+ * final sits at round 3R−1, so a stage with a GRAND_FINAL match derives R = (maxRound + 1) / 3;
+ * every other format (single-elimination maxRound = R, Swiss/round-robin round numbers unused)
+ * derives R = maxRound. Empty stages (no matches yet) return 0.
+ */
+export function stageWinnersRounds(matches: { round: number; bracketSide: Match['bracketSide'] | null }[]): number {
+  const maxRound = Math.max(0, ...matches.map((m) => m.round))
+  if (maxRound === 0) return 0
+  return matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
+}
+
+/** Next-round slot target for an elimination match winner (the (2i, 2i+1) → i pairing). */
+export type NextSlotTarget = { round: number; bracketOrder: number; slot: 'player1Id' | 'player2Id' }
+
+/**
+ * Where a SINGLE-ELIMINATION match winner advances (RC6 #35 — extracted from the score route so
+ * the progression rule lives with the other pure bracket-shape decisions and is unit-testable):
+ * winners of adjacent matches (2i, 2i+1) fill slots player1/player2 of next-round match i.
+ */
+export function nextSingleEliminationSlot(match: { round: number; bracketOrder: number }): NextSlotTarget {
+  return {
+    round: match.round + 1,
+    bracketOrder: Math.floor(match.bracketOrder / 2),
+    slot: match.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id',
+  }
 }
 
 // One-query bracket loader for the tournament/judge pages: matches and participants in a single

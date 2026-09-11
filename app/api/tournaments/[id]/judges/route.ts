@@ -8,22 +8,9 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
+import { authorizeTournamentOrganizer } from '@/lib/tournamentService'
 
 type Ctx = { params: Promise<{ id: string }> }
-
-// Returns the error Response to short-circuit with, or null when the caller is authorized.
-// (Not `{ error: Response } | {}` — TypeScript's `in` narrowing doesn't reliably exclude a
-// bare `{}` branch, since `{}` structurally accepts any non-null value; that shape produced
-// `Response | undefined` at every call site instead of the intended `Response`.)
-async function requireOrganizer(id: string, callerId: string): Promise<Response | null> {
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true } })
-  if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
-  const caller = await prisma.user.findUnique({ where: { id: callerId }, select: { role: true } })
-  if (tournament.createdById !== callerId && caller?.role !== 'ADMIN') {
-    return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
-  return null
-}
 
 // [REVIEW-FIX: backend-security #37] judge-roster edits; 60/min/user.
 async function limitJudgeRoster(userId: string): Promise<Response | null> {
@@ -47,7 +34,7 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
-  const authz = await requireOrganizer(id, session.user.id)
+  const { error: authz } = await authorizeTournamentOrganizer(id, session.user.id, { id: true, createdById: true })
   if (authz) return authz
   const limited = await limitJudgeRoster(session.user.id)
   if (limited) return limited
@@ -84,7 +71,7 @@ export async function DELETE(req: Request, { params }: Ctx): Promise<Response> {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
-  const authz = await requireOrganizer(id, session.user.id)
+  const { error: authz } = await authorizeTournamentOrganizer(id, session.user.id, { id: true, createdById: true })
   if (authz) return authz
   const limited = await limitJudgeRoster(session.user.id)
   if (limited) return limited

@@ -33,17 +33,7 @@ import {
   subscribeQueueDepth,
   type MatchScoreState,
 } from '@/lib/offline/matchQueue'
-
-export type ScoreEventType =
-  | 'SPIN'
-  | 'OVER'
-  | 'BURST'
-  | 'XTREME'
-  | 'OUT_OF_BOUNDS'
-  | 'OVERFINISH'
-  | 'OWN_FINISH'
-  | 'EXTERNAL_DISTURBANCE'
-  | 'AERIAL_CONTACT'
+import type { PointValues, ScoreEventType } from '@/lib/scoring'
 
 export type PadPlayer = {
   id: string
@@ -91,7 +81,7 @@ export function JudgeScorePad({
     player2SpinMode: 'RIGHT' | 'LEFT' | null
   }
   targetPoints: number
-  pointValues: Record<ScoreEventType, number>
+  pointValues: PointValues
 }) {
   const [score1, setScore1] = useState(initial.scorePlayer1)
   const [score2, setScore2] = useState(initial.scorePlayer2)
@@ -209,7 +199,7 @@ export function JudgeScorePad({
 
   const resultingScores = useCallback(
     (type: ScoreEventType, player: 1 | 2, s1: number, s2: number): [number, number] => {
-      const pts = pointValues[type as ScoreEventType] ?? 0
+      const pts = pointValues[type] ?? 0
       if (type === 'OWN_FINISH') return player === 1 ? [s1, s2 + pts] : [s1 + pts, s2]
       return player === 1 ? [s1 + pts, s2] : [s1, s2 + pts]
     },

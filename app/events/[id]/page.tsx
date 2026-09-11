@@ -10,12 +10,13 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { stageWinnersRounds } from '@/lib/bracket'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { JoinPanel } from '@/components/tournament/JoinPanel'
-import { EventShareQR } from '@/components/tournament/EventShareQR'
+import { TournamentShareQR } from '@/components/tournament/TournamentShareQR'
 import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 
 // [RC5 #43] No `revalidate` export: auth() (join flow, organizer badges) forces per-request
@@ -45,19 +46,10 @@ function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
-// Same winners-bracket round-count derivation as /tournaments/[id]/page.tsx (kept local —
-// duplicating one small pure function is cheaper than threading a shared import for a single
-// preview stage; see that file's own copy for the full comment on the round-count formula).
-function stageWinnersRounds(matches: { round: number; bracketSide: string | null }[]): number {
-  const maxRound = Math.max(0, ...matches.map((m) => m.round))
-  if (maxRound === 0) return 0
-  return matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
-}
-
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [tournament, session] = await Promise.all([
-    withPublicCache(`public:v1:event:${id}`, PUBLIC_DETAIL_TTL, () =>
+    withPublicCache(`public:v1:tournament:${id}`, PUBLIC_DETAIL_TTL, () =>
       prisma.tournament.findUnique({
         where: { id },
         select: {
@@ -177,7 +169,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         </p>
       </Card>
 
-      <EventShareQR tournamentId={tournament.id} />
+      <TournamentShareQR tournamentId={tournament.id} />
 
       {/* Join flow — guests get the sign-in prompt instead of the join button (Task 13 convention). */}
       {!me ? (

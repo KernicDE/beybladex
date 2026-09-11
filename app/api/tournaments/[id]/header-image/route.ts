@@ -9,6 +9,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { EVENT_HEADER_TARGET, processAndStoreImage, isUploadedFile } from '@/lib/media'
+import { authorizeTournamentOrganizer } from '@/lib/tournamentService'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -17,12 +18,8 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const { id } = await params
 
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true } })
-  if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (tournament.createdById !== session.user.id && caller?.role !== 'ADMIN') {
-    return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const { error } = await authorizeTournamentOrganizer(id, session.user.id, { id: true, createdById: true })
+  if (error) return error
   const { allowed } = await rateLimit(`tournaments:header-image:${session.user.id}`, 30, 60 * 60)
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
 

@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { loadTournamentBracket } from '@/lib/bracket'
+import { loadTournamentBracket, stageWinnersRounds } from '@/lib/bracket'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { JudgeBracketView, eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
@@ -18,17 +18,6 @@ import { OrganizerConsole } from '@/components/tournament/OrganizerConsole'
 import { renderQrSvg } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic' // live tournament surface [REVIEW-FIX: performance P16]
-
-type LoadedTournament = NonNullable<Awaited<ReturnType<typeof loadTournamentBracket>>>
-
-// Per-stage winners-bracket round count R (double-elimination: maxRound = 3R−1; single-elimination:
-// maxRound = R). Swiss stages return 0 (round numbers unused).
-function stageWinnersRounds(stage: LoadedTournament['stages'][number]): number {
-  const maxRound = Math.max(0, ...stage.matches.map((m) => m.round))
-  if (maxRound === 0) return 0
-  return stage.matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
-}
-
 export default async function TournamentBracketPage({
   params,
   searchParams,
@@ -70,7 +59,7 @@ export default async function TournamentBracketPage({
     myMatch && myStage
       ? myStage.format === 'SWISS' || myStage.format === 'ROUND_ROBIN'
         ? `Runde ${myMatch.swissRound ?? '?'}`
-        : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage))
+        : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage.matches))
       : null
 
   // Judge pool for the assignment dropdown: the JUDGE role list is small by nature (a club/
@@ -163,7 +152,7 @@ export default async function TournamentBracketPage({
               }))}
               players={players}
               format={stage.format}
-              wbRounds={stageWinnersRounds(stage)}
+              wbRounds={stageWinnersRounds(stage.matches)}
               standings={stage.standings.map((s) => ({
                 userId: s.userId,
                 name: s.user.displayName ?? s.user.username,
@@ -188,7 +177,7 @@ export default async function TournamentBracketPage({
             seed: p.seed,
           }))}
           stages={tournament.stages.map((stage) => {
-            const wbRounds = stageWinnersRounds(stage)
+            const wbRounds = stageWinnersRounds(stage.matches)
             return {
               id: stage.id,
               order: stage.order,
