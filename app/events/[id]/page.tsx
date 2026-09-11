@@ -10,6 +10,7 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { formatDateTime } from '@/lib/formatDateTime'
 import { stageWinnersRounds } from '@/lib/bracket'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
@@ -25,17 +26,6 @@ import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 // in practice: the cache TTL matches the old revalidate value, and session-dependent UI still
 // renders per request.
 const PUBLIC_DETAIL_TTL = 60
-
-function formatDateTime(date: Date): string {
-  return date.toLocaleString('de-DE', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 function formatFee(cent: number, currency: string): string {
   if (cent === 0) return 'Eintritt frei'

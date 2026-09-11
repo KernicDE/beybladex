@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { JudgeBracketView, eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
 import { OrganizerConsole } from '@/components/tournament/OrganizerConsole'
+import { QrCodeSvg } from '@/components/tournament/QrCodeSvg'
 import { renderQrSvg } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic' // live tournament surface [REVIEW-FIX: performance P16]
@@ -225,8 +226,10 @@ export default async function TournamentBracketPage({
             Aushängen oder auf einem Bildschirm anzeigen — Teilnehmer:innen scannen und checken
             sich damit selbst ein.
           </p>
-          {/* Server-generated SVG from our own trusted lib/qr.ts — not user content. */}
-          <div className="mt-3 flex justify-center [&_svg]:h-48 [&_svg]:w-48" dangerouslySetInnerHTML={{ __html: checkInQrSvg }} />
+          {/* Server-generated SVG (lib/qr.ts), injected post-hydration — same #98 pattern as TournamentShareQR. */}
+          <div className="mt-3 flex justify-center">
+            <QrCodeSvg svg={checkInQrSvg} />
+          </div>
         </details>
       )}
 
