@@ -8,17 +8,15 @@
 // EmptyState renders a "Turnier erstellen" CTA for ORGANIZER/ADMIN sessions AND for users who
 // administer at least one club (Phase 4's Club membership path — the same rule the API enforces).
 import Link from 'next/link'
-import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
 import { geocodePostalCode, isWithinRadiusKm, radiusBoundingBox, type DachCountry } from '@/lib/geo'
 import { MapView } from '@/components/map/MapView'
-import { Badge } from '@/components/ui/Badge'
-import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EventsFilterBar } from '@/components/tournament/EventsFilterBar'
+import { EventListCard } from '@/components/tournament/EventListCard'
 
 // [RC5 #43] No `revalidate` export: this page reads searchParams (filters) AND auth()
 // (session-gated CTA), which force per-request rendering in Next 16's non-cacheComponents
@@ -36,19 +34,6 @@ const DEFAULT_RADIUS_KM = 50
 
 // Center of the DACH region when no result pins the map.
 const DEFAULT_CENTER = { lat: 48.5, lng: 10 }
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-}
-
-function formatFee(cent: number, currency: string): string {
-  if (cent === 0) return 'Eintritt frei'
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency }).format(cent / 100)
-}
 
 export default async function EventsPage({
   searchParams,
@@ -236,30 +221,19 @@ export default async function EventsPage({
         <ul className="space-y-3">
           {page.map((t) => (
             <li key={t.id}>
-              <Card className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    {/* Phase 10 item 7 — two lines, per the user's exact spec: line 1 date/time/
-                        title/price, line 2 location/participants. */}
-                    <p className="flex flex-wrap items-center gap-2">
-                      <Link href={`/events/${t.id}`} className="font-semibold hover:underline">
-                        {formatDate(t.startDate)} {formatTime(t.startDate)} – {t.title}, {formatFee(t.entryFeeCent, t.currency)}
-                      </Link>
-                      {t.isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}
-                    </p>
-                    <p className="mt-1 text-sm text-current/60">
-                      {t.country}, {t.state}, {t.city} · {t._count.participants} Teilnehmer
-                    </p>
-                  </div>
-                  {/* Phase 11 item 5 cross-reference: right-aligned thumbnail once a header
-                      image is set; a card with none keeps the text-only layout unchanged. */}
-                  {t.headerImageId && (
-                    <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md">
-                      <Image src={`/api/media/${t.headerImageId}`} alt="" fill sizes="96px" className="object-cover" />
-                    </div>
-                  )}
-                </div>
-              </Card>
+              <EventListCard
+                id={t.id}
+                title={t.title}
+                startDate={t.startDate}
+                city={t.city}
+                state={t.state}
+                country={t.country}
+                entryFeeCent={t.entryFeeCent}
+                currency={t.currency}
+                isRecurring={t.isRecurring}
+                participantCount={t._count.participants}
+                headerImageId={t.headerImageId}
+              />
             </li>
           ))}
         </ul>
