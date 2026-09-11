@@ -4,9 +4,8 @@
 // rows use PATCH { ids: [id] } — the two accepted PATCH shapes), and live updates prepended
 // from the SSE stream (EventSource → /api/notifications/stream?since=<newest seen>).
 //
-// TODO(Phase 3, nice-to-have): wire the unread count into the Header's bell badge — the bell
-// exists in components/layout/Header.tsx with a placeholder comment; it would consume this
-// same GET API (or a lightweight unread-count endpoint) once wired.
+// (The unread count is wired into the Header's bell badge since RC10 #26 — the root
+// layout queries it server-side and passes it into components/layout/Header.tsx.)
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'

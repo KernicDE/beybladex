@@ -37,6 +37,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     ? (await prisma.user.findUnique({ where: { id: session.user.id }, select: { avatarImageId: true } }))
         ?.avatarImageId ?? null
     : null;
+  // RC10 #26 — the header bell's unread badge. Same session-scoped server query as the
+  // avatar above; one count query, never per-render client fetches in the chrome.
+  const unreadNotifications = session?.user?.id
+    ? await prisma.notification.count({ where: { userId: session.user.id, isRead: false } })
+    : 0;
   return (
     <html
       lang="de"
@@ -48,7 +53,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
-          <Header session={session} avatarImageId={avatarImageId} />
+          <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} />
           <main className="flex-1 pb-12 md:pb-0">{children}</main>
         </ThemeProvider>
         <Footer />

@@ -1,12 +1,14 @@
 // components/layout/Header.tsx
 // Fixed navigation model (Task 13): brand, primary nav, search entry point,
-// notification bell placeholder, session-aware user menu (client component —
-// dropdown + signOut need client interactivity).
+// notification bell (active since RC10 #26 — unread badge from the root layout's
+// server-side count), session-aware user menu (client component — dropdown +
+// signOut need client interactivity).
 import Link from 'next/link'
-import { Bell, Lock, Search } from 'lucide-react'
+import { Lock, Search } from 'lucide-react'
 import type { Session } from 'next-auth'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { SearchInput } from '@/components/ui/SearchInput'
+import { NotificationBell } from '@/components/layout/NotificationBell'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { GuestLegalMenu } from '@/components/layout/GuestLegalMenu'
 import { BrandMark } from '@/components/brand/BrandMark'
@@ -29,7 +31,7 @@ const NAV_LINKS: { href: string; label: string; auth?: boolean }[] = [
   { href: '/rangliste', label: 'Rangliste' },
 ] as const
 
-export function Header({ session, avatarImageId }: { session: Session | null; avatarImageId: string | null }) {
+export function Header({ session, avatarImageId, unreadNotifications }: { session: Session | null; avatarImageId: string | null; unreadNotifications?: number }) {
   const username = session?.user?.name
   return (
     <header className="sticky top-0 z-40 flex items-center gap-4 border-b border-x-cyan/20 bg-base-light/90 px-4 py-3 backdrop-blur dark:bg-base-dark/90 md:px-8">
@@ -69,16 +71,7 @@ export function Header({ session, avatarImageId }: { session: Session | null; av
           <Search size={18} aria-hidden="true" />
         </Link>
         <SearchInput className="hidden w-56 md:block" />
-        {session && (
-          <Link
-            href="/notifications"
-            aria-label="Benachrichtigungen"
-            className="relative rounded-md p-2 text-current/80 transition-colors hover:bg-current/5 hover:text-current"
-          >
-            {/* Unread-count badge lands in Phase 3 with the notification inbox. */}
-            <Bell size={18} aria-hidden="true" />
-          </Link>
-        )}
+        {session && <NotificationBell unreadCount={unreadNotifications ?? 0} />}
         <ThemeToggle />
         {session ? (
           <UserMenu username={username ?? ''} avatarImageId={avatarImageId} />
