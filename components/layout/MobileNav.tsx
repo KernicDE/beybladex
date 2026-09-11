@@ -12,13 +12,16 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Archive, Calendar, Layers, Menu, User, type LucideIcon } from 'lucide-react'
+import { Archive, Calendar, Layers, Lock, Menu, User, type LucideIcon } from 'lucide-react'
 import type { Session } from 'next-auth'
 
-const TABS: { href: string; label: string; icon: LucideIcon }[] = [
+// RC8 #20: `auth` marks tabs whose target renders a GuestGate for guests (/decks,
+// /collection) — they carry a lock icon when there is no session. The href stays the
+// real route: guests land on the explained gate instead of an uncontextualized login.
+const TABS: { href: string; label: string; icon: LucideIcon; auth?: boolean }[] = [
   { href: '/events', label: 'Events', icon: Calendar },
-  { href: '/decks', label: 'Decks', icon: Layers },
-  { href: '/collection', label: 'Sammlung', icon: Archive },
+  { href: '/decks', label: 'Decks', icon: Layers, auth: true },
+  { href: '/collection', label: 'Sammlung', icon: Archive, auth: true },
 ]
 
 // Issue #24: public surfaces without a bottom-tab slot of their own. Mirrors the header's
@@ -39,7 +42,10 @@ export function MobileNav({ session }: { session: Session | null }) {
   const profileHref = session?.user?.name
     ? `/profile/${encodeURIComponent(session.user.name)}`
     : '/login'
-  const tabs = [...TABS, { href: profileHref, label: 'Profil', icon: User }]
+  const tabs = [
+    ...TABS.map((t) => ({ ...t, locked: Boolean(t.auth) && !session })),
+    { href: profileHref, label: 'Profil', icon: User, locked: false },
+  ]
 
   useEffect(() => {
     if (!moreOpen) return
@@ -70,17 +76,21 @@ export function MobileNav({ session }: { session: Session | null }) {
       aria-label="Hauptnavigation"
       className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-x-cyan/20 bg-base-light/90 backdrop-blur dark:bg-base-dark/90 md:hidden"
     >
-      {tabs.map(({ href, label, icon: Icon }) => {
+      {tabs.map(({ href, label, icon: Icon, locked }) => {
         const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
         return (
           <Link
             key={label}
             href={href}
             aria-current={active ? 'page' : undefined}
+            {...(locked ? { 'aria-label': `${label} (Anmeldung erforderlich)` } : {})}
             className={itemCls(active)}
           >
             <Icon size={20} aria-hidden="true" />
-            {label}
+            <span className="inline-flex items-center gap-0.5">
+              {label}
+              {locked && <Lock size={10} aria-hidden="true" />}
+            </span>
           </Link>
         )
       })}

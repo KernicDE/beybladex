@@ -1,11 +1,12 @@
 // app/collection/page.tsx
 // The logged-in user's OWN collection (Phase 5 Part B). Per-user surface — force-dynamic per
-// the caching half of the Regression Guard. Paginated (take/cursor) per the list-endpoint
-// rule; empty state carries the "Füge dein erstes Teil hinzu" CTA (standing empty-state rule),
-// ?neu=1 reveals the create form (same convention as /decks). Another user's collection lives
-// at /collection/[username], gated by resolveVisibleFields there — never here.
+// the caching half of the Regression Guard. Guests get an explained GuestGate instead of a
+// silent redirect (RC8 issue #20) with a callbackUrl, so they return here after login.
+// Paginated (take/cursor) per the list-endpoint rule; empty state carries the "Füge dein
+// erstes Teil hinzu" CTA (standing empty-state rule), ?neu=1 reveals the create form (same
+// convention as /decks). Another user's collection lives at /collection/[username], gated by
+// resolveVisibleFields there — never here.
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getRateTable, type FxCurrency } from '@/lib/currency'
@@ -14,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
 import { CollectionItemForm } from '@/components/collection/CollectionItemForm'
 import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
+import { GuestGate } from '@/components/auth/GuestGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +24,15 @@ const PAGE_SIZE = 20
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
   const { cursor, neu } = await searchParams
   const session = await auth()
-  if (!session?.user?.id) redirect('/login')
+  if (!session?.user?.id) {
+    return (
+      <GuestGate
+        title="Die Sammlung ist nur für Mitglieder"
+        description="Erfasse, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum. Melde dich an, um deine Sammlung zu pflegen."
+        callbackUrl="/collection"
+      />
+    )
+  }
 
   const [viewer, fx] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.user.id }, select: { country: true } }),
