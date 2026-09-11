@@ -5,7 +5,11 @@
 // VAPID keys): with DEEPL_API_KEY unset, isDeepLConfigured() is false and translateUserContent
 // returns null — callers then show the original text, which is ALWAYS acceptable per #17.
 //
-// Free API endpoint per DeepL docs (api-free.deepl.com), auth via `auth_key` form field.
+// Free API endpoint per DeepL docs (api-free.deepl.com), auth via the `Authorization:
+// DeepL-Auth-Key <key>` header. [FIX 2026-09-11] DeepL has retired the older `auth_key` form
+// field — a real key against the current API gets a 403 "Missing Authorization header" with
+// that approach, so translateWithDeepL silently returned null on EVERY call despite being fully
+// configured. Found while translating messages/en.json for real with a live key.
 // The network half is the ONLY untestable seam here and is deliberately a tiny fetch wrapper,
 // so unit tests stub global fetch and exercise everything else for real.
 import type { Locale } from '@/lib/i18n/locales'
@@ -44,9 +48,11 @@ export async function translateWithDeepL(
   try {
     const res = await fetch(DEEPL_FREE_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `DeepL-Auth-Key ${authKey}`,
+      },
       body: new URLSearchParams({
-        auth_key: authKey,
         text,
         target_lang: toDeepLLang(targetLocale),
       }),
