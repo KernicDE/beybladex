@@ -30,6 +30,21 @@ export type ConsoleMatch = {
   judgeId: string | null
 }
 export type ConsoleStanding = { userId: string; name: string; wins: number; losses: number; buchholz: number }
+// RC15 #12 — team mode: a registered team (check-in/withdrawal live on the ENTRY, not the
+// members) and an encounter (TeamMatch) with its three sub-games for judge assignment.
+export type ConsoleTeamEntry = { entryId: string; teamId: string; teamName: string; checkedIn: boolean; withdrawn: boolean }
+export type ConsoleTeamGame = { id: string; player1: string | null; player2: string | null; status: string; judgeId: string | null }
+export type ConsoleTeamMatch = {
+  id: string
+  round: number
+  label: string
+  team1: string | null
+  team2: string | null
+  status: string
+  winsTeam1: number
+  winsTeam2: number
+  games: ConsoleTeamGame[]
+}
 export type ConsoleStage = {
   id: string
   order: number
@@ -40,6 +55,7 @@ export type ConsoleStage = {
   swissRoundsDone: number
   qualifyCount: number | null
   matches: ConsoleMatch[]
+  teamMatches: ConsoleTeamMatch[]
   standings: ConsoleStanding[]
 }
 export type ConsoleJudge = { id: string; name: string }
@@ -54,6 +70,8 @@ const FORMAT_LABEL: Record<ConsoleStage['format'], string> = {
 export function OrganizerConsole({
   tournamentId,
   participants,
+  teamMode,
+  teamEntries,
   stages,
   judges,
   completedAt,
@@ -64,6 +82,9 @@ export function OrganizerConsole({
 }: {
   tournamentId: string
   participants: ConsoleParticipant[]
+  /** RC15 #12 — team mode switches the console from solo participants to team entries. */
+  teamMode: boolean
+  teamEntries: ConsoleTeamEntry[]
   stages: ConsoleStage[]
   judges: ConsoleJudge[]
   completedAt: string | null
@@ -110,10 +131,14 @@ export function OrganizerConsole({
   }
 
   const checkedIn = participants.filter((p) => p.checkedIn && !p.withdrawn)
+  const checkedInTeamEntries = teamEntries.filter((e) => e.checkedIn && !e.withdrawn)
   const completed = completedAt !== null
   const allMatches = stages.flatMap((s) => s.matches)
   const openMatches = allMatches.filter((m) => m.status !== 'COMPLETED')
-  const bracketGenerated = allMatches.length > 0
+  // RC15 #12 — in team mode the bracket consists of TeamMatch encounters, so "generated" and
+  // the check-in gate for generation read from the team aggregates (solo aggregates stay empty).
+  const bracketGenerated = teamMode ? stages.some((s) => s.teamMatches.length > 0) : allMatches.length > 0
+  const checkedInCount = teamMode ? checkedInTeamEntries.length : checkedIn.length
 
   const createStage = () =>
     call(
@@ -205,8 +230,9 @@ export function OrganizerConsole({
         <HeaderImageUpload tournamentId={tournamentId} headerImageId={headerImageId} />
 
         {/* Phase 15 — seeding only makes sense pre-bracket (it's read once at generation time);
-            hidden once the first stage has matches, same gating as "Stage hinzufügen" above. */}
-        {!bracketGenerated && !completed && participants.length > 0 && (
+            hidden once the first stage has matches, same gating as "Stage hinzufügen" above.
+            RC15 #12 — team mode has no seeding UI (entries carry a seed field, nothing more). */}
+        {!teamMode && !bracketGenerated && !completed && participants.length > 0 && (
           <SeedingPanel
             tournamentId={tournamentId}
             participants={participants.filter((p) => !p.withdrawn).map((p) => ({ userId: p.userId, name: p.name, seed: p.seed }))}
@@ -231,8 +257,9 @@ export function OrganizerConsole({
                 <Select value={stageFormat} onChange={(e) => setStageFormat(e.target.value as ConsoleStage['format'])} className="mt-1 block w-44">
                   <option value="SINGLE_ELIMINATION">Single Elimination</option>
                   <option value="DOUBLE_ELIMINATION">Double Elimination</option>
-                  <option value="SWISS">Swiss</option>
-                  <option value="ROUND_ROBIN">Round Robin</option>
+                  {/* RC15 #12 — team mode v1 supports only elimination formats (the API 409s Swiss/RR). */}
+                  {!teamMode && <option value="SWISS">Swiss</option>}
+                  {!teamMode && <option value="ROUND_ROBIN">Round Robin</option>}
                 </Select>
               </label>
               {stageFormat === 'SWISS' && (
@@ -310,7 +337,9 @@ export function OrganizerConsole({
           <CardTitle>Stages &amp; Matches</CardTitle>
           {stages.map((stage) => {
             const stageComplete = stage.status === 'COMPLETED'
-            const allDone = stage.matches.length > 0 && stage.matches.every((m) => m.status === 'COMPLETED')
+            const allDone = teamMode
+              ? stage.teamMatches.length > 0 && stage.teamMatches.every((m) => m.status === 'COMPLETED')
+              : stage.matches.length > 0 && stage.matches.every((m) => m.status === 'COMPLETED')
             const minPlayers = stage.format === 'DOUBLE_ELIMINATION' ? 3 : 2
             const swissDone = stage.swissRounds !== null && stage.swissRoundsDone >= stage.swissRounds
             return (
@@ -331,7 +360,7 @@ export function OrganizerConsole({
                   )}
                 </div>
 
-                {!stageComplete && stage.format !== 'SWISS' && stage.matches.length === 0 && (
+                {!stageComplete && stage.format !== 'SWISS' && stage.matches.length === 0 && !teamMode && (
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       disabled={busy || checkedIn.length < minPlayers}
@@ -343,6 +372,21 @@ export function OrganizerConsole({
                     </Button>
                     {checkedIn.length < minPlayers && (
                       <p className="text-xs text-current/50">Mindestens {minPlayers} eingecheckte Teilnehmer nötig.</p>
+                    )}
+                  </div>
+                )}
+
+                {/* RC15 #12 — team mode: the generate button reads checked-in team ENTRIES. */}
+                {!stageComplete && teamMode && stage.teamMatches.length === 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      disabled={busy || checkedInCount < minPlayers}
+                      onClick={() => call(() => fetch(`${base}/stages/${stage.id}/generate`, { method: 'POST' }))}
+                    >
+                      Bracket generieren
+                    </Button>
+                    {checkedInCount < minPlayers && (
+                      <p className="text-xs text-current/50">Mindestens {minPlayers} eingecheckte Teams nötig.</p>
                     )}
                   </div>
                 )}
@@ -399,7 +443,64 @@ export function OrganizerConsole({
                   </table>
                 )}
 
-                {bracketGenerated && !completed && (
+                {/* RC15 #12 — team mode: judges are assigned per SUB-GAME (the three singles
+                    matches of an encounter); the judge route works on those match ids unchanged. */}
+                {bracketGenerated && !completed && teamMode && (
+                  <section aria-labelledby="judge-assign-heading" className="space-y-2">
+                    <h4 id="judge-assign-heading" className="text-sm font-semibold">
+                      Judge zuweisen — {stage.name} ({stage.teamMatches.reduce((n, tm) => n + tm.games.filter((g) => g.status !== 'COMPLETED').length, 0)} offene Spiele)
+                    </h4>
+                    <ul className="space-y-2">
+                      {stage.teamMatches.map((tm) => (
+                        <li key={tm.id} className="rounded-md border border-current/10 px-3 py-2 text-sm">
+                          <p>
+                            <span className="text-current/50">{tm.label}: </span>
+                            <span className="font-medium">
+                              {tm.team1 ?? 'Offen'} vs. {tm.team2 ?? 'Offen'}
+                            </span>
+                            <span className="ml-2 text-current/50">
+                              {tm.winsTeam1}:{tm.winsTeam2}
+                            </span>
+                          </p>
+                          <ul className="mt-1 space-y-1">
+                            {tm.games.map((g) => (
+                              <li key={g.id} className="flex flex-wrap items-center gap-2">
+                                <span className="min-w-40 flex-1 text-current/70">
+                                  {g.player1 ?? 'Offen'} vs. {g.player2 ?? 'Offen'}
+                                </span>
+                                <Select
+                                  aria-label={`Judge für ${g.player1 ?? 'Offen'} vs. ${g.player2 ?? 'Offen'}`}
+                                  defaultValue={g.judgeId ?? ''}
+                                  disabled={busy || g.status === 'COMPLETED'}
+                                  className="w-44"
+                                  onChange={(e) => {
+                                    const judgeId = e.target.value || null
+                                    void call(() =>
+                                      fetch(`${base}/matches/${g.id}/judge`, {
+                                        method: 'PATCH',
+                                        headers: { 'content-type': 'application/json' },
+                                        body: JSON.stringify({ judgeId }),
+                                      })
+                                    )
+                                  }}
+                                >
+                                  <option value="">— kein Judge —</option>
+                                  {judges.map((j) => (
+                                    <option key={j.id} value={j.id}>
+                                      {j.name}
+                                    </option>
+                                  ))}
+                                </Select>
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {bracketGenerated && !completed && !teamMode && (
                   <section aria-labelledby="judge-assign-heading" className="space-y-2">
                     <h4 id="judge-assign-heading" className="text-sm font-semibold">
                       Judge zuweisen — {stage.name} ({stage.matches.filter((m) => m.status !== 'COMPLETED').length} offene Matches)
@@ -445,7 +546,9 @@ export function OrganizerConsole({
         </Card>
       )}
 
-      {entryFeeCent > 0 && (
+      {/* RC15 #12 — team entries have no paidAt tracking (documented v1 exclusion), so the
+          payment section is solo-only. */}
+      {entryFeeCent > 0 && !teamMode && (
         <Card className="space-y-4 p-4">
           <section aria-labelledby="payment-heading" className="space-y-2">
             <h3 id="payment-heading" className="text-sm font-semibold">
@@ -557,6 +660,9 @@ export function OrganizerConsole({
       {bracketGenerated && !completed && (
         <Card className="space-y-4 p-4">
           <CardTitle>Turnier abschließen</CardTitle>
+          {/* RC15 #12 — no-show handling is a solo-mode feature (team-mode no-shows are a
+              documented v1 exclusion); the completion button below applies to both modes. */}
+          {!teamMode && (
           <section aria-labelledby="noshow-heading" className="space-y-2">
             <h3 id="noshow-heading" className="text-sm font-semibold">
               Nicht erschienen (No-Show)
@@ -587,6 +693,7 @@ export function OrganizerConsole({
               ))}
             </ul>
           </section>
+          )}
 
           <Button
             variant="secondary"

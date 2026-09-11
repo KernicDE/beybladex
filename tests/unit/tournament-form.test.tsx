@@ -227,6 +227,7 @@ describe('TournamentForm — background geocoding UX (RC11 #100)', () => {
           isRecurring: false,
           recurringDays: '',
           rankedEligible: true,
+          teamMode: false,
           rulesetId: 'r1',
           clubId: '',
         }}

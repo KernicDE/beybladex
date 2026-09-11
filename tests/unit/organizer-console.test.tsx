@@ -11,6 +11,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 const BASE = {
   tournamentId: 't-1',
   participants: [],
+  teamMode: false,
+  teamEntries: [],
   stages: [] as ConsoleStage[],
   judges: [],
   completedAt: null,
@@ -41,6 +43,7 @@ const STAGE: ConsoleStage = {
       judgeId: null,
     },
   ],
+  teamMatches: [],
   standings: [],
 }
 

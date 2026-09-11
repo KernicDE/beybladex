@@ -39,15 +39,23 @@ export default async function TournamentBracketPage({
   // Defaults to Verwaltung (unchanged prior behavior) when the viewer IS the organizer.
   const managementView = isOrganizer && view !== 'teilnehmer'
 
-  const players = tournament.participants.map((p) => ({
-    id: p.userId,
-    name: p.user.displayName ?? p.user.username,
-  }))
+  const players = [
+    ...tournament.participants.map((p) => ({
+      id: p.userId,
+      name: p.user.displayName ?? p.user.username,
+    })),
+    // RC15 #12 — team mode: sub-game players resolve from the team-entry slots (participants
+    // stays empty for a team tournament).
+    ...tournament.teamEntries.flatMap((e) =>
+      e.slots.map((s) => ({ id: s.userId, name: s.user.displayName ?? s.user.username }))
+    ),
+  ]
   const nameOf = (userId: string | null) =>
     userId === null ? null : (players.find((p) => p.id === userId)?.name ?? null)
 
   // "Mein nächstes Match": the viewer's first open match across all stages (player slot may only
-  // be resolvable for round 1 — later rounds fill as predecessors complete).
+  // be resolvable for round 1 — later rounds fill as predecessors complete). In team mode that
+  // match is a sub-game; its parent encounter supplies round label and team-vs-team context.
   const myMatch = me
     ? tournament.stages.flatMap((s) => s.matches).find(
         (m) => m.status !== 'COMPLETED' && (m.player1Id === me || m.player2Id === me)
@@ -56,11 +64,18 @@ export default async function TournamentBracketPage({
   const myStage = myMatch ? tournament.stages.find((s) => s.matches.some((m) => m.id === myMatch.id)) : undefined
   const myOpponentId =
     myMatch && me ? (myMatch.player1Id === me ? myMatch.player2Id : myMatch.player1Id) : null
+  const myEncounter =
+    myMatch && myStage && tournament.teamMode
+      ? myStage.teamMatches.find((tm) => tm.games.some((g) => g.id === myMatch.id))
+      : undefined
+  const myGameIndex = myEncounter ? myEncounter.games.findIndex((g) => g.id === myMatch!.id) : -1
   const myRoundLabel =
     myMatch && myStage
-      ? myStage.format === 'SWISS' || myStage.format === 'ROUND_ROBIN'
-        ? `Runde ${myMatch.swissRound ?? '?'}`
-        : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage.matches))
+      ? tournament.teamMode && myEncounter
+        ? eliminationRoundLabel(myEncounter.round, stageWinnersRounds(myStage.teamMatches))
+        : myStage.format === 'SWISS' || myStage.format === 'ROUND_ROBIN'
+          ? `Runde ${myMatch.swissRound ?? '?'}`
+          : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage.matches))
       : null
 
   // Judge pool for the assignment dropdown: the JUDGE role list is small by nature (a club/
@@ -115,8 +130,21 @@ export default async function TournamentBracketPage({
         <Card className="space-y-1 border-neon-green/40 p-4">
           <CardTitle className="text-base">Mein nächstes Match</CardTitle>
           <p className="text-sm">
-            <span className="text-current/50">{myRoundLabel}: </span>
-            du vs. {myOpponentId === null ? 'steht noch nicht fest' : (nameOf(myOpponentId) ?? 'Unbekannt')}
+            {tournament.teamMode && myEncounter ? (
+              <>
+                <span className="text-current/50">{myRoundLabel}: </span>
+                Spiel {myGameIndex + 1} — {myEncounter.team1Entry?.team.name ?? 'Offen'} vs.{' '}
+                {myEncounter.team2Entry?.team.name ?? 'Offen'} ({myEncounter.winsTeam1}:{myEncounter.winsTeam2})
+                {myOpponentId !== null && (
+                  <> · du vs. {nameOf(myOpponentId) ?? 'Unbekannt'}</>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="text-current/50">{myRoundLabel}: </span>
+                du vs. {myOpponentId === null ? 'steht noch nicht fest' : (nameOf(myOpponentId) ?? 'Unbekannt')}
+              </>
+            )}
           </p>
           {myMatch.judgeId === me && (
             <Link
@@ -140,6 +168,26 @@ export default async function TournamentBracketPage({
               {stage.order}. {stage.name}
               {stage.status === 'COMPLETED' && <Badge tone="green" className="ml-2">Abgeschlossen</Badge>}
             </h2>
+            {/* RC15 #12 — team mode renders the encounter bracket (TeamMatch rows, entry ids as
+                "players"); solo mode renders the match bracket as before. */}
+            {tournament.teamMode ? (
+              <JudgeBracketView
+                matches={stage.teamMatches.map((m) => ({
+                  id: m.id,
+                  round: m.round,
+                  bracketOrder: m.bracketOrder,
+                  swissRound: null,
+                  player1Id: m.team1Entry?.id ?? null,
+                  player2Id: m.team2Entry?.id ?? null,
+                  winnerId: m.winnerEntryId,
+                  status: m.status,
+                }))}
+                players={tournament.teamEntries.map((e) => ({ id: e.id, name: e.team.name }))}
+                format={stage.format}
+                wbRounds={stageWinnersRounds(stage.teamMatches)}
+                standings={[]}
+              />
+            ) : (
             <JudgeBracketView
               matches={stage.matches.map((m) => ({
                 id: m.id,
@@ -162,6 +210,7 @@ export default async function TournamentBracketPage({
                 buchholz: s.buchholz,
               }))}
             />
+            )}
           </section>
         ))
       )}
@@ -169,6 +218,14 @@ export default async function TournamentBracketPage({
       {isOrganizer && managementView && (
         <OrganizerConsole
           tournamentId={tournament.id}
+          teamMode={tournament.teamMode}
+          teamEntries={tournament.teamEntries.map((e) => ({
+            entryId: e.id,
+            teamId: e.team.id,
+            teamName: e.team.name,
+            checkedIn: e.checkedIn,
+            withdrawn: e.withdrawn,
+          }))}
           participants={tournament.participants.map((p) => ({
             userId: p.userId,
             name: p.user.displayName ?? p.user.username,
@@ -179,6 +236,7 @@ export default async function TournamentBracketPage({
           }))}
           stages={tournament.stages.map((stage) => {
             const wbRounds = stageWinnersRounds(stage.matches)
+            const teamWbRounds = stageWinnersRounds(stage.teamMatches)
             return {
               id: stage.id,
               order: stage.order,
@@ -200,6 +258,23 @@ export default async function TournamentBracketPage({
                 player2: nameOf(m.player2Id),
                 status: m.status,
                 judgeId: m.judgeId,
+              })),
+              teamMatches: stage.teamMatches.map((tm) => ({
+                id: tm.id,
+                round: tm.round,
+                label: eliminationRoundLabel(tm.round, teamWbRounds),
+                team1: tm.team1Entry?.team.name ?? null,
+                team2: tm.team2Entry?.team.name ?? null,
+                status: tm.status,
+                winsTeam1: tm.winsTeam1,
+                winsTeam2: tm.winsTeam2,
+                games: tm.games.map((g) => ({
+                  id: g.id,
+                  player1: nameOf(g.player1Id),
+                  player2: nameOf(g.player2Id),
+                  status: g.status,
+                  judgeId: g.judgeId,
+                })),
               })),
               standings: stage.standings.map((s) => ({
                 userId: s.userId,
