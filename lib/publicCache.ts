@@ -30,6 +30,9 @@
 //   noshow, and /api/matches/[id]/score (match status/winner feed the bracket preview).
 // - public:v1:club:<slug>, public:v1:club-events:<clubId> — clubs pages (TTL 120s).
 //   Tournament routes do not touch club state; TTL-bounded.
+// - public:v1:landing:upcoming-events     — app/page.tsx guest landing teaser (TTL 60s).
+//   TTL-bounded, not invalidated; empty results are not cached (produce returns null), so
+//   the first published event appears on the landing page immediately.
 import { redis } from '@/lib/redis'
 
 function encode(value: unknown): string {

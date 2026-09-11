@@ -5,11 +5,11 @@
 // participate in and the latest chat message across their ACTIVE club memberships, each with
 // a discovery-CTA fallback — issue #31's documented decision is DYNAMIC BLOCK over redirect,
 // since both datasets exist in the DB today.
-import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { BrandMark } from '@/components/brand/BrandMark'
+import { withPublicCache } from '@/lib/publicCache'
 import { LoggedInDashboard } from '@/components/home/LoggedInDashboard'
+import { GuestLanding } from '@/components/home/GuestLanding'
 
 export default async function Home() {
   const session = await auth()
@@ -68,34 +68,19 @@ export default async function Home() {
     )
   }
 
-  return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center gap-6 p-6 text-center">
-      <BrandMark size={56} />
-      <h1 className="text-4xl font-bold tracking-tight text-x-cyan-text dark:text-x-cyan">
-        BeybladeX.de
-      </h1>
-      <p className="text-lg font-medium">
-        Die Plattform für Beyblade X Turniere in der DACH-Region.
-      </p>
-      <p className="max-w-xl text-current/70">
-        Finde Events und Clubs in deiner Nähe, verwalte deine Sammlung und deine
-        Decks — und tritt gegen andere Blader an.
-        {/* TODO(Phase 3): upcoming DACH events teaser goes here, reusing the /events query. */}
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/register"
-          className="rounded-md bg-x-cyan px-6 py-3 font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
-        >
-          Jetzt registrieren
-        </Link>
-        <Link
-          href="/login"
-          className="rounded-md border border-current/30 px-6 py-3 font-medium transition-colors hover:bg-current/5"
-        >
-          Anmelden
-        </Link>
-      </div>
-    </main>
-  )
+  // #88 — the guest landing's "Kommende Events" teaser: the soonest upcoming public events,
+  // same public-core pattern as app/events (60s Redis TTL, degrade-to-query). Empty results
+  // stay uncached (produce returns null) so the very first published event appears at once;
+  // non-empty results may lag one TTL window, same tradeoff as the /events list.
+  const upcomingEvents = await withPublicCache('public:v1:landing:upcoming-events', 60, async () => {
+    const rows = await prisma.tournament.findMany({
+      where: { startDate: { gte: new Date() } },
+      orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+      take: 3,
+      select: { id: true, title: true, startDate: true, city: true, state: true, country: true },
+    })
+    return rows.length ? rows : null
+  })
+
+  return <GuestLanding upcomingEvents={upcomingEvents ?? []} />
 }
