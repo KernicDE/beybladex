@@ -15,8 +15,9 @@ import { EventListCard, type EventListCardProps } from '@/components/tournament/
 const BASE: EventListCardProps = {
   id: 'evt-1',
   title: 'Rhein-Main Burst Cup',
-  // 2026-10-03 is a Saturday; 14:00 local renders as "Samstag, 03.10.2026, 14:00 Uhr" in Berlin.
-  startDate: new Date('2026-10-03T14:00:00'),
+  // 2026-10-03 is a Saturday; 14:00 UTC renders as "Samstag, 03.10.2026, 16:00 Uhr" in
+  // Europe/Berlin (CEST) — the explicit Z keeps the expectation host-timezone independent.
+  startDate: new Date('2026-10-03T14:00:00Z'),
   city: 'Wiesbaden',
   state: 'Hessen',
   country: 'DE',
@@ -39,7 +40,7 @@ describe('EventListCard — line order and metadata separation (#80, #32)', () =
 
   it('line 1 is title-first, followed by the weekday (long) and TT.MM.JJJJ plus time', () => {
     render(<EventListCard {...BASE} />)
-    const line1 = screen.getByText(/Samstag, 03\.10\.2026, 14:00 Uhr/)
+    const line1 = screen.getByText(/Samstag, 03\.10\.2026, 16:00 Uhr/)
     expect(line1).toBeInTheDocument()
     // The old long form with abbreviated weekday + spelled-out month is gone.
     expect(screen.queryByText(/Sa\.,/)).not.toBeInTheDocument()
