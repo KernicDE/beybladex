@@ -52,12 +52,14 @@ describe('translateUserContent — the UGC contract', () => {
 })
 
 describe('translateWithDeepL', () => {
-  it('POSTs form-encoded to the free endpoint with the auth_key and uppercased target_lang', async () => {
+  it('POSTs form-encoded to the free endpoint with the auth header and uppercased target_lang', async () => {
     const fetchSpy = stubFetch(async (url, init) => {
       expect(url).toBe('https://api-free.deepl.com/v2/translate')
       expect(init.method).toBe('POST')
+      const headers = init.headers as Record<string, string>
+      expect(headers.Authorization).toBe('DeepL-Auth-Key test-key-123')
       const body = new URLSearchParams(init.body as string)
-      expect(body.get('auth_key')).toBe('test-key-123')
+      expect(body.get('auth_key')).toBeNull()
       expect(body.get('text')).toBe('Hallo Welt')
       expect(body.get('target_lang')).toBe('EN')
       return Response.json({
