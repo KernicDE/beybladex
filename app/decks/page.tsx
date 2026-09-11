@@ -7,6 +7,7 @@
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { getDictionary } from '@/lib/i18n/server'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -20,13 +21,16 @@ const PAGE_SIZE = 20
 
 export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
   const { cursor, neu } = await searchParams
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   const session = await auth()
   if (!session?.user?.id) {
     return (
       <GuestGate
-        title="Decks sind nur für Mitglieder"
-        description="Ein Deck besteht aus bis zu drei Builds, mit denen du an Turnieren teilnimmst. Melde dich an, um deine Decks zu erstellen und zu verwalten."
+        title={t.decks.gateTitle}
+        description={t.decks.gateDescription}
         callbackUrl="/decks"
+        labels={t.guestGate}
       />
     )
   }
@@ -54,10 +58,10 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Meine Decks</h1>
+        <h1 className="text-2xl font-semibold">{t.decks.heading}</h1>
         {decks.length > 0 && (
           <Link href="/decks?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-            Neues Deck
+            {t.decks.newDeck}
           </Link>
         )}
       </div>
@@ -70,11 +74,11 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
 
       {decks.length === 0 && neu !== '1' ? (
         <EmptyState
-          title="Noch keine Decks"
-          description="Ein Deck besteht aus bis zu drei Builds, die nicht dasselbe Teil teilen dürfen."
+          title={t.decks.emptyTitle}
+          description={t.decks.emptyDescription}
           action={
             <Link href="/decks?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-              Erstelle dein erstes Deck
+              {t.decks.createFirst}
             </Link>
           }
         />
@@ -86,7 +90,7 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
                 <Link href={`/decks/item/${deck.id}`} className="block space-y-2">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">{deck.title}</p>
-                    <Badge tone="neutral">{deck.builds.length}/3 Builds</Badge>
+                    <Badge tone="neutral">{t.decks.buildsBadge.replace('{count}', String(deck.builds.length))}</Badge>
                   </div>
                   <ul className="text-sm text-current/60">
                     {deck.builds.map((db) => (
@@ -104,7 +108,7 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
       )}
       {nextCursor && (
         <Link href={`/decks?cursor=${nextCursor}`} className="inline-block underline underline-offset-2">
-          Weitere Decks laden
+          {t.decks.loadMore}
         </Link>
       )}
     </main>

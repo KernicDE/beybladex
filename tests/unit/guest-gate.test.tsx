@@ -25,4 +25,20 @@ describe('GuestGate', () => {
 
     expect(screen.getByText(/automatisch zu dieser Seite zurückgeleitet/i)).toBeInTheDocument()
   })
+
+  // RC14-Nachzügler #130 — translated call sites pass their dictionary strings via `labels`.
+  it('renders injected labels when the caller passes them', () => {
+    render(
+      <GuestGate
+        title="Decks are members-only"
+        description="Sign in to manage your decks."
+        callbackUrl="/decks"
+        labels={{ signIn: 'Sign in', register: 'Register', footnote: 'Redirected back after sign-in.' }}
+      />,
+    )
+
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login?callbackUrl=%2Fdecks')
+    expect(screen.getByRole('link', { name: 'Register' })).toHaveAttribute('href', '/register')
+    expect(screen.getByText('Redirected back after sign-in.')).toBeInTheDocument()
+  })
 })

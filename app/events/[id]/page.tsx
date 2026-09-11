@@ -12,6 +12,8 @@ import { prisma } from '@/lib/db'
 import { withPublicCache, publicTournamentKey } from '@/lib/publicCache'
 import { formatEventTime } from '@/lib/formatDateTime'
 import { stageWinnersRounds } from '@/lib/bracket'
+import { getDictionary, getLocale } from '@/lib/i18n/server'
+import type { Locale } from '@/lib/i18n/locales'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -28,9 +30,9 @@ import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 // (invalidatePublicCache, hotfix #99), so organizer edits show up without waiting out the TTL.
 const PUBLIC_DETAIL_TTL = 60
 
-function formatFee(cent: number, currency: string): string {
-  if (cent === 0) return 'Eintritt frei'
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency }).format(cent / 100)
+function formatFee(cent: number, currency: string, locale: Locale, freeLabel: string): string {
+  if (cent === 0) return freeLabel
+  return new Intl.NumberFormat(locale === 'de' ? 'de-DE' : 'en-US', { style: 'currency', currency }).format(cent / 100)
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -39,6 +41,8 @@ function isSameDay(a: Date, b: Date): boolean {
 
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const [t, locale] = await Promise.all([getDictionary(), getLocale()])
   const [tournament, session] = await Promise.all([
     withPublicCache(publicTournamentKey(id), PUBLIC_DETAIL_TTL, () =>
       prisma.tournament.findUnique({
@@ -179,7 +183,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
       )}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{tournament.title}</h1>
-        {tournament.isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}
+        {tournament.isRecurring && <Badge tone="cyan">{t.events.detail.recurring}</Badge>}
       </div>
 
       <MapView
@@ -191,23 +195,23 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
 
       <Card className="space-y-2 p-4 text-sm">
         <p>
-          <span className="font-medium">Zeit: </span>
+          <span className="font-medium">{t.events.detail.time}: </span>
           {/* #81 — ein einziges Datum bei ein-tägigen Turnieren ("Freitag, 11.09.2026 von
               10:30 Uhr bis 17:30 Uhr"); mehrtägig bleiben beide Daten sichtbar. Die
               Tag-Gleichheit prüft formatEventTime in Europe/Berlin, nicht in der Host-Zone. */}
           {formatEventTime(tournament.startDate, tournament.endDate)}
         </p>
         <p>
-          <span className="font-medium">Ort: </span>
+          <span className="font-medium">{t.events.detail.location}: </span>
           {tournament.locationName}, {tournament.street ? `${tournament.street}, ` : ''}
           {tournament.postalCode} {tournament.city}, {tournament.state} ({tournament.country})
         </p>
         <p>
-          <span className="font-medium">Eintritt: </span>
-          {formatFee(tournament.entryFeeCent, tournament.currency)}
+          <span className="font-medium">{t.events.detail.entry}: </span>
+          {formatFee(tournament.entryFeeCent, tournament.currency, locale, t.events.detail.freeEntry)}
         </p>
         <p>
-          <span className="font-medium">Regelwerk: </span>
+          <span className="font-medium">{t.events.detail.ruleset}: </span>
           <Link href={`/rules/${tournament.ruleset.slug}`} className="text-x-cyan-text hover:underline">
             {tournament.ruleset.title}
           </Link>
@@ -222,7 +226,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           href="/login"
           className="inline-block rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
         >
-          Anmelden, um teilzunehmen
+          {t.events.detail.joinLogin}
         </Link>
       ) : tournament.teamMode ? (
         <TeamJoinPanel
@@ -232,6 +236,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           myEntry={myEntry}
           checkInOpen={isSameDay(now, tournament.startDate)}
           canWithdraw={now <= tournament.startDate}
+          labels={t.events.teamJoin}
         />
       ) : (
         <JoinPanel
@@ -240,22 +245,23 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           checkedIn={myParticipation?.checkedIn ?? false}
           checkInOpen={isSameDay(now, tournament.startDate)}
           canWithdraw={now <= tournament.startDate}
+          labels={t.events.join}
         />
       )}
 
       <p className="text-sm">
         <Link href={`/tournaments/${tournament.id}`} className="text-x-cyan-text hover:underline">
-          Turnierbaum & Judge-Bereich →
+          {t.events.detail.bracketLink}
         </Link>
       </p>
 
       {tournament.teamMode ? (
         <section aria-labelledby="teams-heading" className="space-y-3">
           <h2 id="teams-heading" className="text-lg font-semibold">
-            Teams ({tournament.teamEntries.length})
+            {t.events.detail.teams} ({tournament.teamEntries.length})
           </h2>
           {tournament.teamEntries.length === 0 ? (
-            <p className="text-sm text-current/60">Noch keine Teams angemeldet — gründe eines und melde es an!</p>
+            <p className="text-sm text-current/60">{t.events.detail.noTeams}</p>
           ) : (
             <ul className="space-y-2">
               {tournament.teamEntries.map((e) => (
@@ -273,9 +279,9 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                     </span>
                     {isOrganizer &&
                       (e.checkedIn ? (
-                        <Badge tone="cyan">Eingecheckt</Badge>
+                        <Badge tone="cyan">{t.events.detail.checkedIn}</Badge>
                       ) : (
-                        <Badge tone="neutral">Nicht eingecheckt</Badge>
+                        <Badge tone="neutral">{t.events.detail.notCheckedIn}</Badge>
                       ))}
                   </span>
                   <span className="mt-1 flex flex-wrap gap-x-3 text-current/70">
@@ -293,10 +299,10 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
       ) : (
       <section aria-labelledby="participants-heading" className="space-y-3">
         <h2 id="participants-heading" className="text-lg font-semibold">
-          Teilnehmer ({tournament.participants.length})
+          {t.events.detail.participants} ({tournament.participants.length})
         </h2>
         {tournament.participants.length === 0 ? (
-          <p className="text-sm text-current/60">Noch keine Anmeldungen — sei die erste Person!</p>
+          <p className="text-sm text-current/60">{t.events.detail.noParticipants}</p>
         ) : (
           <ul className="space-y-2">
             {tournament.participants.map((p) => {
@@ -316,14 +322,14 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                         this link is always shown; a private-decks user just 404s through it,
                         same as any other resolveVisibleFields-gated link on the site. */}
                     <Link href={`/decks/${p.user.username}`} className="text-x-cyan-text hover:underline">
-                      Decks
+                      {t.events.detail.decks}
                     </Link>
                   </span>
                   {isOrganizer &&
                     (p.checkedIn ? (
-                      <Badge tone="cyan">Eingecheckt</Badge>
+                      <Badge tone="cyan">{t.events.detail.checkedIn}</Badge>
                     ) : (
-                      <Badge tone="neutral">Nicht eingecheckt</Badge>
+                      <Badge tone="neutral">{t.events.detail.notCheckedIn}</Badge>
                     ))}
                 </li>
               )
@@ -339,7 +345,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           : tournament.stages[0].matches.length > 0) && (
         <section aria-labelledby="bracket-preview-heading" className="space-y-3">
           <h2 id="bracket-preview-heading" className="text-lg font-semibold">
-            Stand — {tournament.stages[0].name}
+            {t.events.detail.standings.replace('{stage}', tournament.stages[0].name)}
           </h2>
           {tournament.teamMode ? (
             <JudgeBracketView
@@ -384,7 +390,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           )}
           <p className="text-sm">
             <Link href={`/tournaments/${tournament.id}`} className="text-x-cyan-text hover:underline">
-              Vollständiger Turnierbaum & Judge-Bereich →
+              {t.events.detail.fullBracketLink}
             </Link>
           </p>
         </section>
@@ -393,7 +399,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
       {tournament.description && (
         <section aria-labelledby="description-heading" className="space-y-2">
           <h2 id="description-heading" className="text-lg font-semibold">
-            Beschreibung
+            {t.events.detail.description}
           </h2>
           <MarkdownContent className="text-sm text-current/80">{tournament.description}</MarkdownContent>
         </section>

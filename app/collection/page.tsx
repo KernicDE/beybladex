@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getRateTable, type FxCurrency } from '@/lib/currency'
+import { getDictionary } from '@/lib/i18n/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
@@ -23,13 +24,16 @@ const PAGE_SIZE = 20
 
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
   const { cursor, neu } = await searchParams
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   const session = await auth()
   if (!session?.user?.id) {
     return (
       <GuestGate
-        title="Die Sammlung ist nur für Mitglieder"
-        description="Erfasse, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum. Melde dich an, um deine Sammlung zu pflegen."
+        title={t.collection.gateTitle}
+        description={t.collection.gateDescription}
         callbackUrl="/collection"
+        labels={t.guestGate}
       />
     )
   }
@@ -59,10 +63,10 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Meine Sammlung</h1>
+        <h1 className="text-2xl font-semibold">{t.collection.heading}</h1>
         {items.length > 0 && (
           <Link href="/collection?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-            Teil hinzufügen
+            {t.collection.addPart}
           </Link>
         )}
       </div>
@@ -70,11 +74,11 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       {neu === '1' && (
         <div className="grid gap-4 sm:grid-cols-2">
           <Card>
-            <h3 className="mb-3 text-sm font-semibold">Einzelnes Teil hinzufügen</h3>
+            <h3 className="mb-3 text-sm font-semibold">{t.collection.addSingle}</h3>
             <CollectionItemForm />
           </Card>
           <Card>
-            <h3 className="mb-3 text-sm font-semibold">Set als gekauft markieren</h3>
+            <h3 className="mb-3 text-sm font-semibold">{t.collection.markSet}</h3>
             <MarkSetPurchasedForm />
           </Card>
         </div>
@@ -82,11 +86,11 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
       {items.length === 0 && neu !== '1' ? (
         <EmptyState
-          title="Noch keine Teile in deiner Sammlung"
-          description="Trage ein, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum."
+          title={t.collection.emptyTitle}
+          description={t.collection.emptyDescription}
           action={
             <Link href="/collection?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-              Füge dein erstes Teil hinzu
+              {t.collection.addFirst}
             </Link>
           }
         />
@@ -101,7 +105,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       )}
       {nextCursor && (
         <Link href={`/collection?cursor=${nextCursor}`} className="inline-block underline underline-offset-2">
-          Weitere Teile laden
+          {t.collection.loadMore}
         </Link>
       )}
     </main>

@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { getDictionary } from '@/lib/i18n/server'
 import { ClubJoinPolicyBadge } from '@/components/clubs/ClubJoinPolicyBadge'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -26,6 +27,8 @@ export default async function ClubsPage({
   searchParams: Promise<{ q?: string; cursor?: string }>
 }) {
   const { q, cursor } = await searchParams
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   const session = await auth()
   const query = (q ?? '').trim()
 
@@ -53,20 +56,20 @@ export default async function ClubsPage({
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Clubs</h1>
+        <h1 className="text-2xl font-semibold">{t.clubs.heading}</h1>
         {session?.user ? (
           <Link
             href="/clubs/new"
             className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
           >
-            Neuer Club
+            {t.clubs.newClub}
           </Link>
         ) : (
           <Link
             href="/login"
             className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
           >
-            Anmelden, um zu gründen
+            {t.clubs.loginToFound}
           </Link>
         )}
       </div>
@@ -75,11 +78,11 @@ export default async function ClubsPage({
 
       {page.length === 0 ? (
         <EmptyState
-          title={query ? 'Keine Clubs gefunden' : 'Noch keine Clubs'}
+          title={query ? t.clubs.emptySearchTitle : t.clubs.emptyTitle}
           description={
             query
-              ? 'Für diese Suche gibt es aktuell keinen Club. Passe den Suchbegriff an.'
-              : 'Sobald jemand einen Club gründet, erscheint er hier.'
+              ? t.clubs.emptySearchDescription
+              : t.clubs.emptyDescription
           }
           action={
             session?.user ? (
@@ -87,7 +90,7 @@ export default async function ClubsPage({
                 href="/clubs/new"
                 className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
               >
-                Neuer Club
+                {t.clubs.newClub}
               </Link>
             ) : undefined
           }
@@ -101,7 +104,11 @@ export default async function ClubsPage({
                   <Link href={`/clubs/${club.slug}`} className="font-semibold hover:underline">
                     {club.name}
                   </Link>
-                  <Badge tone="neutral">{club._count.members} {club._count.members === 1 ? 'Mitglied' : 'Mitglieder'}</Badge>
+                  <Badge tone="neutral">
+                    {club._count.members === 1
+                      ? t.clubs.memberSingular
+                      : t.clubs.memberPlural.replace('{count}', String(club._count.members))}
+                  </Badge>
                   <ClubJoinPolicyBadge policy={club.joinPolicy} />
                 </div>
                 {club.description && (
@@ -119,7 +126,7 @@ export default async function ClubsPage({
             href={`/clubs?${query ? `q=${encodeURIComponent(query)}&` : ''}cursor=${nextCursor}`}
             className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
           >
-            Weitere laden
+            {t.clubs.loadMore}
           </Link>
         </div>
       )}

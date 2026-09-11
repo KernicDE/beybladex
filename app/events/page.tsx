@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
 import { geocodePostalCode, isWithinRadiusKm, radiusBoundingBox, type DachCountry } from '@/lib/geo'
+import { getDictionary } from '@/lib/i18n/server'
 import { MapView } from '@/components/map/MapView'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -41,6 +42,8 @@ export default async function EventsPage({
   searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string; from?: string; to?: string; plz?: string; radiusKm?: string }>
 }) {
   const { country, state, q, cursor, from, to, plz, radiusKm } = await searchParams
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   // Malformed/unparseable input is ignored (no bound on that side) rather than erroring the
   // whole list — a mistyped date must not 500 the page.
   const fromDate = from && DATE_RE.test(from) ? new Date(`${from}T00:00:00`) : null
@@ -74,7 +77,7 @@ export default async function EventsPage({
     if (point) {
       radiusCenter = { ...point, radiusKm: validRadius ? radiusNum! : DEFAULT_RADIUS_KM }
     } else {
-      plzNotice = `Die PLZ „${plzQuery}“ konnte nicht gefunden werden — die Liste ist ungefiltert.`
+      plzNotice = t.events.plzNotFound.replace('{plz}', plzQuery)
     }
   }
 
@@ -148,13 +151,13 @@ export default async function EventsPage({
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Turniere &amp; Events</h1>
+        <h1 className="text-2xl font-semibold">{t.events.heading}</h1>
         {canCreate && (
           <Link
             href="/events/new"
             className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
           >
-            Turnier erstellen
+            {t.events.create}
           </Link>
         )}
       </div>
@@ -186,12 +189,13 @@ export default async function EventsPage({
           initialTo={to ?? ''}
           initialPlz={plzQuery}
           initialRadiusKm={radiusCenter ? String(radiusCenter.radiusKm) : ''}
+          labels={t.filterBar}
         />
         <button
           type="submit"
           className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
         >
-          Filtern
+          {t.common.filter}
         </button>
         <div className="sm:col-span-5 sm:flex sm:justify-end">
           <SearchInput action="/events" className="w-full sm:w-64" />
@@ -206,13 +210,13 @@ export default async function EventsPage({
 
       {page.length === 0 ? (
         <EmptyState
-          title="Keine Turniere gefunden"
+          title={t.events.empty.title}
           description={
             radiusCenter
-              ? 'Im gewählten Umkreis gibt es aktuell keine Turniere. Vergrößere den Radius oder ändere die PLZ.'
+              ? t.events.empty.radius
               : query || country || state
-                ? 'Für diese Filter gibt es aktuell keine Turniere. Passe die Suche an.'
-                : 'Sobald ein Turnier erstellt wird, erscheint es hier und auf der Karte.'
+                ? t.events.empty.filtered
+                : t.events.empty.upcoming
           }
           action={
             canCreate ? (
@@ -220,7 +224,7 @@ export default async function EventsPage({
                 href="/events/new"
                 className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
               >
-                Turnier erstellen
+                {t.events.create}
               </Link>
             ) : undefined
           }
@@ -255,7 +259,7 @@ export default async function EventsPage({
             href={`/events?${filterQuery ? `${filterQuery}&` : ''}cursor=${nextCursor}`}
             className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
           >
-            Weitere laden
+            {t.common.loadMore}
           </Link>
         </div>
       )}

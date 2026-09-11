@@ -12,6 +12,7 @@
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { getDictionary } from '@/lib/i18n/server'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -24,6 +25,8 @@ const ACTION_CLS = 'rounded-md px-4 py-2 text-sm font-medium transition-colors'
 
 export default async function RanglistePage({ searchParams }: PageProps<'/rangliste'>) {
   const { season: seasonParam } = await searchParams
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   const session = await auth()
 
   // Archive view (?season=id) wins; otherwise the ACTIVE season is the default.
@@ -40,13 +43,16 @@ export default async function RanglistePage({ searchParams }: PageProps<'/rangli
       orderBy: { endsAt: 'desc' },
       select: { id: true, name: true },
     })
-    const actions = ranglisteEmptyActions({ lastSeason, loggedIn: Boolean(session?.user?.id) })
+    const actions = ranglisteEmptyActions(
+      { lastSeason, loggedIn: Boolean(session?.user?.id) },
+      { lastSeason: t.leaderboard.lastSeason, notifyInbox: t.leaderboard.notifyInbox, notifyLogin: t.leaderboard.notifyLogin },
+    )
     return (
       <main className="mx-auto w-full max-w-2xl flex-1 p-4 sm:p-6">
-        <h1 className="mb-4 text-2xl font-semibold">Rangliste</h1>
+        <h1 className="mb-4 text-2xl font-semibold">{t.leaderboard.heading}</h1>
         <EmptyState
-          title="Noch keine Season aktiv"
-          description="Sobald eine Season gestartet wurde, erscheint hier die Rangliste."
+          title={t.leaderboard.noSeasonTitle}
+          description={t.leaderboard.noSeasonDescription}
           action={
             <div className="flex flex-wrap justify-center gap-3">
               {actions.map((cta, i) => (
@@ -79,23 +85,23 @@ export default async function RanglistePage({ searchParams }: PageProps<'/rangli
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold">Rangliste</h1>
+        <h1 className="text-2xl font-semibold">{t.leaderboard.heading}</h1>
         <Badge tone="cyan">{season.name}</Badge>
-        {season.status === 'COMPLETED' && <Badge tone="neutral">Abgeschlossen</Badge>}
+        {season.status === 'COMPLETED' && <Badge tone="neutral">{t.leaderboard.completed}</Badge>}
       </div>
 
       {ratings.length === 0 ? (
         <EmptyState
-          title="Noch keine gewerteten Spieler:innen"
-          description={`Ein Rang erscheint erst ab ${MIN_RATED_GAMES_FOR_LADDER} gewerteten Matches in dieser Season.`}
+          title={t.leaderboard.noPlayersTitle}
+          description={t.leaderboard.noPlayersDescription.replace('{min}', String(MIN_RATED_GAMES_FOR_LADDER))}
         />
       ) : (
         <Card className="divide-y p-0">
           <div className="grid grid-cols-[3rem_1fr_5rem_5rem] gap-2 px-4 py-2 text-xs font-medium text-current/60">
             <span>#</span>
-            <span>Spieler</span>
-            <span className="text-right">Elo</span>
-            <span className="text-right">Matches</span>
+            <span>{t.leaderboard.colPlayer}</span>
+            <span className="text-right">{t.leaderboard.colElo}</span>
+            <span className="text-right">{t.leaderboard.colMatches}</span>
           </div>
           {ratings.map((r, i) => (
             <Link
