@@ -61,6 +61,29 @@ describe('Select', () => {
     expect(screen.getByRole('combobox', { name: 'Land' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Österreich' })).toBeInTheDocument()
   })
+
+  // RC11 #86 — the native select carries browser-dependent UA metrics and rendered taller
+  // than the shared Input despite identical padding. Both now pin an explicit height and the
+  // UA arrow is replaced by an inline chevron (appearance-none).
+  it('shares the explicit height with Input and normalizes appearance', () => {
+    render(
+      <>
+        <Input aria-label="Feld" />
+        <Select aria-label="Land">
+          <option value="de">Deutschland</option>
+        </Select>
+      </>,
+    )
+    const input = screen.getByRole('textbox', { name: 'Feld' })
+    const select = screen.getByRole('combobox', { name: 'Land' })
+    expect(input.className).toContain('h-10')
+    expect(select.className).toContain('h-10')
+    expect(select.className).toContain('appearance-none')
+    // The select's own chevron indicator sits inside the relative wrapper.
+    const wrapper = select.parentElement!
+    expect(wrapper.className).toContain('relative')
+    expect(wrapper.querySelector('svg')).not.toBeNull()
+  })
 })
 
 describe('Textarea', () => {

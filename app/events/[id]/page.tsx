@@ -10,7 +10,7 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache, publicTournamentKey } from '@/lib/publicCache'
-import { formatDateTime } from '@/lib/formatDateTime'
+import { formatEventTime } from '@/lib/formatDateTime'
 import { stageWinnersRounds } from '@/lib/bracket'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
@@ -139,8 +139,10 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
       <Card className="space-y-2 p-4 text-sm">
         <p>
           <span className="font-medium">Zeit: </span>
-          {formatDateTime(tournament.startDate)}
-          {tournament.endDate && ` – ${formatDateTime(tournament.endDate)}`}
+          {/* #81 — ein einziges Datum bei ein-tägigen Turnieren ("Freitag, 11.09.2026 von
+              10:30 Uhr bis 17:30 Uhr"); mehrtägig bleiben beide Daten sichtbar. Die
+              Tag-Gleichheit prüft formatEventTime in Europe/Berlin, nicht in der Host-Zone. */}
+          {formatEventTime(tournament.startDate, tournament.endDate)}
         </p>
         <p>
           <span className="font-medium">Ort: </span>

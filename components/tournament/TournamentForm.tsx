@@ -4,6 +4,9 @@
 // session user's ADMINISTERED clubs only (owner/isAdmin memberships) — the API independently
 // verifies ClubMember.isAdmin, so the dropdown is a convenience, not the authorization.
 // Posts /api/tournaments and redirects to /events/<id>.
+// RC11 #100: address geocoding runs invisibly in the background (debounced) while the
+// address is typed; the Lat/Lng inputs live behind an "Erweitert" disclosure and submit is
+// blocked with actionable copy when no coordinates could be resolved.
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -152,7 +155,14 @@ export function TournamentForm({
   //   and always (re)places the pin, resetting this flag.
   // - `lastAutoState` — the region name last written by autofill, so a later geocode may
   //   refresh it but never clobber a hand-edited one.
+  // - RC11 #100 — the coordinates stay INVISIBLE: geocoding runs in the background while
+  //   the address is typed and only surfaces as a status line (resolving / resolved /
+  //   unresolvable). The raw Lat/Lng inputs live behind an "Erweitert" disclosure for the
+  //   rare case of a mis-placed pin; edit mode starts with them expanded so existing
+  //   coordinates stay inspectable.
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([])
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'resolving' | 'resolved' | 'unresolved'>('idle')
+  const [showAdvanced, setShowAdvanced] = useState(() => Boolean(initialValues?.latitude || initialValues?.longitude))
   const currencyTouched = useRef(false)
   const coordsTouched = useRef(false)
   const lastAutoState = useRef<string | null>(null)
@@ -186,6 +196,7 @@ export function TournamentForm({
 
   function applySuggestion(s: AddressSuggestion) {
     setSuggestions([])
+    setGeoStatus('resolved')
     lastAutoState.current = s.state
     setValues((v) => ({
       ...v,
@@ -237,19 +248,29 @@ export function TournamentForm({
 
   // Full-address geocoding (the Phase 3 TODO): once street+postalCode+city+country are
   // filled — by autocomplete or by hand — resolve coordinates and the canonical region.
-  // Never overwrites hand-edited coordinates or a hand-edited region name.
+  // Never overwrites hand-edited coordinates or a hand-edited region name. RC11 #100: the
+  // result stays in form state only (no visible Lat/Lng fields) — the organizer sees just
+  // the status line, including the negative case ("address unresolvable"), which the submit
+  // guard below turns into a hard stop instead of silently pinning the event at 0,0.
   useEffect(() => {
     const { street, postalCode, city, country } = values
     if (!street.trim() || !postalCode.trim() || !city.trim() || !country) return
     let cancelled = false
     const timer = setTimeout(async () => {
+      if (!cancelled) setGeoStatus('resolving')
       try {
         const params = new URLSearchParams({ street, postalCode, city, country })
         const res = await fetch(`/api/geo/geocode?${params}`)
-        if (!res.ok || cancelled) return
+        if (!res.ok || cancelled) {
+          if (!cancelled) setGeoStatus('unresolved')
+          return
+        }
         const body = (await res.json()) as { suggestion?: AddressSuggestion }
         const suggestion = body.suggestion
-        if (!suggestion || cancelled) return
+        if (!suggestion || cancelled) {
+          if (!cancelled) setGeoStatus('unresolved')
+          return
+        }
         // Capture before setValues: the updater runs during re-render, AFTER the mutation
         // below — reading the ref inside the updater would compare against the NEW value.
         const prevAutoState = lastAutoState.current
@@ -258,9 +279,11 @@ export function TournamentForm({
           ...(coordsTouched.current ? {} : { latitude: String(suggestion.lat), longitude: String(suggestion.lng) }),
           ...(suggestion.state && (v.state === '' || v.state === prevAutoState) ? { state: suggestion.state } : {}),
         }))
+        if (!cancelled) setGeoStatus('resolved')
         if (suggestion.state) lastAutoState.current = suggestion.state
       } catch {
         // geocoding is a convenience — the form keeps working with manual coordinates
+        if (!cancelled) setGeoStatus('unresolved')
       }
     }, GEOCODE_DEBOUNCE_MS)
     return () => {
@@ -273,6 +296,14 @@ export function TournamentForm({
     e.preventDefault()
     setPending(true)
     setError(null)
+    // #100 — the coordinates are no longer visible/required form fields; without them the
+    // server would accept 0/0 (a valid coordinate pair) and pin the event in the Gulf of
+    // Guinea. Stop early with actionable copy instead.
+    if (values.latitude.trim() === '' || values.longitude.trim() === '') {
+      setPending(false)
+      setError('Der Standort konnte nicht automatisch aus der Adresse ermittelt werden. Bitte Straße, PLZ und Stadt prüfen — oder den Standort manuell unter „Erweitert" setzen.')
+      return
+    }
     const payload = {
       title: values.title.trim(),
       description: values.description.trim() || null,
@@ -427,33 +458,64 @@ export function TournamentForm({
         </FormField>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* #100 — background geocoding feedback: the coordinates themselves stay invisible
+          form state; only the resolution status surfaces. The advanced disclosure below is
+          the escape hatch for a mis-placed pin. */}
+      {geoStatus === 'resolving' && (
+        <p role="status" className="text-sm text-current/60">
+          Adresse wird aufgelöst…
+        </p>
+      )}
+      {geoStatus === 'resolved' && (
+        <p role="status" className="text-sm text-current/60">
+          Standort gefunden — das Event erscheint auf der Karte.
+        </p>
+      )}
+      {geoStatus === 'unresolved' && (
+        <p role="alert" className="text-sm text-type-attack">
+          Die Adresse konnte nicht automatisch gefunden werden. Bitte Straße, PLZ und Stadt prüfen —
+          oder den Standort manuell unter „Erweitert“ setzen.
+        </p>
+      )}
+
+      <div>
+        <button
+          type="button"
+          aria-expanded={showAdvanced}
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="text-sm text-x-cyan-text hover:underline"
+        >
+          {showAdvanced ? 'Erweitert ausblenden' : 'Erweitert: Standort manuell setzen (Lat/Lng)'}
+        </button>
         {/* Auto-geocoded from the address above once street+PLZ+Stadt+Land are filled
-            (Phase 9) — both fields stay plain editable inputs for hand-correcting the pin. */}
-        <FormField label="Breitengrad (Lat)">
-          <Input
-            type="number"
-            min={-90}
-            max={90}
-            step="any"
-            inputMode="decimal"
-            value={values.latitude}
-            onChange={onLatitudeChange}
-            required
-          />
-        </FormField>
-        <FormField label="Längengrad (Lng)">
-          <Input
-            type="number"
-            min={-180}
-            max={180}
-            step="any"
-            inputMode="decimal"
-            value={values.longitude}
-            onChange={onLongitudeChange}
-            required
-          />
-        </FormField>
+            (Phase 9); hidden by default since #100 — only hand-corrections of a mis-placed
+            pin need these. Hand-edited values disable the automatic overwrite. */}
+        {showAdvanced && (
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <FormField label="Breitengrad (Lat)">
+              <Input
+                type="number"
+                min={-90}
+                max={90}
+                step="any"
+                inputMode="decimal"
+                value={values.latitude}
+                onChange={onLatitudeChange}
+              />
+            </FormField>
+            <FormField label="Längengrad (Lng)">
+              <Input
+                type="number"
+                min={-180}
+                max={180}
+                step="any"
+                inputMode="decimal"
+                value={values.longitude}
+                onChange={onLongitudeChange}
+              />
+            </FormField>
+          </div>
+        )}
       </div>
 
       <FormField label="Regelwerk">

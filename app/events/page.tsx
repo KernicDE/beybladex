@@ -173,8 +173,12 @@ export default async function EventsPage({
 
       {/* Filter bar: plain GET form so every filter combination is a shareable URL. Country/
           state/date-range/PLZ-radius are the interactive client piece (EventsFilterBar); the
-          query text field and submit stay here. */}
-      <form method="GET" className="flex flex-col flex-wrap gap-3 sm:flex-row sm:items-end">
+          query text field and submit stay here.
+          RC11 #79 — CSS-Grid statt flex-wrap: die sechs Filterfelder füllen deterministisch
+          die erste Zeile (je 1/6), Filtern-Button und Suche stehen in einer eigenen Aktionen-
+          Zeile darunter — kein inzidenteller Umbruch mitten in der Feldgruppe mehr. Mobile
+          (<sm) bleibt die bisherige gestapelte Einspaltendarstellung. */}
+      <form method="GET" className="grid grid-cols-1 gap-3 sm:grid-cols-6 sm:items-end">
         <EventsFilterBar
           initialCountry={country ?? ''}
           initialState={state ?? ''}
@@ -189,7 +193,9 @@ export default async function EventsPage({
         >
           Filtern
         </button>
-        <SearchInput action="/events" className="sm:ml-auto sm:w-64" />
+        <div className="sm:col-span-5 sm:flex sm:justify-end">
+          <SearchInput action="/events" className="w-full sm:w-64" />
+        </div>
       </form>
 
       {plzNotice && (
