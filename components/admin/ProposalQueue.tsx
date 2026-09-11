@@ -62,8 +62,10 @@ export function ProposalQueue({ entries }: { entries: ProposalEntry[] }) {
       {entries.map((entry) => (
         <li key={entry.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
           {entry.imageAssetId && (
+            // object-contain: a curator needs to see the whole submitted part/set photo to
+            // judge the proposal, not a cropped square.
             // eslint-disable-next-line @next/next/no-img-element -- small admin-only thumbnail
-            <img src={`/api/media/${entry.imageAssetId}`} alt="" className="size-12 rounded-md object-cover" />
+            <img src={`/api/media/${entry.imageAssetId}`} alt="" className="size-12 rounded-md bg-current/5 object-contain" />
           )}
           <div className="min-w-0 flex-1">
             <p className="font-medium">
