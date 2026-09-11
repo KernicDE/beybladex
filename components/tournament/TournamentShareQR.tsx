@@ -1,11 +1,11 @@
-// components/tournament/EventShareQR.tsx (Phase 7, item 1)
+// components/tournament/TournamentShareQR.tsx (Phase 7, item 1; renamed RC6 #69 — internal naming follows the canonical "tournament" term)
 // The simplest of the four QR features: a QR encoding the event's own public URL, rendered
 // inline as server-generated SVG (lib/qr.ts) — no schema, no auth, no external image API.
 import { renderQrSvg } from '@/lib/qr'
 
 const SITE_URL = process.env.NEXTAUTH_URL ?? 'https://beybladex.de'
 
-export async function EventShareQR({ tournamentId }: { tournamentId: string }) {
+export async function TournamentShareQR({ tournamentId }: { tournamentId: string }) {
   const url = `${SITE_URL}/events/${tournamentId}`
   const svg = await renderQrSvg(url)
   return (

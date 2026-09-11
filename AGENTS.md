@@ -57,3 +57,39 @@ Supportfälle referenzieren die Version aus dem Footer oder `https://beybladex.d
   `/api/health`, `/api/version` passt zum Merge-Commit).
 
 <!-- END:beybladex-release-workflow -->
+
+<!-- BEGIN:beybladex-terminology -->
+
+# Terminologie: „events" vs. „tournaments" (RC6, issue #69)
+
+Für das Turnier-Aggregat existierten zwei Namen: `events` (öffentliche Seiten
+`/events/*`) und `tournaments` (Prisma-Modell `Tournament`, API `/api/tournaments/*`).
+
+**Entscheidung (verbindlich):** „Tournament" ist der kanonische Begriff für
+Datenmodell, API und Code-Identifier (Module, Funktionen, Komponenten,
+Cache-Keys). „Event" bleibt ausschließlich als öffentlicher UI-/URL-Begriff
+bestehen: die Route `/events/*` ist die bewusste IA-Entscheidung (Task 13) für
+die öffentliche Detailseite (SEO, geteilte Bookmarks) und deutsches
+Marketing-Vokabular — ein Alias für dasselbe Aggregat, kein zweites Konzept.
+
+**Begründung:** Das Prisma-Modell und die API umzubenennen ist zu invasiv
+(Migration aller FKs, Routen, Clients — siehe Issue-Kontext), und die
+öffentlichen URLs zu brechen kostet SEO und geteilte Links ohne Nutzen. Zwei
+URL-Familien sind hier kein Drift, sondern Trennung von öffentlicher
+(„Event") und operativer/„competitive" Oberfläche („Turnier").
+
+**Konsequenzen:**
+
+- Neuer Code benennt das Aggregat immer `tournament` — auch in Komponenten auf
+  `/events/*`-Seiten (Referenz: `TournamentShareQR`, Cache-Key
+  `public:v1:tournament:*`, `lib/tournamentService.ts`).
+- Bestehende Routen/Pfade werden NICHT umbenannt; `/events/*` bleibt stabil.
+
+**Migrationsplan (falls je vollständige Vereinheitlichung gewünscht):**
+(1) Dokumentation (dieser Abschnitt) ✅ · (2) internes Naming folgt dem
+Standard bei jeder angefassten Datei ✅ (RC6) · (3) optional später:
+`/tournaments/[id]`-Detailroute einführen und `/events/[id]` per
+permanentem Redirect (308) dorthin umleiten, QR-Codes/Shares migrieren —
+nur mit SEO-Begleitung (canonical, Sitemap), nicht als Refactor-Beifang.
+
+<!-- END:beybladex-terminology -->

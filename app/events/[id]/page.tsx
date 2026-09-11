@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { JoinPanel } from '@/components/tournament/JoinPanel'
-import { EventShareQR } from '@/components/tournament/EventShareQR'
+import { TournamentShareQR } from '@/components/tournament/TournamentShareQR'
 import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 
 // [RC5 #43] No `revalidate` export: auth() (join flow, organizer badges) forces per-request
@@ -49,7 +49,7 @@ function isSameDay(a: Date, b: Date): boolean {
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [tournament, session] = await Promise.all([
-    withPublicCache(`public:v1:event:${id}`, PUBLIC_DETAIL_TTL, () =>
+    withPublicCache(`public:v1:tournament:${id}`, PUBLIC_DETAIL_TTL, () =>
       prisma.tournament.findUnique({
         where: { id },
         select: {
@@ -169,7 +169,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         </p>
       </Card>
 
-      <EventShareQR tournamentId={tournament.id} />
+      <TournamentShareQR tournamentId={tournament.id} />
 
       {/* Join flow — guests get the sign-in prompt instead of the join button (Task 13 convention). */}
       {!me ? (
