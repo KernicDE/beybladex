@@ -1,40 +1,70 @@
 // app/page.tsx
 // Landing page (Task 13 decision, binding): guests get a hero + "was ist
-// BeybladeX.de" + register CTA — Phase 3 adds the upcoming-DACH-events teaser once
-// the event query exists; logged-in users get a personalized welcome with links
-// into the app's primary surfaces. Real dashboard data (next tournament, club
-// activity, new parts) lands with Phases 3–5 — these are links, not live data.
+// BeybladeX.de" + register CTA. Logged-in users get the personalized dashboard
+// (components/home/LoggedInDashboard.tsx, RC9 #31): the soonest upcoming event they
+// participate in and the latest chat message across their ACTIVE club memberships, each with
+// a discovery-CTA fallback — issue #31's documented decision is DYNAMIC BLOCK over redirect,
+// since both datasets exist in the DB today.
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
-import { Card } from '@/components/ui/Card'
+import { prisma } from '@/lib/db'
 import { BrandMark } from '@/components/brand/BrandMark'
-
-const PRIMARY_LINKS = [
-  { href: '/decks', title: 'Decks', description: 'Verwalte deine Turnier-Decks.' },
-  { href: '/collection', title: 'Sammlung', description: 'Erfasse deine Teile und builds.' },
-  { href: '/clubs', title: 'Clubs', description: 'Finde Beyblade-Clubs in deiner Nähe.' },
-] as const
+import { LoggedInDashboard } from '@/components/home/LoggedInDashboard'
 
 export default async function Home() {
   const session = await auth()
+  const user = session?.user
 
-  if (session?.user?.name) {
+  if (user?.id && user.name) {
+    const userId = user.id
+    // #31 — two small reads, intentionally uncached: this page is per-request anyway (auth()),
+    // the queries are cheap single-indexed lookups, and a dashboard must not lag behind a
+    // join/checkin/chat post.
+    const [nextEvent, memberships] = await Promise.all([
+      prisma.tournament.findFirst({
+        where: { startDate: { gte: new Date() }, participants: { some: { userId } } },
+        orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+        select: { id: true, title: true, startDate: true, city: true },
+      }),
+      prisma.clubMember.findMany({
+        where: { userId, status: 'ACTIVE' },
+        select: { club: { select: { id: true, name: true, slug: true } } },
+      }),
+    ])
+
+    // Latest chat message across all of the user's clubs. ClubMessage.authorId is a plain
+    // string (survives account erasure, Phase 12), so the author's display name is a separate
+    // best-effort lookup — a dangling authorId renders as "Gelöschter Nutzer".
+    const message = memberships.length
+      ? await prisma.clubMessage.findFirst({
+          where: { clubId: { in: memberships.map((m) => m.club.id) } },
+          orderBy: { createdAt: 'desc' },
+          select: { body: true, createdAt: true, authorId: true, clubId: true },
+        })
+      : null
+    const [author, messageClub] = message
+      ? await Promise.all([
+          prisma.user.findUnique({ where: { id: message.authorId }, select: { username: true, displayName: true } }),
+          Promise.resolve(memberships.find((m) => m.club.id === message.clubId)?.club ?? null),
+        ])
+      : [null, null]
+
     return (
-      <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-        <h1 className="text-2xl font-semibold">
-          Willkommen zurück, {session.user.name}
-        </h1>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {PRIMARY_LINKS.map(({ href, title, description }) => (
-            <Link key={href} href={href} className="block transition-opacity hover:opacity-80">
-              <Card>
-                <h2 className="font-semibold text-x-cyan-text dark:text-x-cyan">{title}</h2>
-                <p className="mt-1 text-sm text-current/60">{description}</p>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      </main>
+      <LoggedInDashboard
+        name={user.name}
+        nextEvent={nextEvent}
+        clubActivity={
+          message && messageClub
+            ? {
+                clubSlug: messageClub.slug,
+                clubName: messageClub.name,
+                authorName: author?.displayName ?? author?.username ?? 'Gelöschter Nutzer',
+                body: message.body,
+                createdAt: message.createdAt,
+              }
+            : null
+        }
+      />
     )
   }
 
