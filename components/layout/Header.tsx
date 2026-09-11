@@ -3,7 +3,7 @@
 // notification bell placeholder, session-aware user menu (client component —
 // dropdown + signOut need client interactivity).
 import Link from 'next/link'
-import { Bell } from 'lucide-react'
+import { Bell, Search } from 'lucide-react'
 import type { Session } from 'next-auth'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -50,6 +50,15 @@ export function Header({ session, avatarImageId }: { session: Session | null; av
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-2">
+        {/* #25: mobile search entry — the full input stays md+ only (header space); below
+            md a 1-tap icon link leads to /search, which carries its own SearchInput. */}
+        <Link
+          href="/search"
+          aria-label="Suche"
+          className="rounded-md p-2 text-current/80 transition-colors hover:bg-current/5 hover:text-current md:hidden"
+        >
+          <Search size={18} aria-hidden="true" />
+        </Link>
         <SearchInput className="hidden w-56 md:block" />
         {session && (
           <Link

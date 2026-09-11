@@ -1,25 +1,31 @@
 // app/search/page.tsx
 // Typed-sections search page (Task 13 shell). The shared page and the SearchInput
 // entry point live here; the RESULT BACKENDS are phased — Phase 3 wired the Events
-// section, Phase 4 (this file's Nutzer section) the user search, Phase 5 Part A (this
-// file's Teile section) the parts-catalog search (server-side prefix + category filter,
-// a hard prerequisite for the deck builder's part-picker). The Clubs section is wired
-// by the parallel clubs/admin track — its EmptyState below is that track's integration
+// section shell, Phase 4 (this file's Nutzer section) the user search, Phase 5 Part A
+// (this file's Teile section) the parts-catalog search (server-side prefix + category
+// filter, a hard prerequisite for the deck builder's part-picker). The Events and Clubs
+// BACKENDS are not implemented yet — issue #25 requires marking those categories as
+// "Demnächst" UP FRONT (badge in the section heading), not only inside the results after
+// a search. The Clubs section remains the parallel clubs/admin track's integration
 // point; do not remove it here.
+// TODO(#25-followup): drop `comingSoon` from the entries below when the Events/Clubs
+// search backends land.
 import Link from 'next/link'
 import Image from 'next/image'
 import { auth } from '@/lib/auth'
 import { searchUsers } from '@/lib/userSearch'
 import { searchParts } from '@/lib/buildSearch'
 import { getPartStats } from '@/lib/metaCache'
+import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SearchInput } from '@/components/ui/SearchInput'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 
-const SECTIONS = [
-  { id: 'events', title: 'Events' },
-  { id: 'clubs', title: 'Clubs' },
+const UPCOMING_SECTIONS = [
+  { id: 'events', title: 'Events', comingSoon: true },
+  { id: 'clubs', title: 'Clubs', comingSoon: true },
 ] as const
 
 export const dynamic = 'force-dynamic'
@@ -38,6 +44,9 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <h1 className="text-2xl font-semibold">Suche</h1>
+      {/* #25: the page carries its own input — on mobile the header input is hidden and
+          this page is the typing surface reached via the header search icon. */}
+      <SearchInput />
       {query && (
         <p className="text-current/70">
           Ergebnisse für „{query}“
@@ -125,14 +134,23 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
           <CatalogProposalCTA defaultKind="PART" defaultName={query} loggedIn={viewerId !== null} />
         )}
       </section>
-      {SECTIONS.map(({ id, title }) => (
-        <section key={id} aria-labelledby={`search-${id}`} className="space-y-3">
-          <h2 id={`search-${id}`} className="text-lg font-semibold">
+      {UPCOMING_SECTIONS.map(({ id, title, comingSoon }) => (
+        <section
+          key={id}
+          aria-labelledby={`search-${id}`}
+          className={`space-y-3 ${comingSoon ? 'opacity-70' : ''}`}
+        >
+          <h2 id={`search-${id}`} className="flex items-center gap-2 text-lg font-semibold">
             {title}
+            {comingSoon && (
+              <Badge tone="neutral" aria-label={`${title}-Suche noch nicht verfügbar`}>
+                Demnächst
+              </Badge>
+            )}
           </h2>
           <EmptyState
             title="Suche noch nicht verfügbar"
-            description="Dieser Bereich wird in einer späteren Ausbauphase aktiviert."
+            description="Diese Kategorie wird in einer späteren Ausbauphase aktiviert."
           />
         </section>
       ))}
