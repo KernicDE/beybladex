@@ -9,6 +9,10 @@ import {
   LandingEventTeaser,
   type LandingTeaserEvent,
 } from '@/components/home/LandingEventTeaser'
+import deMessages from '@/lib/i18n/messages/de.json'
+
+// RC14 #17 — the teaser renders from the request dictionary; de.json is canonical.
+const t = deMessages
 
 const EVENTS: LandingTeaserEvent[] = [
   {
@@ -39,7 +43,7 @@ const EVENTS: LandingTeaserEvent[] = [
 
 describe('LandingEventTeaser — with events (#88)', () => {
   it('renders each event as a tile linked to its detail page', () => {
-    render(<LandingEventTeaser events={EVENTS} />)
+    render(<LandingEventTeaser events={EVENTS} t={t} />)
     for (const event of EVENTS) {
       const link = screen.getByRole('link', { name: new RegExp(event.title) })
       expect(link).toHaveAttribute('href', `/events/${event.id}`)
@@ -47,7 +51,7 @@ describe('LandingEventTeaser — with events (#88)', () => {
   })
 
   it('shows date and place per tile', () => {
-    render(<LandingEventTeaser events={EVENTS} />)
+    render(<LandingEventTeaser events={EVENTS} t={t} />)
     const list = screen.getByRole('list')
     const firstTile = within(list).getAllByRole('listitem')[0]
     expect(within(firstTile).getByText(/Wiesbaden, Hessen · Deutschland/)).toBeInTheDocument()
@@ -55,7 +59,7 @@ describe('LandingEventTeaser — with events (#88)', () => {
   })
 
   it('links to the full /events list below the tiles', () => {
-    render(<LandingEventTeaser events={EVENTS} />)
+    render(<LandingEventTeaser events={EVENTS} t={t} />)
     expect(screen.getByRole('link', { name: /Alle Events anzeigen/ })).toHaveAttribute(
       'href',
       '/events',
@@ -63,14 +67,14 @@ describe('LandingEventTeaser — with events (#88)', () => {
   })
 
   it('caps the teaser at three tiles', () => {
-    render(<LandingEventTeaser events={[...EVENTS, ...EVENTS]} />)
+    render(<LandingEventTeaser events={[...EVENTS, ...EVENTS]} t={t} />)
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
   })
 })
 
 describe('LandingEventTeaser — without events (#23/#88)', () => {
   it('renders an honest fallback with a discovery CTA instead of placeholder tiles', () => {
-    render(<LandingEventTeaser events={[]} />)
+    render(<LandingEventTeaser events={[]} t={t} />)
     expect(screen.getByText(/keine Events im Kalender/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Event-Übersicht/ })).toHaveAttribute('href', '/events')
     // No fake tiles.

@@ -23,6 +23,7 @@ const PLACEHOLDER_SECRETS = new Set(['dev-secret-change-me', 'ci-test-secret-not
 const OPTIONAL_GROUPS: Array<{ vars: string[]; integration: string }> = [
   { vars: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'], integration: 'SMTP mail (lib/mailer.ts)' },
   { vars: ['VAPID_PRIVATE_KEY', 'VAPID_SUBJECT'], integration: 'Web Push (lib/webPush.ts)' },
+  { vars: ['DEEPL_API_KEY'], integration: 'UGC auto-translation (lib/i18n/deepl.ts)' },
 ]
 
 function checkTotpKey(raw: string | undefined, fatal: string[], warnings: string[]) {

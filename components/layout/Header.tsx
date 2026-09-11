@@ -3,6 +3,9 @@
 // notification bell (active since RC10 #26 — unread badge from the root layout's
 // server-side count), session-aware user menu (client component — dropdown +
 // signOut need client interactivity).
+// RC14 #17 — chrome labels come from the request dictionary (the root layout resolves the
+// locale in lib/i18n/server.ts and passes the strings down); the LanguageSwitcher next to
+// the theme toggle is the guest-facing entry point of the language setting.
 import Link from 'next/link'
 import { Lock, Search } from 'lucide-react'
 import type { Session } from 'next-auth'
@@ -12,6 +15,9 @@ import { NotificationBell } from '@/components/layout/NotificationBell'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { GuestLegalMenu } from '@/components/layout/GuestLegalMenu'
 import { BrandMark } from '@/components/brand/BrandMark'
+import { LanguageSwitcher } from '@/components/layout/LanguageSwitcher'
+import type { Messages } from '@/lib/i18n/server'
+import type { Locale } from '@/lib/i18n/locales'
 
 // Primary nav. These routes land in later phases (3–5); linking to them now is
 // the binding IA decision — they 404 until their phase ships.
@@ -20,20 +26,22 @@ import { BrandMark } from '@/components/brand/BrandMark'
 // competitive/operational surface.
 // RC8 #20: `auth` marks routes that render a GuestGate for guests (/decks,
 // /collection) — they get a lock icon in the nav when there is no session.
-const NAV_LINKS: { href: string; label: string; auth?: boolean }[] = [
+// RC14 #17 — labels are dictionary KEYS (resolved per request below), not literals: adding
+// a locale never touches this file.
+const NAV_LINKS: { href: string; labelKey: keyof Messages['nav']; auth?: boolean }[] = [
   // RC10 #29: the public IA term is "Events" (matching /events and the bottom nav's tab)
   // — one name per route across header and MobileNav.
-  { href: '/events', label: 'Events' },
-  { href: '/decks', label: 'Decks', auth: true },
-  { href: '/builds', label: 'Builds' },
-  { href: '/collection', label: 'Sammlung', auth: true },
-  { href: '/clubs', label: 'Clubs' },
-  { href: '/rules', label: 'Regeln' },
+  { href: '/events', labelKey: 'events' },
+  { href: '/decks', labelKey: 'decks', auth: true },
+  { href: '/builds', labelKey: 'builds' },
+  { href: '/collection', labelKey: 'collection', auth: true },
+  { href: '/clubs', labelKey: 'clubs' },
+  { href: '/rules', labelKey: 'rules' },
   // Phase 14 — public Elo leaderboard for the current ACTIVE season.
-  { href: '/rangliste', label: 'Rangliste' },
+  { href: '/rangliste', labelKey: 'leaderboard' },
 ] as const
 
-export function Header({ session, avatarImageId, unreadNotifications }: { session: Session | null; avatarImageId: string | null; unreadNotifications?: number }) {
+export function Header({ session, avatarImageId, unreadNotifications, locale, t }: { session: Session | null; avatarImageId: string | null; unreadNotifications?: number; locale: Locale; t: Messages }) {
   const username = session?.user?.name
   return (
     <header className="sticky top-0 z-40 flex items-center gap-4 border-b border-x-cyan/20 bg-base-light/90 px-4 py-3 backdrop-blur dark:bg-base-dark/90 md:px-8">
@@ -44,14 +52,15 @@ export function Header({ session, avatarImageId, unreadNotifications }: { sessio
         <BrandMark size={26} />
         BeybladeX.de
       </Link>
-      <nav aria-label="Hauptnavigation" className="hidden items-center gap-1 lg:flex">
-        {NAV_LINKS.map(({ href, label, auth }) => {
+      <nav aria-label={t.nav.main} className="hidden items-center gap-1 lg:flex">
+        {NAV_LINKS.map(({ href, labelKey, auth }) => {
+          const label = t.nav[labelKey]
           const locked = Boolean(auth) && !session
           return (
             <Link
               key={href}
               href={href}
-              {...(locked ? { 'aria-label': `${label} (Anmeldung erforderlich)` } : {})}
+              {...(locked ? { 'aria-label': `${label} (${t.nav.loginRequired})` } : {})}
               className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
             >
               <span className="inline-flex items-center gap-1">
@@ -67,13 +76,18 @@ export function Header({ session, avatarImageId, unreadNotifications }: { sessio
             md a 1-tap icon link leads to /search, which carries its own SearchInput. */}
         <Link
           href="/search"
-          aria-label="Suche"
+          aria-label={t.common.search}
           className="rounded-md p-2 text-current/80 transition-colors hover:bg-current/5 hover:text-current md:hidden"
         >
           <Search size={18} aria-hidden="true" />
         </Link>
-        <SearchInput className="hidden w-56 md:block" />
+        <SearchInput
+          className="hidden w-56 md:block"
+          placeholder={t.common.searchPlaceholder}
+          submitLabel={t.common.search}
+        />
         {session && <NotificationBell unreadCount={unreadNotifications ?? 0} />}
+        <LanguageSwitcher current={locale} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} />
         <ThemeToggle />
         {session ? (
           <UserMenu username={username ?? ''} avatarImageId={avatarImageId} />
@@ -86,7 +100,7 @@ export function Header({ session, avatarImageId, unreadNotifications }: { sessio
               href="/login"
               className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
             >
-              Anmelden
+              {t.common.login}
             </Link>
           </>
         )}

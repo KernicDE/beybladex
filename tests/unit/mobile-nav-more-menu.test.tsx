@@ -12,6 +12,10 @@ import type { Session } from 'next-auth'
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }))
 
 import { MobileNav } from '@/components/layout/MobileNav'
+import deMessages from '@/lib/i18n/messages/de.json'
+
+// RC14 #17 — request dictionary (German chrome) passed as prop.
+const t = deMessages
 
 const session = { user: { name: 'tester' }, expires: '2099-01-01' } as unknown as Session
 
@@ -20,7 +24,7 @@ describe('MobileNav — Mehr menu (issue #24)', () => {
     ['guests', null],
     ['signed-in users', session],
   ])('gives %s a path to Regeln and Rangliste', (_label, sess) => {
-    render(<MobileNav session={sess} />)
+    render(<MobileNav session={sess} t={t} />)
 
     fireEvent.click(screen.getByRole('button', { name: /mehr/i }))
 
@@ -30,7 +34,7 @@ describe('MobileNav — Mehr menu (issue #24)', () => {
   })
 
   it('keeps the four tab links working', () => {
-    render(<MobileNav session={session} />)
+    render(<MobileNav session={session} t={t} />)
 
     expect(screen.getByRole('link', { name: /events/i })).toHaveAttribute('href', '/events')
     expect(screen.getByRole('link', { name: /decks/i })).toHaveAttribute('href', '/decks')
@@ -39,13 +43,13 @@ describe('MobileNav — Mehr menu (issue #24)', () => {
   })
 
   it('points the Profil tab at /login for guests', () => {
-    render(<MobileNav session={null} />)
+    render(<MobileNav session={null} t={t} />)
 
     expect(screen.getByRole('link', { name: /profil/i })).toHaveAttribute('href', '/login')
   })
 
   it('closes the menu on Escape', () => {
-    render(<MobileNav session={null} />)
+    render(<MobileNav session={null} t={t} />)
 
     fireEvent.click(screen.getByRole('button', { name: /mehr/i }))
     expect(screen.getByRole('menu')).toBeInTheDocument()

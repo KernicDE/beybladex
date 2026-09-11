@@ -125,6 +125,10 @@ model User {
   // NULLs are allowed in a unique index, so users without a display name never collide.
   displayNameNormalized String?   @unique
   birthDate             DateTime?
+  // RC14 #17 — interface language (bare code from lib/i18n/locales.ts's SUPPORTED_LOCALES,
+  // default de). Resolved per request in lib/i18n/server.ts; NOT a Prisma enum so adding a
+  // language stays a code-only change (the locale registry is the single source of truth).
+  language              String    @default("de")
   country               Country   @default(DE)
   state                 String?
   postalCode            String?

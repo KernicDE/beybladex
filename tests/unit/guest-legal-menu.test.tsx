@@ -8,12 +8,16 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { Header } from '@/components/layout/Header'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
+import deMessages from '@/lib/i18n/messages/de.json'
+
+// RC14 #17 — request dictionary (German chrome) passed as prop.
+const t = deMessages
 
 describe('Header — guest legal links (issue #22)', () => {
   it('gives a guest a path to Impressum and Datenschutz', () => {
     render(
       <ThemeProvider>
-        <Header session={null} avatarImageId={null} />
+        <Header session={null} avatarImageId={null} locale="de" t={t} />
       </ThemeProvider>
     )
 
@@ -31,6 +35,8 @@ describe('Header — guest legal links (issue #22)', () => {
         <Header
           session={{ user: { name: 'tester' }, expires: '2099-01-01' } as never}
           avatarImageId={null}
+          locale="de"
+          t={t}
         />
       </ThemeProvider>
     )

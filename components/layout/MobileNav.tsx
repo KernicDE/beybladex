@@ -7,6 +7,8 @@
 // Clubs, Builds, Suche). Both issue-relevant targets (/rules, /rangliste) are public, so
 // the menu is identical for guests and signed-in users. Profil points at the user's own
 // profile when logged in, else at /login.
+// RC14 #17 — labels are passed in from the root layout's request dictionary (prop-passing
+// idiom, same as Session), keeping this a pure client component with no i18n imports.
 'use client'
 
 import Link from 'next/link'
@@ -14,28 +16,29 @@ import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Archive, Calendar, Layers, Lock, Menu, User, type LucideIcon } from 'lucide-react'
 import type { Session } from 'next-auth'
+import type { Messages } from '@/lib/i18n/server'
 
 // RC8 #20: `auth` marks tabs whose target renders a GuestGate for guests (/decks,
 // /collection) — they carry a lock icon when there is no session. The href stays the
 // real route: guests land on the explained gate instead of an uncontextualized login.
-const TABS: { href: string; label: string; icon: LucideIcon; auth?: boolean }[] = [
-  { href: '/events', label: 'Events', icon: Calendar },
-  { href: '/decks', label: 'Decks', icon: Layers, auth: true },
-  { href: '/collection', label: 'Sammlung', icon: Archive, auth: true },
+const TABS: { href: string; labelKey: keyof Messages['nav']; icon: LucideIcon; auth?: boolean }[] = [
+  { href: '/events', labelKey: 'events', icon: Calendar },
+  { href: '/decks', labelKey: 'decks', icon: Layers, auth: true },
+  { href: '/collection', labelKey: 'collection', icon: Archive, auth: true },
 ]
 
 // Issue #24: public surfaces without a bottom-tab slot of their own. Mirrors the header's
 // NAV_LINKS (components/layout/Header.tsx); /decks and /collection keep their tabs above.
-const MORE_LINKS = [
-  { href: '/', label: 'Startseite' },
-  { href: '/rules', label: 'Regeln' },
-  { href: '/rangliste', label: 'Rangliste' },
-  { href: '/clubs', label: 'Clubs' },
-  { href: '/builds', label: 'Builds' },
-  { href: '/search', label: 'Suche' },
+const MORE_LINKS: { href: string; labelKey: keyof Messages['nav'] }[] = [
+  { href: '/', labelKey: 'home' },
+  { href: '/rules', labelKey: 'rules' },
+  { href: '/rangliste', labelKey: 'leaderboard' },
+  { href: '/clubs', labelKey: 'clubs' },
+  { href: '/builds', labelKey: 'builds' },
+  { href: '/search', labelKey: 'search' },
 ] as const
 
-export function MobileNav({ session }: { session: Session | null }) {
+export function MobileNav({ session, t }: { session: Session | null; t: Messages }) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -43,8 +46,8 @@ export function MobileNav({ session }: { session: Session | null }) {
     ? `/profile/${encodeURIComponent(session.user.name)}`
     : '/login'
   const tabs = [
-    ...TABS.map((t) => ({ ...t, locked: Boolean(t.auth) && !session })),
-    { href: profileHref, label: 'Profil', icon: User, locked: false },
+    ...TABS.map((t2) => ({ ...t2, label: t.nav[t2.labelKey], locked: Boolean(t2.auth) && !session })),
+    { href: profileHref, label: t.nav.profile, icon: User, locked: false },
   ]
 
   useEffect(() => {
@@ -73,7 +76,7 @@ export function MobileNav({ session }: { session: Session | null }) {
 
   return (
     <nav
-      aria-label="Hauptnavigation"
+      aria-label={t.nav.main}
       className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-x-cyan/20 bg-base-light/90 backdrop-blur dark:bg-base-dark/90 md:hidden"
     >
       {tabs.map(({ href, label, icon: Icon, locked }) => {
@@ -83,7 +86,7 @@ export function MobileNav({ session }: { session: Session | null }) {
             key={label}
             href={href}
             aria-current={active ? 'page' : undefined}
-            {...(locked ? { 'aria-label': `${label} (Anmeldung erforderlich)` } : {})}
+            {...(locked ? { 'aria-label': `${label} (${t.nav.loginRequired})` } : {})}
             className={itemCls(active)}
           >
             <Icon size={20} aria-hidden="true" />
@@ -104,15 +107,15 @@ export function MobileNav({ session }: { session: Session | null }) {
           className={itemCls(moreActive)}
         >
           <Menu size={20} aria-hidden="true" />
-          Mehr
+          {t.nav.more}
         </button>
         {moreOpen && (
           <div
             role="menu"
-            aria-label="Weitere Seiten"
+            aria-label={t.nav.morePages}
             className="absolute inset-x-2 bottom-full mb-2 rounded-xl border border-x-cyan/20 bg-white p-2 shadow-xl dark:bg-base-dark-alt"
           >
-            {MORE_LINKS.map(({ href, label }) => (
+            {MORE_LINKS.map(({ href, labelKey }) => (
               <Link
                 key={href}
                 href={href}
@@ -120,7 +123,7 @@ export function MobileNav({ session }: { session: Session | null }) {
                 onClick={() => setMoreOpen(false)}
                 className="block rounded-md px-3 py-2 text-sm transition-colors hover:bg-current/5"
               >
-                {label}
+                {t.nav[labelKey]}
               </Link>
             ))}
           </div>

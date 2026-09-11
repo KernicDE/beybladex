@@ -7,6 +7,7 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { Footer } from "@/components/layout/Footer";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getDictionary, getLocale } from "@/lib/i18n/server";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,6 +31,11 @@ const THEME_INIT_SCRIPT = `
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const session = await auth();
+  // RC14 #17 — the request's effective locale (profile setting → guest cookie →
+  // Accept-Language → de) and its message dictionary. Both are react-cache'd per request, so
+  // deeper server components calling getDictionary()/getLocale() reuse this exact resolution.
+  const locale = await getLocale();
+  const t = await getDictionary();
   // Phase 21: the header menu shows the viewer's OWN avatar. The session JWT only carries
   // id/name (lib/auth.ts), so the avatar id is read here and passed down — always the
   // viewer's own row, no privacy gate needed, same as the username it renders next to.
@@ -44,7 +50,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     : 0;
   return (
     <html
-      lang="de"
+      lang={locale}
       className="h-full antialiased"
       suppressHydrationWarning
     >
@@ -53,11 +59,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
-          <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} />
+          <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} locale={locale} t={t} />
           <main className="flex-1 pb-12 md:pb-0">{children}</main>
         </ThemeProvider>
-        <Footer />
-        <MobileNav session={session} />
+        <Footer t={t} />
+        <MobileNav session={session} t={t} />
         <RegisterServiceWorker />
         <InstallPrompt />
       </body>

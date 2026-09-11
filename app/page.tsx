@@ -8,6 +8,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { getDictionary } from '@/lib/i18n/server'
 import { LoggedInDashboard } from '@/components/home/LoggedInDashboard'
 import { GuestLanding } from '@/components/home/GuestLanding'
 
@@ -82,5 +83,8 @@ export default async function Home() {
     return rows.length ? rows : null
   })
 
-  return <GuestLanding upcomingEvents={upcomingEvents ?? []} />
+  // RC14 #17 — the guest landing's chrome/marketing copy renders in the request locale;
+  // the logged-in dashboard's copy is a documented follow-up (#17 ships the i18n core first).
+  const t = await getDictionary()
+  return <GuestLanding upcomingEvents={upcomingEvents ?? []} t={t} />
 }
