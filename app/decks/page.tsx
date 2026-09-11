@@ -1,9 +1,10 @@
 // app/decks/page.tsx
 // The caller's own decks (Phase 5 Part A). Per-user surface — force-dynamic per the caching
-// half of the Regression Guard. Empty state carries the "Erstelle dein erstes Deck" CTA
-// (standing empty-state rule); ?neu=1 reveals the create form.
+// half of the Regression Guard. Guests get an explained GuestGate instead of a silent
+// redirect (RC8 issue #20) with a callbackUrl, so they return here after login. Empty state
+// carries the "Erstelle dein erstes Deck" CTA (standing empty-state rule); ?neu=1 reveals
+// the create form.
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { Badge } from '@/components/ui/Badge'
@@ -11,6 +12,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { DeckCreateForm } from '@/components/beyblade/DeckCreateForm'
+import { GuestGate } from '@/components/auth/GuestGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +21,15 @@ const PAGE_SIZE = 20
 export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
   const { cursor, neu } = await searchParams
   const session = await auth()
-  if (!session?.user?.id) redirect('/login')
+  if (!session?.user?.id) {
+    return (
+      <GuestGate
+        title="Decks sind nur für Mitglieder"
+        description="Ein Deck besteht aus bis zu drei Builds, mit denen du an Turnieren teilnimmst. Melde dich an, um deine Decks zu erstellen und zu verwalten."
+        callbackUrl="/decks"
+      />
+    )
+  }
 
   const rows = await prisma.deck.findMany({
     where: { userId: session.user.id },

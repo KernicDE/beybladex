@@ -3,7 +3,7 @@
 // notification bell placeholder, session-aware user menu (client component —
 // dropdown + signOut need client interactivity).
 import Link from 'next/link'
-import { Bell } from 'lucide-react'
+import { Bell, Lock, Search } from 'lucide-react'
 import type { Session } from 'next-auth'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -16,11 +16,13 @@ import { BrandMark } from '@/components/brand/BrandMark'
 // IA note (binding for Phase 3): /events is the public event LIST; event detail
 // lives at /events/[id] (public, guest-visible) while /tournaments/[id] is the
 // competitive/operational surface.
-const NAV_LINKS = [
+// RC8 #20: `auth` marks routes that render a GuestGate for guests (/decks,
+// /collection) — they get a lock icon in the nav when there is no session.
+const NAV_LINKS: { href: string; label: string; auth?: boolean }[] = [
   { href: '/events', label: 'Turniere & Events' },
-  { href: '/decks', label: 'Decks' },
+  { href: '/decks', label: 'Decks', auth: true },
   { href: '/builds', label: 'Builds' },
-  { href: '/collection', label: 'Sammlung' },
+  { href: '/collection', label: 'Sammlung', auth: true },
   { href: '/clubs', label: 'Clubs' },
   { href: '/rules', label: 'Regeln' },
   // Phase 14 — public Elo leaderboard for the current ACTIVE season.
@@ -39,17 +41,33 @@ export function Header({ session, avatarImageId }: { session: Session | null; av
         BeybladeX.de
       </Link>
       <nav aria-label="Hauptnavigation" className="hidden items-center gap-1 lg:flex">
-        {NAV_LINKS.map(({ href, label }) => (
-          <Link
-            key={href}
-            href={href}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
-          >
-            {label}
-          </Link>
-        ))}
+        {NAV_LINKS.map(({ href, label, auth }) => {
+          const locked = Boolean(auth) && !session
+          return (
+            <Link
+              key={href}
+              href={href}
+              {...(locked ? { 'aria-label': `${label} (Anmeldung erforderlich)` } : {})}
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
+            >
+              <span className="inline-flex items-center gap-1">
+                {label}
+                {locked && <Lock size={12} aria-hidden="true" />}
+              </span>
+            </Link>
+          )
+        })}
       </nav>
       <div className="ml-auto flex items-center gap-2">
+        {/* #25: mobile search entry — the full input stays md+ only (header space); below
+            md a 1-tap icon link leads to /search, which carries its own SearchInput. */}
+        <Link
+          href="/search"
+          aria-label="Suche"
+          className="rounded-md p-2 text-current/80 transition-colors hover:bg-current/5 hover:text-current md:hidden"
+        >
+          <Search size={18} aria-hidden="true" />
+        </Link>
         <SearchInput className="hidden w-56 md:block" />
         {session && (
           <Link

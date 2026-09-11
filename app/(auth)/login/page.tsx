@@ -3,6 +3,15 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
+import { sanitizeCallbackUrl } from '@/lib/callbackUrl'
+
+// Read ?callbackUrl= straight from the URL (no useSearchParams(), so no Suspense
+// boundary is needed around this page) — RC8 issue #20: guests coming from an
+// explained GuestGate on /decks or /collection return to where they wanted to go.
+function readCallbackUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  return sanitizeCallbackUrl(new URLSearchParams(window.location.search).get('callbackUrl'))
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -12,6 +21,7 @@ export default function LoginPage() {
   const [showTotp, setShowTotp] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [callbackUrl] = useState(readCallbackUrl)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -31,7 +41,7 @@ export default function LoginPage() {
       setError('Anmeldung fehlgeschlagen. Falls 2FA aktiv ist, gib den aktuellen TOTP-Code ein.')
       return
     }
-    router.push('/')
+    router.push(callbackUrl ?? '/')
   }
 
   const inputCls =
@@ -41,6 +51,12 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-base-light px-4 dark:bg-base-dark">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl bg-white p-6 shadow-lg dark:bg-base-dark-alt">
         <h1 className="text-2xl font-semibold text-x-cyan-text dark:text-x-cyan">Anmelden</h1>
+        {callbackUrl && (
+          <p className="rounded-md bg-x-cyan/10 px-3 py-2 text-sm text-current/80">
+            Du wolltest eine Seite aufrufen, die nur für Mitglieder ist. Melde dich an —
+            danach wirst du automatisch dorthin zurückgeleitet.
+          </p>
+        )}
         <label className="block text-sm">
           Benutzername
           <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" />
