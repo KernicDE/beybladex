@@ -3,7 +3,7 @@
 // seeding (ascending userId), n−1 total matches for n participants, byes as auto-completed
 // round-1 matches (see the bye policy documented in lib/bracket.ts).
 import { describe, it, expect } from 'vitest'
-import { generateSingleEliminationBracket, type BracketNode } from '@/lib/bracket'
+import { generateSingleEliminationBracket, stageWinnersRounds, type BracketNode } from '@/lib/bracket'
 
 function participants(n: number, prefix = 'p'): { userId: string }[] {
   // Reverse order on purpose: the generator must sort deterministically, not use input order.
@@ -67,5 +67,34 @@ describe('generateSingleEliminationBracket', () => {
   it('returns no matches for fewer than 2 participants', () => {
     expect(generateSingleEliminationBracket(participants(1))).toEqual([])
     expect(generateSingleEliminationBracket([])).toEqual([])
+  })
+})
+
+// RC6 #56 — the per-stage winners-round derivation has exactly one implementation (lib/bracket.ts);
+// the old lib/stageFlow.ts copy was dead code AND wrong for single-elimination ((R+1)/3 of a
+// maxRound=R stage is not an integer). These pin the GRAND_FINAL-aware behavior for both formats.
+describe('stageWinnersRounds', () => {
+  it('single-elimination: R is the max round (no GRAND_FINAL side exists)', () => {
+    expect(stageWinnersRounds([
+      { round: 1, bracketSide: null },
+      { round: 1, bracketSide: null },
+      { round: 2, bracketSide: null },
+    ])).toBe(2)
+    expect(stageWinnersRounds([{ round: 1, bracketSide: null }])).toBe(1)
+  })
+
+  it('double-elimination: maxRound = 3R−1 and the GRAND_FINAL side flips the formula to (maxRound + 1) / 3', () => {
+    const gfOnly = [{ round: 8, bracketSide: 'GRAND_FINAL' as const }]
+    expect(stageWinnersRounds(gfOnly)).toBe(3) // R=3: 8 = 3·3−1
+    expect(stageWinnersRounds([
+      { round: 7, bracketSide: 'LOSERS' },
+      { round: 8, bracketSide: 'GRAND_FINAL' },
+      { round: 8, bracketSide: 'GRAND_FINAL' }, // reset
+    ])).toBe(3)
+    expect(stageWinnersRounds([{ round: 5, bracketSide: 'GRAND_FINAL' as const }])).toBe(2) // R=2: 5 = 3·2−1
+  })
+
+  it('an empty stage returns 0 (round numbers unused for Swiss/round-robin)', () => {
+    expect(stageWinnersRounds([])).toBe(0)
   })
 })

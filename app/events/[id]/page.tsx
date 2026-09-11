@@ -10,6 +10,7 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { withPublicCache } from '@/lib/publicCache'
+import { stageWinnersRounds } from '@/lib/bracket'
 import { MapView } from '@/components/map/MapView'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -43,15 +44,6 @@ function formatFee(cent: number, currency: string): string {
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-// Same winners-bracket round-count derivation as /tournaments/[id]/page.tsx (kept local —
-// duplicating one small pure function is cheaper than threading a shared import for a single
-// preview stage; see that file's own copy for the full comment on the round-count formula).
-function stageWinnersRounds(matches: { round: number; bracketSide: string | null }[]): number {
-  const maxRound = Math.max(0, ...matches.map((m) => m.round))
-  if (maxRound === 0) return 0
-  return matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
 }
 
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {

@@ -14,7 +14,7 @@
 // recipient, so bracket rendering and advancement propagation stay uniform (the winner slot
 // feeds the next round exactly like a played match).
 import { prisma } from '@/lib/db'
-import type { MatchStatus, TournamentParticipant } from '@prisma/client'
+import type { Match, MatchStatus, TournamentParticipant } from '@prisma/client'
 import { sortBySeed } from '@/lib/seeding'
 
 export type BracketNode = {
@@ -65,6 +65,19 @@ export function generateSingleEliminationBracket(participants: (Pick<TournamentP
     matchesInRound /= 2
   }
   return nodes
+}
+
+/**
+ * Per-stage winners-bracket round count R (RC6 #56 — single source of truth, moved here from the
+ * two page-local copies and the dead/faulty lib/stageFlow.ts copy): double-elimination's grand
+ * final sits at round 3R−1, so a stage with a GRAND_FINAL match derives R = (maxRound + 1) / 3;
+ * every other format (single-elimination maxRound = R, Swiss/round-robin round numbers unused)
+ * derives R = maxRound. Empty stages (no matches yet) return 0.
+ */
+export function stageWinnersRounds(matches: { round: number; bracketSide: Match['bracketSide'] | null }[]): number {
+  const maxRound = Math.max(0, ...matches.map((m) => m.round))
+  if (maxRound === 0) return 0
+  return matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? (maxRound + 1) / 3 : maxRound
 }
 
 // One-query bracket loader for the tournament/judge pages: matches and participants in a single

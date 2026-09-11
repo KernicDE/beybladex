@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db'
 import { winnerPropagation, loserPropagation, winnersRounds } from '@/lib/doubleElimination'
 import { computeBuchholz, type SwissPlayer } from '@/lib/swiss'
 import { notifyMatchReady } from '@/lib/notify'
-import type { Match, TournamentStage } from '@prisma/client'
+import type { Match } from '@prisma/client'
 import type { Prisma, PrismaClient } from '@prisma/client'
 
 // [RC2 #41] Every helper accepts an optional client so the score route can run the whole
@@ -15,18 +15,6 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 // mid-completion crash must not leave the match COMPLETED with diverged Standings/Bracket/Elo.
 // Callers outside a transaction omit the argument and get the global client, as before.
 type Db = PrismaClient | Prisma.TransactionClient
-
-/**
- * Winners bracket rounds R for a stage, derived from the stage's own match rows: the highest
- * round is always 3R−1 (grand final), so R = (maxRound + 1) / 3. Works with byes, since slots
- * (not the raw participant count) determine the bracket shape. Returns null for a Swiss stage
- * (round numbers are unused there).
- */
-export function stageWinnersRounds(stage: { format: TournamentStage['format']; matches: Pick<Match, 'round'>[] }): number | null {
-  if (stage.format === 'SWISS') return null
-  const maxRound = Math.max(0, ...stage.matches.map((m) => m.round))
-  return (maxRound + 1) / 3
-}
 
 async function writeSlot(stageId: string, round: number, bracketOrder: number, slot: 'player1Id' | 'player2Id', userId: string, db: Db = prisma) {
   const { count } = await db.match.updateMany({
