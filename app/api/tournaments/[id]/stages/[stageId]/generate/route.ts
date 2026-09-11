@@ -27,9 +27,11 @@
 // is ignored) in the JSON body; lib/arenaAssign.ts's parseArenaCount validates it here and
 // lib/stageGenerate.ts persists/applies it.
 import { requireUser } from '@/lib/guards'
+import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseArenaCount } from '@/lib/arenaAssign'
 import { generateStage, StageGenerateError } from '@/lib/stageGenerate'
+import { generateTeamStage } from '@/lib/teamStage'
 import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
@@ -51,8 +53,15 @@ export async function POST(req: Request, { params }: Ctx) {
     // no/invalid body is fine — arenaCount is optional
   }
 
+  // RC15 #12 — team tournaments generate TeamMatch encounters (lib/teamStage.ts) over the
+  // checked-in team-entry pool instead of solo matches; arenaCount is a solo-match concept
+  // and is ignored in team mode.
+  const teamMode = (await prisma.tournament.findUnique({ where: { id }, select: { teamMode: true } }))?.teamMode ?? false
+
   try {
-    const result = await generateStage({ userId: gate.userId, tournamentId: id, stageId, arenaCount: parseArenaCount(body.arenaCount) })
+    const result = teamMode
+      ? await generateTeamStage({ userId: gate.userId, tournamentId: id, stageId })
+      : await generateStage({ userId: gate.userId, tournamentId: id, stageId, arenaCount: parseArenaCount(body.arenaCount) })
     // Hotfix #99: matches now exist — the cached public detail page's bracket preview changed.
     if (result.status >= 200 && result.status < 300) {
       await invalidatePublicCache(publicTournamentKey(id))

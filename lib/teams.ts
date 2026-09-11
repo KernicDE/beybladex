@@ -17,9 +17,11 @@ export const TEAM_NAME_MAX = 40
 
 /**
  * THE 3: a 3-vs-3 roster has exactly 3 active members (route-enforced cap on TeamMember) and
- * a tournament lineup is exactly those 3 members (TeamTournamentEntry slots).
+ * a tournament lineup is exactly those 3 members (TeamTournamentEntry slots). The two numbers
+ * are identical by design — the roster IS the lineup.
  */
 export const TEAM_SIZE = 3
+export const MAX_TEAM_MEMBERS = TEAM_SIZE
 
 /** Best-of-3: the first team to this many sub-game wins takes the encounter. */
 export const ENCOUNTER_WINS_NEEDED = 2

@@ -43,6 +43,8 @@ export type TournamentInputData = {
   // Phase 14 — opts a casual/friendly/test event out of Elo impact; omitted on POST defaults
   // to the schema's `true` (ranked), matching the organizer's common case.
   rankedEligible?: boolean
+  // RC15 #12 — 3-vs-3 team mode; the route rejects flipping it once registrations exist.
+  teamMode?: boolean
 }
 
 export type TournamentInput = {
@@ -70,6 +72,7 @@ const TOURNAMENT_SCHEMA: BodySchema = {
   currency: { type: 'enum', enum: CURRENCIES, required: true, token: 'invalid_currency' },
   isRecurring: { type: 'boolean', token: 'invalid_boolean' },
   rankedEligible: { type: 'boolean', token: 'invalid_boolean' },
+  teamMode: { type: 'boolean', token: 'invalid_boolean' },
   recurringDays: { type: 'integer', min: RECURRING_DAYS_MIN, max: RECURRING_DAYS_MAX, nullable: true, token: 'invalid_recurring_days' },
   rulesetId: { type: 'string', minLength: 1, required: true, token: 'invalid_ruleset' },
 }

@@ -46,14 +46,38 @@ export async function PATCH(req: Request, { params }: Ctx) {
   // self-check-in (button or QR) leaves it unset and checks in the caller.
   const participantUserId =
     typeof targetUserId === 'string' && targetUserId.length > 0 ? targetUserId : session.user.id
+  // RC15 #12 — team-mode check-in targets a TEAM ENTRY (body.entryId): any of the entry's
+  // slot users may check in their own team (self-service, same idea as the solo button), and
+  // tournament staff may check in any team.
+  const targetEntryId = typeof fields.entryId === 'string' && fields.entryId.length > 0 ? fields.entryId : null
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
-    select: { createdById: true, checkInToken: true },
+    select: { createdById: true, checkInToken: true, teamMode: true },
   })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
   if (token !== null && token !== tournament.checkInToken) {
     return Response.json({ error: 'token_mismatch' }, { status: 403 })
+  }
+
+  if (targetEntryId) {
+    if (!tournament.teamMode) return Response.json({ error: 'not_team_mode' }, { status: 409 })
+    const entry = await prisma.teamTournamentEntry.findUnique({
+      where: { id: targetEntryId },
+      include: { slots: { select: { userId: true } } },
+    })
+    if (!entry || entry.tournamentId !== id) return Response.json({ error: 'not_found' }, { status: 404 })
+    const callerId = session.user.id // captured: arrow closures don't see the session narrowing
+    const isTeammate = entry.slots.some((s) => s.userId === callerId)
+    if (!isTeammate && !(await isTournamentStaff(id, callerId, tournament.createdById))) {
+      return Response.json({ error: 'forbidden' }, { status: 403 })
+    }
+    const updated = await prisma.teamTournamentEntry.update({
+      where: { id: entry.id },
+      data: { checkedIn: true },
+    })
+    await invalidatePublicCache(publicTournamentKey(id))
+    return Response.json({ id: updated.id, entryId: updated.id, checkedIn: updated.checkedIn })
   }
 
   const participant = await prisma.tournamentParticipant.findUnique({

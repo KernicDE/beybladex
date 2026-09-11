@@ -40,6 +40,12 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     await tx.pushSubscription.deleteMany({ where: { userId } })
     await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } })
     await tx.clubMember.deleteMany({ where: { userId } })
+    // RC15 #12: team rosters are personal and die with the account (Cascade backstop, explicit
+    // deleteMany for the same self-documenting reason). TeamTournamentSlot rows are the team
+    // counterpart of TournamentParticipant — they SURVIVE erasure (Art. 17(3): the other
+    // teams' encounter history legitimately outlives one player's account) with the personal
+    // link severed by the User row's own anonymization below, same judgment call as the solo
+    // participant rows above.
     // Phase 5 Part B: PricePoint rows are onDelete: Cascade with their CollectionItem, so the
     // DB would remove them anyway — the explicit deleteMany keeps the erasure matrix
     // self-documenting (standing guard: a new User-owned model ships with its entry) and must
@@ -113,6 +119,9 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // event record (Art. 17(3)) — so ownership is reassigned to the same reserved system user
     // (the createdBy FK has no cascade; without this the user delete would fail on Restrict).
     await tx.tournament.updateMany({ where: { createdById: userId }, data: { createdById: systemUser.id } })
+    // RC15 #12: teams the user created stay with their roster — createdById is reassigned to
+    // the same reserved system user (the FK is Restrict; same pattern as rulesets/tournaments).
+    await tx.team.updateMany({ where: { createdById: userId }, data: { createdById: systemUser.id } })
     // Match/TournamentParticipant/judged-Match references: personal link severed by the User row's
     // own anonymization above (player1Id/player2Id/judgeId still point at the now-anonymized row —
     // spec §3 has no cascade there and none is needed; the row itself carries no PII anymore).

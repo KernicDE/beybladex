@@ -29,6 +29,8 @@ vi.mock('@/lib/db', () => ({
       delete: (...a: unknown[]) => tournamentDelete(...a),
     },
     match: { deleteMany: vi.fn() },
+    teamMatch: { deleteMany: vi.fn() },
+    teamTournamentEntry: { deleteMany: vi.fn() },
     stageStanding: { deleteMany: vi.fn() },
     tournamentStage: { deleteMany: vi.fn() },
     tournamentParticipant: { deleteMany: vi.fn() },
