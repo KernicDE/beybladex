@@ -9,7 +9,18 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { errorMessage } from '@/lib/errorCopy'
 
-export function SelfCheckinButton({ tournamentId, token, alreadyCheckedIn }: { tournamentId: string; token: string; alreadyCheckedIn: boolean }) {
+export function SelfCheckinButton({
+  tournamentId,
+  token,
+  alreadyCheckedIn,
+  entryId,
+}: {
+  tournamentId: string
+  token: string
+  alreadyCheckedIn: boolean
+  /** RC15 #12 — team mode: check-in targets the team ENTRY (any lineup member may check the team in). */
+  entryId?: string
+}) {
   const router = useRouter()
   const [done, setDone] = useState(alreadyCheckedIn)
   const [pending, setPending] = useState(false)
@@ -21,7 +32,7 @@ export function SelfCheckinButton({ tournamentId, token, alreadyCheckedIn }: { t
     const res = await fetch(`/api/tournaments/${tournamentId}/checkin`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ t: token }),
+      body: JSON.stringify({ t: token, ...(entryId !== undefined ? { entryId } : {}) }),
     })
     setPending(false)
     if (res.ok) {

@@ -1,6 +1,6 @@
 // tests/unit/tournament-cache-invalidation.test.ts (hotfix #99)
 // PATCH/DELETE /api/tournaments/[id] change exactly what the cached public detail query
-// (public:v1:tournament:<id>, app/events/[id]/page.tsx) serves — both must DEL the key after
+// (public:v2:tournament:<id>, app/events/[id]/page.tsx) serves — both must DEL the key after
 // the DB write, and only after a SUCCESSFUL one (authz/validation failures must not touch it).
 // Seams mocked on '@/...' imports; no DB/Redis involved.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -77,7 +77,7 @@ describe('PATCH /api/tournaments/[id] (issue #99)', () => {
     expect(res.status).toBe(200)
     expect(tournamentUpdate).toHaveBeenCalledTimes(1)
     expect(invalidatePublicCache).toHaveBeenCalledTimes(1)
-    expect(invalidatePublicCache).toHaveBeenCalledWith(`public:v1:tournament:${ID}`)
+    expect(invalidatePublicCache).toHaveBeenCalledWith(`public:v2:tournament:${ID}`)
   })
 
   it('does NOT invalidate when the organizer check fails', async () => {
@@ -113,7 +113,7 @@ describe('DELETE /api/tournaments/[id] (issue #99)', () => {
     expect(res.status).toBe(204)
     expect(transaction).toHaveBeenCalledTimes(1)
     expect(invalidatePublicCache).toHaveBeenCalledTimes(1)
-    expect(invalidatePublicCache).toHaveBeenCalledWith(`public:v1:tournament:${ID}`)
+    expect(invalidatePublicCache).toHaveBeenCalledWith(`public:v2:tournament:${ID}`)
   })
 
   it('does NOT invalidate when the tournament was already started', async () => {

@@ -36,6 +36,8 @@ const NAV_LINKS: { href: string; labelKey: keyof Messages['nav']; auth?: boolean
   { href: '/builds', labelKey: 'builds' },
   { href: '/collection', labelKey: 'collection', auth: true },
   { href: '/clubs', labelKey: 'clubs' },
+  // RC15 #12 — 3-vs-3 team competition surface (auth-gated page: my teams).
+  { href: '/teams', labelKey: 'teams', auth: true },
   { href: '/rules', labelKey: 'rules' },
   // Phase 14 — public Elo leaderboard for the current ACTIVE season.
   { href: '/rangliste', labelKey: 'leaderboard' },

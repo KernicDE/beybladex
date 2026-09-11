@@ -23,7 +23,7 @@
 // - public:v1:events:list:<filter-signature>  — app/events/page.tsx (TTL 60s). NOT
 //   invalidated by tournament routes: the signature is filter/pagination state, so there is
 //   no single key to DEL; a PATCH can leave the list stale for at most one TTL window.
-// - public:v1:tournament:<id>                 — app/events/[id]/page.tsx (TTL 60s).
+// - public:v2:tournament:<id>                 — app/events/[id]/page.tsx (TTL 60s).
 //   Invalidated (invalidatePublicCache) by every route that mutates state the public
 //   detail SELECT reads: PATCH/DELETE [id], join (POST/DELETE withdraw), checkin,
 //   header-image, stages (create/delete), stages generate/complete, start, complete,
@@ -69,9 +69,12 @@ export async function withPublicCache<T>(key: string, ttlSeconds: number, produc
   return value
 }
 
-/** Redis key of the cached PUBLIC detail query for one tournament (app/events/[id]/page.tsx). */
+/** Redis key of the cached PUBLIC detail query for one tournament (app/events/[id]/page.tsx).
+ *  v2 (#12): the payload additionally carries teamMode + teamEntries (with team, slots and
+ *  slot users) for the 3-vs-3 team competition — the fresh key avoids up to 60s of stale v1
+ *  rows without the fields (same v2-bump convention as the clubs list, #83). */
 export function publicTournamentKey(id: string): string {
-  return `public:v1:tournament:${id}`
+  return `public:v2:tournament:${id}`
 }
 
 /**

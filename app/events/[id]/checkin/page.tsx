@@ -58,10 +58,42 @@ export default async function EventCheckinPage({
 }
 
 async function CheckinGate({ tournamentId, userId, token }: { tournamentId: string; userId: string; token: string }) {
-  const participant = await prisma.tournamentParticipant.findUnique({
-    where: { tournamentId_userId: { tournamentId, userId } },
-    select: { checkedIn: true },
+  // RC15 #12 — team mode: the viewer checks in their TEAM (via the entry's slots), not a solo
+  // participant row.
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: {
+      teamMode: true,
+      participants: { where: { userId }, select: { checkedIn: true } },
+      teamEntries: {
+        where: { slots: { some: { userId } } },
+        select: { id: true, checkedIn: true, team: { select: { name: true } } },
+      },
+    },
   })
+  if (!tournament) notFound()
+
+  if (tournament.teamMode) {
+    const entry = tournament.teamEntries[0]
+    if (!entry) {
+      return (
+        <p className="text-sm text-current/70">
+          Du bist für dieses Turnier nicht mit einem Team angemeldet.{' '}
+          <Link href={`/events/${tournamentId}`} className="text-x-cyan-text hover:underline">
+            Zur Turnierseite
+          </Link>
+        </p>
+      )
+    }
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-current/70">Team: {entry.team.name}</p>
+        <SelfCheckinButton tournamentId={tournamentId} token={token} alreadyCheckedIn={entry.checkedIn} entryId={entry.id} />
+      </div>
+    )
+  }
+
+  const participant = tournament.participants[0]
   if (!participant) {
     return (
       <p className="text-sm text-current/70">

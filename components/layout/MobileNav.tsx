@@ -34,6 +34,7 @@ const MORE_LINKS: { href: string; labelKey: keyof Messages['nav'] }[] = [
   { href: '/rules', labelKey: 'rules' },
   { href: '/rangliste', labelKey: 'leaderboard' },
   { href: '/clubs', labelKey: 'clubs' },
+  { href: '/teams', labelKey: 'teams' },
   { href: '/builds', labelKey: 'builds' },
   { href: '/search', labelKey: 'search' },
 ] as const

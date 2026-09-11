@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { JoinPanel } from '@/components/tournament/JoinPanel'
+import { TeamJoinPanel } from '@/components/teams/TeamJoinPanel'
 import { TournamentShareQR } from '@/components/tournament/TournamentShareQR'
 import { JudgeBracketView } from '@/components/judge/JudgeBracketView'
 
@@ -61,6 +62,20 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           isRecurring: true,
           createdById: true,
           headerImageId: true,
+          // RC15 #12 — team mode changes the registration aggregate and the bracket preview.
+          teamMode: true,
+          teamEntries: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              checkedIn: true,
+              team: { select: { id: true, name: true, slug: true, club: { select: { slug: true, name: true } } } },
+              slots: {
+                orderBy: { position: 'asc' },
+                select: { position: true, userId: true, user: { select: { username: true, displayName: true } } },
+              },
+            },
+          },
           ruleset: { select: { title: true, slug: true } },
           participants: {
             orderBy: { id: 'asc' },
@@ -75,6 +90,14 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
             take: 1,
             include: {
               matches: { orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }] },
+              // RC15 #12 — team-mode bracket preview: encounters instead of solo matches.
+              teamMatches: {
+                orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }],
+                include: {
+                  team1Entry: { select: { id: true, team: { select: { name: true } } } },
+                  team2Entry: { select: { id: true, team: { select: { name: true } } } },
+                },
+              },
               standings: {
                 orderBy: [{ wins: 'desc' }, { buchholz: 'desc' }],
                 include: { user: { select: { username: true, displayName: true } } },
@@ -113,6 +136,36 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
     ? tournament.participants.find((p) => p.userId === me)
     : undefined
   const isOrganizer = me !== undefined && (tournament.createdById === me || caller?.role === 'ADMIN')
+
+  // RC15 #12 — team-mode registration state for the TeamJoinPanel: the viewer's teams (with
+  // member counts + captaincy), which of them are already registered, and the viewer's own
+  // entry when their team is registered.
+  const myTeamRows = me
+    ? await prisma.teamMember.findMany({
+        where: { userId: me },
+        include: {
+          team: { include: { members: { select: { userId: true } } } },
+        },
+      })
+    : []
+  const myTeams = myTeamRows.map((m) => ({
+    id: m.team.id,
+    name: m.team.name,
+    slug: m.team.slug,
+    memberCount: m.team.members.length,
+    isCaptain: m.role === 'CAPTAIN',
+  }))
+  const registeredTeamIds = tournament.teamEntries.map((e) => e.team.id)
+  const myEntryRow = me ? tournament.teamEntries.find((e) => e.slots.some((s) => s.userId === me)) : undefined
+  const myEntry = myEntryRow
+    ? {
+        entryId: myEntryRow.id,
+        teamId: myEntryRow.team.id,
+        teamName: myEntryRow.team.name,
+        checkedIn: myEntryRow.checkedIn,
+        viewerInLineup: myEntryRow.slots.some((s) => s.userId === me),
+      }
+    : null
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -171,6 +224,15 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         >
           Anmelden, um teilzunehmen
         </Link>
+      ) : tournament.teamMode ? (
+        <TeamJoinPanel
+          tournamentId={tournament.id}
+          myTeams={myTeams}
+          registeredTeamIds={registeredTeamIds}
+          myEntry={myEntry}
+          checkInOpen={isSameDay(now, tournament.startDate)}
+          canWithdraw={now <= tournament.startDate}
+        />
       ) : (
         <JoinPanel
           tournamentId={tournament.id}
@@ -187,6 +249,48 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         </Link>
       </p>
 
+      {tournament.teamMode ? (
+        <section aria-labelledby="teams-heading" className="space-y-3">
+          <h2 id="teams-heading" className="text-lg font-semibold">
+            Teams ({tournament.teamEntries.length})
+          </h2>
+          {tournament.teamEntries.length === 0 ? (
+            <p className="text-sm text-current/60">Noch keine Teams angemeldet — gründe eines und melde es an!</p>
+          ) : (
+            <ul className="space-y-2">
+              {tournament.teamEntries.map((e) => (
+                <li key={e.id} className="rounded-md border border-current/10 px-3 py-2 text-sm">
+                  <span className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex flex-wrap items-center gap-2 font-medium">
+                      <Link href={`/teams/${e.team.slug}`} className="hover:underline">
+                        {e.team.name}
+                      </Link>
+                      {e.team.club && (
+                        <Link href={`/clubs/${e.team.club.slug}`}>
+                          <Badge tone="neutral">{e.team.club.name}</Badge>
+                        </Link>
+                      )}
+                    </span>
+                    {isOrganizer &&
+                      (e.checkedIn ? (
+                        <Badge tone="cyan">Eingecheckt</Badge>
+                      ) : (
+                        <Badge tone="neutral">Nicht eingecheckt</Badge>
+                      ))}
+                  </span>
+                  <span className="mt-1 flex flex-wrap gap-x-3 text-current/70">
+                    {e.slots.map((s) => (
+                      <Link key={s.position} href={`/profile/${s.user.username}`} className="hover:underline">
+                        {s.user.displayName ?? s.user.username}
+                      </Link>
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : (
       <section aria-labelledby="participants-heading" className="space-y-3">
         <h2 id="participants-heading" className="text-lg font-semibold">
           Teilnehmer ({tournament.participants.length})
@@ -227,12 +331,34 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           </ul>
         )}
       </section>
+      )}
 
-      {tournament.stages.length > 0 && tournament.stages[0].matches.length > 0 && (
+      {tournament.stages.length > 0 &&
+        (tournament.teamMode
+          ? tournament.stages[0].teamMatches.length > 0
+          : tournament.stages[0].matches.length > 0) && (
         <section aria-labelledby="bracket-preview-heading" className="space-y-3">
           <h2 id="bracket-preview-heading" className="text-lg font-semibold">
             Stand — {tournament.stages[0].name}
           </h2>
+          {tournament.teamMode ? (
+            <JudgeBracketView
+              matches={tournament.stages[0].teamMatches.map((m) => ({
+                id: m.id,
+                round: m.round,
+                bracketOrder: m.bracketOrder,
+                swissRound: null,
+                player1Id: m.team1Entry?.id ?? null,
+                player2Id: m.team2Entry?.id ?? null,
+                winnerId: m.winnerEntryId,
+                status: m.status,
+              }))}
+              players={tournament.teamEntries.map((e) => ({ id: e.id, name: e.team.name }))}
+              format={tournament.stages[0].format}
+              wbRounds={stageWinnersRounds(tournament.stages[0].teamMatches)}
+              standings={[]}
+            />
+          ) : (
           <JudgeBracketView
             matches={tournament.stages[0].matches.map((m) => ({
               id: m.id,
@@ -255,6 +381,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
               buchholz: s.buchholz,
             }))}
           />
+          )}
           <p className="text-sm">
             <Link href={`/tournaments/${tournament.id}`} className="text-x-cyan-text hover:underline">
               Vollständiger Turnierbaum & Judge-Bereich →
