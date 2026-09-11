@@ -43,3 +43,23 @@ export function formatDateDay(date: Date): string {
 export function formatTimeHM(date: Date): string {
   return date.toLocaleTimeString('de-DE', TIME_OPTS)
 }
+
+// Calendar day in Berlin time, as a comparable key (same-day checks must not use the host's
+// zone — the answer would shift with the server environment, same failure mode the header
+// comment documents for the time itself).
+function dayKey(date: Date): string {
+  return date.toLocaleDateString('de-DE', DATE_DAY_OPTS)
+}
+
+/** Die Zeit-Zeile der Event-Detailseite (#81):
+ *  - ohne endDate:  `Freitag, 11.09.2026 um 10:30 Uhr`
+ *  - selber Tag:    `Freitag, 11.09.2026 von 10:30 Uhr bis 17:30 Uhr`
+ *  - mehrtägig:     `Freitag, 11.09.2026, 10:00 Uhr bis Samstag, 12.09.2026, 18:00 Uhr`
+ */
+export function formatEventTime(startDate: Date, endDate: Date | null): string {
+  if (!endDate) return `${formatDateDay(startDate)} um ${formatTimeHM(startDate)} Uhr`
+  if (dayKey(startDate) === dayKey(endDate)) {
+    return `${formatDateDay(startDate)} von ${formatTimeHM(startDate)} Uhr bis ${formatTimeHM(endDate)} Uhr`
+  }
+  return `${formatDateDay(startDate)}, ${formatTimeHM(startDate)} Uhr bis ${formatDateDay(endDate)}, ${formatTimeHM(endDate)} Uhr`
+}
