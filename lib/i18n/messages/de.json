@@ -5,7 +5,49 @@
     "login": "Anmelden",
     "register": "Jetzt registrieren",
     "save": "Speichern",
-    "saving": "Speichere…"
+    "saving": "Speichere…",
+    "filter": "Filtern",
+    "loadMore": "Weitere laden"
+  },
+  "auth": {
+    "login": {
+      "heading": "Anmelden",
+      "gateNotice": "Du wolltest eine Seite aufrufen, die nur für Mitglieder ist. Melde dich an — danach wirst du automatisch dorthin zurückgeleitet.",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "totp": "2FA-Code (TOTP)",
+      "error": "Anmeldung fehlgeschlagen. Falls 2FA aktiv ist, gib den aktuellen TOTP-Code ein.",
+      "submit": "Anmelden"
+    },
+    "register": {
+      "heading": "Registrieren",
+      "username": "Benutzername",
+      "usernameHint": "Nur Kleinbuchstaben, Zahlen und Unterstrich — einen Anzeigenamen mit normaler Schreibweise kannst du später in den Profileinstellungen festlegen.",
+      "password": "Passwort",
+      "emailOptional": "E-Mail (optional)",
+      "birthDate": "Geburtsdatum",
+      "parentEmail": "E-Mail der Eltern (Einwilligung erforderlich)",
+      "privacyLabel": "Ich habe die Datenschutzerklärung gelesen und akzeptiere sie.",
+      "consentPending": "Konto erstellt — wartet auf die Einwilligung deiner Eltern. Du kannst dich erst danach anmelden.",
+      "submit": "Registrieren"
+    }
+  },
+  "guestGate": {
+    "signIn": "Anmelden",
+    "register": "Registrieren",
+    "footnote": "Nach dem Anmelden wirst du automatisch zu dieser Seite zurückgeleitet."
+  },
+  "filterBar": {
+    "country": "Land",
+    "countryAll": "Alle Länder",
+    "state": "Bundesland / Kanton",
+    "stateAll": "Alle Regionen",
+    "statePlaceholder": "Land auswählen",
+    "from": "Von",
+    "to": "Bis",
+    "plz": "PLZ",
+    "radius": "Umkreis",
+    "radiusAny": "Egal"
   },
   "nav": {
     "main": "Hauptnavigation",
@@ -109,5 +151,150 @@
     "DE": "Deutschland",
     "AT": "Österreich",
     "CH": "Schweiz"
+  },
+  "events": {
+    "heading": "Turniere & Events",
+    "create": "Turnier erstellen",
+    "plzNotFound": "Die PLZ „{plz}“ konnte nicht gefunden werden — die Liste ist ungefiltert.",
+    "empty": {
+      "title": "Keine Turniere gefunden",
+      "radius": "Im gewählten Umkreis gibt es aktuell keine Turniere. Vergrößere den Radius oder ändere die PLZ.",
+      "filtered": "Für diese Filter gibt es aktuell keine Turniere. Passe die Suche an.",
+      "upcoming": "Sobald ein Turnier erstellt wird, erscheint es hier und auf der Karte."
+    },
+    "detail": {
+      "time": "Zeit",
+      "location": "Ort",
+      "entry": "Eintritt",
+      "freeEntry": "Eintritt frei",
+      "ruleset": "Regelwerk",
+      "recurring": "Wiederkehrend",
+      "joinLogin": "Anmelden, um teilzunehmen",
+      "bracketLink": "Turnierbaum & Judge-Bereich →",
+      "fullBracketLink": "Vollständiger Turnierbaum & Judge-Bereich →",
+      "participants": "Teilnehmer",
+      "teams": "Teams",
+      "noParticipants": "Noch keine Anmeldungen — sei die erste Person!",
+      "noTeams": "Noch keine Teams angemeldet — gründe eines und melde es an!",
+      "checkedIn": "Eingecheckt",
+      "notCheckedIn": "Nicht eingecheckt",
+      "decks": "Decks",
+      "description": "Beschreibung",
+      "standings": "Stand — {stage}"
+    },
+    "join": {
+      "joinNow": "Jetzt anmelden",
+      "joinedInfo": "Du bist angemeldet.",
+      "checkedInInfo": "Eingecheckt.",
+      "checkInNow": "Jetzt einchecken",
+      "withdraw": "Abmelden",
+      "errorAlreadyJoined": "Du bist bereits angemeldet.",
+      "errorGeneric": "Das hat leider nicht geklappt. Bitte versuche es erneut."
+    },
+    "teamJoin": {
+      "registered": "Dein Team „{team}“ ist angemeldet.",
+      "checkedIn": "Eingecheckt.",
+      "checkIn": "Team einchecken",
+      "withdraw": "Team abmelden",
+      "ready": "Dein Team „{team}“ ({count}/3) ist startbereit.",
+      "register": "Team anmelden",
+      "incompleteBefore": "hat {count}/3 Mitglieder —",
+      "completeRoster": "Roster vervollständigen",
+      "incompleteAfter": ", um das Team anzumelden.",
+      "noTeamsBefore": "Team-Turnier:",
+      "createTeam": "Gründe ein Team",
+      "noTeamsAfter": "mit genau 3 Mitgliedern, um teilzunehmen.",
+      "captainsOnly": "Nur die Team-Captain:innen können ein Team anmelden.",
+      "errorRegistrationClosed": "Die Anmeldung ist geschlossen.",
+      "errorTeamIncomplete": "Das Team braucht genau 3 Mitglieder für die Anmeldung.",
+      "errorRosterFull": "Das Team hat mehr als 3 Mitglieder — für 3-gegen-3 muss der Roster passen.",
+      "errorAlreadyRegistered": "Ein Mitglied ist bereits mit einem anderen Team angemeldet.",
+      "errorTournamentStarted": "Das Turnier hat bereits begonnen.",
+      "errorBracketExists": "Der Turnierbaum ist bereits erzeugt — Abmeldung ist nicht mehr möglich.",
+      "errorForbidden": "Nur die Team-Captain:innen können das Team (ab)melden.",
+      "errorGeneric": "Das hat leider nicht geklappt. Bitte versuche es erneut."
+    }
+  },
+  "decks": {
+    "gateTitle": "Decks sind nur für Mitglieder",
+    "gateDescription": "Ein Deck besteht aus bis zu drei Builds, mit denen du an Turnieren teilnimmst. Melde dich an, um deine Decks zu erstellen und zu verwalten.",
+    "heading": "Meine Decks",
+    "newDeck": "Neues Deck",
+    "buildsBadge": "{count}/3 Builds",
+    "emptyTitle": "Noch keine Decks",
+    "emptyDescription": "Ein Deck besteht aus bis zu drei Builds, die nicht dasselbe Teil teilen dürfen.",
+    "createFirst": "Erstelle dein erstes Deck",
+    "loadMore": "Weitere Decks laden"
+  },
+  "builds": {
+    "heading": "Builds",
+    "intro": "Kombinationen aus Blade, Ratchet und Bit. Suche nach einem Teilnamen, um Builds zu finden, die ihn verwenden.",
+    "searchLabel": "Builds suchen",
+    "searchPlaceholder": "Teilname, z. B. DranSword…",
+    "search": "Suchen",
+    "emptyFilteredTitle": "Keine Builds gefunden",
+    "emptyFilteredDescription": "Kein Build verwendet ein Teil mit diesem Namen.",
+    "resetSearch": "Suche zurücksetzen",
+    "emptyCatalogTitle": "Noch keine Builds im Katalog",
+    "emptyCatalogDescription": "Der Build-Katalog füllt sich, sobald Teile im Katalog sind.",
+    "ctaAddParts": "Teile hinzufügen",
+    "ctaDiscoverEvents": "Kommende Events entdecken",
+    "loadMore": "Weitere Builds laden",
+    "pageSize": "Seitengröße: {size} Builds"
+  },
+  "collection": {
+    "gateTitle": "Die Sammlung ist nur für Mitglieder",
+    "gateDescription": "Erfasse, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum. Melde dich an, um deine Sammlung zu pflegen.",
+    "heading": "Meine Sammlung",
+    "addPart": "Teil hinzufügen",
+    "addSingle": "Einzelnes Teil hinzufügen",
+    "markSet": "Set als gekauft markieren",
+    "emptyTitle": "Noch keine Teile in deiner Sammlung",
+    "emptyDescription": "Trage ein, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum.",
+    "addFirst": "Füge dein erstes Teil hinzu",
+    "loadMore": "Weitere Teile laden"
+  },
+  "clubs": {
+    "heading": "Clubs",
+    "newClub": "Neuer Club",
+    "loginToFound": "Anmelden, um zu gründen",
+    "emptySearchTitle": "Keine Clubs gefunden",
+    "emptyTitle": "Noch keine Clubs",
+    "emptySearchDescription": "Für diese Suche gibt es aktuell keinen Club. Passe den Suchbegriff an.",
+    "emptyDescription": "Sobald jemand einen Club gründet, erscheint er hier.",
+    "memberSingular": "1 Mitglied",
+    "memberPlural": "{count} Mitglieder",
+    "loadMore": "Weitere laden"
+  },
+  "rules": {
+    "heading": "Regelwerke",
+    "newRuleset": "Neues Regelwerk",
+    "loginToCreate": "Anmelden, um zu erstellen",
+    "emptyTitle": "Noch keine Regelwerke",
+    "emptyDescription": "Sobald jemand ein Regelwerk erstellt, erscheint es hier.",
+    "wobStandard": "WoB-Standard",
+    "privateLabel": "Privat",
+    "loadMore": "Weitere laden"
+  },
+  "leaderboard": {
+    "heading": "Rangliste",
+    "completed": "Abgeschlossen",
+    "noSeasonTitle": "Noch keine Season aktiv",
+    "noSeasonDescription": "Sobald eine Season gestartet wurde, erscheint hier die Rangliste.",
+    "noPlayersTitle": "Noch keine gewerteten Spieler:innen",
+    "noPlayersDescription": "Ein Rang erscheint erst ab {min} gewerteten Matches in dieser Season.",
+    "colPlayer": "Spieler",
+    "colElo": "Elo",
+    "colMatches": "Matches",
+    "lastSeason": "Letzte Season ansehen: {name}",
+    "notifyInbox": "Bei Season-Start benachrichtigen",
+    "notifyLogin": "Anmelden, um benachrichtigt zu werden"
+  },
+  "teamsPage": {
+    "heading": "Meine Teams",
+    "intro": "Teams sind 3-gegen-3-Roster für Team-Turniere (WBO-Masters-League-Format) — mit genau 3 Mitgliedern, die gemeinsam als Team angemeldet werden.",
+    "emptyTitle": "Noch kein Team",
+    "emptyDescription": "Gründe unten dein erstes Team und lade zwei Mitspieler:innen ein — mit vollem Roster kannst du euch zu Team-Turnieren anmelden.",
+    "createTitle": "Neues Team gründen"
   }
 }

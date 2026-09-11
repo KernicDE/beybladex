@@ -58,4 +58,19 @@ describe('ranglisteEmptyActions (keine aktive Season)', () => {
     const actions = ranglisteEmptyActions({ lastSeason: { id: 's9', name: 'Herbst 2026' }, loggedIn: false })
     expect(actions.map((a) => a.href)).toEqual(['/rangliste?season=s9', '/login'])
   })
+
+  // RC14-Nachzügler #130 — the pages inject their dictionary strings; href decisions stay here.
+  it('renders injected (translated) labels instead of the German defaults', () => {
+    const en = {
+      lastSeason: 'View last season: {name}',
+      notifyInbox: 'Get notified when a season starts',
+      notifyLogin: 'Sign in to get notified',
+    }
+    const actions = ranglisteEmptyActions({ lastSeason: { id: 's1', name: 'Fall 2026' }, loggedIn: false }, en)
+    expect(actions[0]).toEqual({ href: '/rangliste?season=s1', label: 'View last season: Fall 2026' })
+    expect(actions[1]).toEqual({ href: '/login', label: 'Sign in to get notified' })
+
+    expect(catalogEmptyAction('ADMIN', { addParts: 'Add parts', discoverEvents: 'Discover upcoming events' }))
+      .toEqual({ href: '/settings/admin/parts', label: 'Add parts' })
+  })
 })

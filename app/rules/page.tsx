@@ -6,6 +6,7 @@
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { getDictionary } from '@/lib/i18n/server'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -22,6 +23,8 @@ export default async function RulesPage({
   searchParams: Promise<{ cursor?: string }>
 }) {
   const { cursor } = await searchParams
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   const session = await auth()
 
   const rulesets = await prisma.ruleset.findMany({
@@ -63,28 +66,28 @@ export default async function RulesPage({
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Regelwerke</h1>
+        <h1 className="text-2xl font-semibold">{t.rules.heading}</h1>
         {session?.user ? (
           <Link
             href="/rules/new"
             className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
           >
-            Neues Regelwerk
+            {t.rules.newRuleset}
           </Link>
         ) : (
           <Link
             href="/login"
             className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
           >
-            Anmelden, um zu erstellen
+            {t.rules.loginToCreate}
           </Link>
         )}
       </div>
 
       {page.length === 0 ? (
         <EmptyState
-          title="Noch keine Regelwerke"
-          description="Sobald jemand ein Regelwerk erstellt, erscheint es hier."
+          title={t.rules.emptyTitle}
+          description={t.rules.emptyDescription}
         />
       ) : (
         <ul className="space-y-3">
@@ -98,8 +101,8 @@ export default async function RulesPage({
                   <Badge tone="cyan">{DECK_FORMAT_LABELS[ruleset.deckFormat]}</Badge>
                   {/* #72: rulesets matching the WoB base in every comparable field are
                       flagged as the standard — deviations are visible on the detail page. */}
-                  {isWobStandard(ruleset) && <Badge tone="green">WoB-Standard</Badge>}
-                  {!ruleset.isPublic && <Badge tone="neutral">Privat</Badge>}
+                  {isWobStandard(ruleset) && <Badge tone="green">{t.rules.wobStandard}</Badge>}
+                  {!ruleset.isPublic && <Badge tone="neutral">{t.rules.privateLabel}</Badge>}
                 </div>
                 {ruleset.description && (
                   <p className="mt-1 line-clamp-2 text-sm text-current/60">{ruleset.description}</p>
@@ -116,7 +119,7 @@ export default async function RulesPage({
             href={`/rules?cursor=${nextCursor}`}
             className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
           >
-            Weitere laden
+            {t.rules.loadMore}
           </Link>
         </div>
       )}

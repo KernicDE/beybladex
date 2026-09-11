@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { getDictionary } from '@/lib/i18n/server'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -15,6 +16,8 @@ import { TeamCreateForm } from '@/components/teams/TeamCreateForm'
 export const dynamic = 'force-dynamic'
 
 export default async function TeamsPage() {
+  // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
+  const t = await getDictionary()
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
   const me = session.user.id
@@ -41,16 +44,15 @@ export default async function TeamsPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <h1 className="text-2xl font-semibold">Meine Teams</h1>
+      <h1 className="text-2xl font-semibold">{t.teamsPage.heading}</h1>
       <p className="text-sm text-current/70">
-        Teams sind 3-gegen-3-Roster für Team-Turniere (WBO-Masters-League-Format) — mit genau 3
-        Mitgliedern, die gemeinsam als Team angemeldet werden.
+        {t.teamsPage.intro}
       </p>
 
       {memberships.length === 0 ? (
         <EmptyState
-          title="Noch kein Team"
-          description="Gründe unten dein erstes Team und lade zwei Mitspieler:innen ein — mit vollem Roster kannst du euch zu Team-Turnieren anmelden."
+          title={t.teamsPage.emptyTitle}
+          description={t.teamsPage.emptyDescription}
         />
       ) : (
         <ul className="space-y-2">
@@ -70,7 +72,7 @@ export default async function TeamsPage() {
       )}
 
       <Card className="space-y-3 p-4">
-        <CardTitle className="text-base">Neues Team gründen</CardTitle>
+        <CardTitle className="text-base">{t.teamsPage.createTitle}</CardTitle>
         <TeamCreateForm clubs={clubMemberships.map((m) => m.club)} />
       </Card>
     </main>

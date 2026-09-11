@@ -5,7 +5,49 @@
     "login": "Sign in",
     "register": "Register now",
     "save": "Save",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "filter": "Filter",
+    "loadMore": "Load more"
+  },
+  "auth": {
+    "login": {
+      "heading": "Sign in",
+      "gateNotice": "You tried to open a members-only page. Sign in — afterwards you'll be redirected there automatically.",
+      "username": "Username",
+      "password": "Password",
+      "totp": "2FA code (TOTP)",
+      "error": "Sign-in failed. If 2FA is enabled, enter the current TOTP code.",
+      "submit": "Sign in"
+    },
+    "register": {
+      "heading": "Register",
+      "username": "Username",
+      "usernameHint": "Lowercase letters, numbers and underscores only — you can set a display name with normal capitalization later in your profile settings.",
+      "password": "Password",
+      "emailOptional": "Email (optional)",
+      "birthDate": "Date of birth",
+      "parentEmail": "Parents' email (consent required)",
+      "privacyLabel": "I have read the privacy policy and accept it.",
+      "consentPending": "Account created — waiting for your parents' consent. You can sign in only after that.",
+      "submit": "Register"
+    }
+  },
+  "guestGate": {
+    "signIn": "Sign in",
+    "register": "Register",
+    "footnote": "After signing in you'll be redirected back to this page automatically."
+  },
+  "filterBar": {
+    "country": "Country",
+    "countryAll": "All countries",
+    "state": "State / canton",
+    "stateAll": "All regions",
+    "statePlaceholder": "Select a country",
+    "from": "From",
+    "to": "To",
+    "plz": "Postal code",
+    "radius": "Radius",
+    "radiusAny": "Any"
   },
   "nav": {
     "main": "Main navigation",
@@ -109,5 +151,150 @@
     "DE": "Germany",
     "AT": "Austria",
     "CH": "Switzerland"
+  },
+  "events": {
+    "heading": "Tournaments & Events",
+    "create": "Create tournament",
+    "plzNotFound": "Postal code \"{plz}\" could not be found — the list is unfiltered.",
+    "empty": {
+      "title": "No tournaments found",
+      "radius": "There are no tournaments in the selected radius right now. Increase the radius or change the postal code.",
+      "filtered": "There are no tournaments for these filters right now. Adjust the search.",
+      "upcoming": "As soon as a tournament is created, it appears here and on the map."
+    },
+    "detail": {
+      "time": "Time",
+      "location": "Location",
+      "entry": "Entry",
+      "freeEntry": "Free entry",
+      "ruleset": "Ruleset",
+      "recurring": "Recurring",
+      "joinLogin": "Sign in to participate",
+      "bracketLink": "Bracket & judge area →",
+      "fullBracketLink": "Full bracket & judge area →",
+      "participants": "Participants",
+      "teams": "Teams",
+      "noParticipants": "No registrations yet — be the first!",
+      "noTeams": "No teams registered yet — found one and register it!",
+      "checkedIn": "Checked in",
+      "notCheckedIn": "Not checked in",
+      "decks": "Decks",
+      "description": "Description",
+      "standings": "Standings — {stage}"
+    },
+    "join": {
+      "joinNow": "Register now",
+      "joinedInfo": "You are registered.",
+      "checkedInInfo": "Checked in.",
+      "checkInNow": "Check in now",
+      "withdraw": "Withdraw",
+      "errorAlreadyJoined": "You are already registered.",
+      "errorGeneric": "That didn't work. Please try again."
+    },
+    "teamJoin": {
+      "registered": "Your team \"{team}\" is registered.",
+      "checkedIn": "Checked in.",
+      "checkIn": "Check in team",
+      "withdraw": "Withdraw team",
+      "ready": "Your team \"{team}\" ({count}/3) is ready to go.",
+      "register": "Register team",
+      "incompleteBefore": "has {count}/3 members —",
+      "completeRoster": "complete the roster",
+      "incompleteAfter": " to register the team.",
+      "noTeamsBefore": "Team tournament:",
+      "createTeam": "Found a team",
+      "noTeamsAfter": "with exactly 3 members to participate.",
+      "captainsOnly": "Only team captains can register a team.",
+      "errorRegistrationClosed": "Registration is closed.",
+      "errorTeamIncomplete": "The team needs exactly 3 members to register.",
+      "errorRosterFull": "The team has more than 3 members — the roster must fit 3-on-3.",
+      "errorAlreadyRegistered": "A member is already registered with another team.",
+      "errorTournamentStarted": "The tournament has already started.",
+      "errorBracketExists": "The bracket has already been generated — withdrawal is no longer possible.",
+      "errorForbidden": "Only team captains can register (or withdraw) the team.",
+      "errorGeneric": "That didn't work. Please try again."
+    }
+  },
+  "decks": {
+    "gateTitle": "Decks are members-only",
+    "gateDescription": "A deck consists of up to three builds you compete with at tournaments. Sign in to create and manage your decks.",
+    "heading": "My decks",
+    "newDeck": "New deck",
+    "buildsBadge": "{count}/3 builds",
+    "emptyTitle": "No decks yet",
+    "emptyDescription": "A deck consists of up to three builds that must not share the same part.",
+    "createFirst": "Create your first deck",
+    "loadMore": "Load more decks"
+  },
+  "builds": {
+    "heading": "Builds",
+    "intro": "Combinations of blade, ratchet and bit. Search for a part name to find builds that use it.",
+    "searchLabel": "Search builds",
+    "searchPlaceholder": "Part name, e.g. DranSword…",
+    "search": "Search",
+    "emptyFilteredTitle": "No builds found",
+    "emptyFilteredDescription": "No build uses a part with this name.",
+    "resetSearch": "Reset search",
+    "emptyCatalogTitle": "No builds in the catalog yet",
+    "emptyCatalogDescription": "The build catalog fills up as soon as parts are in the catalog.",
+    "ctaAddParts": "Add parts",
+    "ctaDiscoverEvents": "Discover upcoming events",
+    "loadMore": "Load more builds",
+    "pageSize": "Page size: {size} builds"
+  },
+  "collection": {
+    "gateTitle": "The collection is members-only",
+    "gateDescription": "Track which parts you own — with purchase price, merchant and date. Sign in to maintain your collection.",
+    "heading": "My collection",
+    "addPart": "Add part",
+    "addSingle": "Add a single part",
+    "markSet": "Mark a set as purchased",
+    "emptyTitle": "No parts in your collection yet",
+    "emptyDescription": "Enter which parts you own — with purchase price, merchant and date.",
+    "addFirst": "Add your first part",
+    "loadMore": "Load more parts"
+  },
+  "clubs": {
+    "heading": "Clubs",
+    "newClub": "New club",
+    "loginToFound": "Sign in to found one",
+    "emptySearchTitle": "No clubs found",
+    "emptyTitle": "No clubs yet",
+    "emptySearchDescription": "There is no club for this search right now. Adjust the search term.",
+    "emptyDescription": "As soon as someone founds a club, it appears here.",
+    "memberSingular": "1 member",
+    "memberPlural": "{count} members",
+    "loadMore": "Load more"
+  },
+  "rules": {
+    "heading": "Rulesets",
+    "newRuleset": "New ruleset",
+    "loginToCreate": "Sign in to create",
+    "emptyTitle": "No rulesets yet",
+    "emptyDescription": "As soon as someone creates a ruleset, it appears here.",
+    "wobStandard": "WoB standard",
+    "privateLabel": "Private",
+    "loadMore": "Load more"
+  },
+  "leaderboard": {
+    "heading": "Rankings",
+    "completed": "Completed",
+    "noSeasonTitle": "No active season yet",
+    "noSeasonDescription": "As soon as a season has started, the rankings appear here.",
+    "noPlayersTitle": "No rated players yet",
+    "noPlayersDescription": "A rank only appears from {min} rated matches in this season.",
+    "colPlayer": "Player",
+    "colElo": "Elo",
+    "colMatches": "Matches",
+    "lastSeason": "View last season: {name}",
+    "notifyInbox": "Get notified when a season starts",
+    "notifyLogin": "Sign in to get notified"
+  },
+  "teamsPage": {
+    "heading": "My teams",
+    "intro": "Teams are 3-vs-3 rosters for team tournaments (WBO Masters League format) — with exactly 3 members who register as a team together.",
+    "emptyTitle": "No team yet",
+    "emptyDescription": "Found your first team below and invite two teammates — with a full roster you can register for team tournaments.",
+    "createTitle": "Found a new team"
   }
 }

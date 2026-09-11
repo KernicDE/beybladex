@@ -14,6 +14,13 @@ export const LOCALE_COOKIE = 'beybladex-locale'
 /** Start set per #17 — the registry is deliberately open-ended. */
 export const SUPPORTED_LOCALES = ['de', 'en'] as const
 
+/** Flag emoji per locale (#125) — the switcher's compact current-language display. Unicode
+ *  regional indicators, no icon font or image asset needed. */
+export const LOCALE_FLAGS: Record<Locale, string> = {
+  de: '🇩🇪',
+  en: '🇬🇧',
+}
+
 /** The site's own language and fallback. NEVER resolved away from: an unknown/unsupported
  *  preference always degrades to German, the language every existing page is authored in. */
 export const DEFAULT_LOCALE: Locale = 'de'

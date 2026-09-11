@@ -43,6 +43,12 @@ let ids: {
 } | null = null
 
 async function loginAsJudge(page: Page) {
+  // RC14 Nachzügler: /login is locale-aware since the static-surface translation (#130) — the
+  // headless browser's Accept-Language (en-US) would render it in English. Pin the locale
+  // cookie to German so the label assertions below stay deterministic.
+  await page.context().addCookies([
+    { name: 'beybladex-locale', value: 'de', domain: 'localhost', path: '/' },
+  ])
   await page.goto('/login')
   await page.getByLabel('Benutzername').fill(`e2e_jdg_${suffix}`)
   await page.getByLabel('Passwort').fill(PASSWORD)
