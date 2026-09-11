@@ -16,8 +16,10 @@
 // browse filtered to builds using that part (parts have no detail page — same convention as
 // the search page's Teile section).
 import Link from 'next/link'
+import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
+import { metaEmptyAction } from '@/lib/emptyStateActions'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { Select } from '@/components/ui/Select'
@@ -100,6 +102,25 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
   const sort: Sort = oneOf(typeof params.sort === 'string' ? params.sort : undefined, SORTS) ?? 'winRate'
   const dir = params.dir === 'asc' ? 'asc' : 'desc'
   const base = { kind, ...(type ? { type } : {}), ...(manufacturer ? { manufacturer } : {}) }
+  // #28: role decides the catalog-empty CTA; a filter-induced emptiness always offers
+  // "Filter zurücksetzen" instead (decisions live in lib/emptyStateActions).
+  const session = await auth()
+  const role = session?.user?.id
+    ? (await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } }))?.role ?? null
+    : null
+  const filtered = Boolean(type || manufacturer)
+  const emptyCta = (kind: 'builds' | 'parts') => metaEmptyAction({ kind, filtered, role })
+  const emptyAction = (kind: 'builds' | 'parts') => {
+    const cta = emptyCta(kind)
+    return (
+      <Link
+        href={cta.href}
+        className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
+      >
+        {cta.label}
+      </Link>
+    )
+  }
 
   let body: React.ReactNode
   if (kind === 'builds') {
@@ -133,7 +154,11 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
       dir,
     )
     body = rows.length === 0 ? (
-      <EmptyState title="Keine Builds im Katalog" description="Sobald Builds im Katalog sind und Turnier-Matches ausgewertet wurden, erscheint hier die Win-Rate-Übersicht." />
+      <EmptyState
+        title="Keine Builds im Katalog"
+        description="Sobald Builds im Katalog sind und Turnier-Matches ausgewertet wurden, erscheint hier die Win-Rate-Übersicht."
+        action={emptyAction('builds')}
+      />
     ) : (
       <ul className="divide-y rounded-xl border">
         {rows.map((row) => (
@@ -194,7 +219,11 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
       dir,
     )
     body = rows.length === 0 ? (
-      <EmptyState title="Keine Teile im Katalog" description="Dieser Filter trifft kein Teil im Katalog." />
+      <EmptyState
+        title="Keine Teile im Katalog"
+        description="Dieser Filter trifft kein Teil im Katalog."
+        action={emptyAction('parts')}
+      />
     ) : (
       <ul className="divide-y rounded-xl border">
         {rows.map((row) => (
