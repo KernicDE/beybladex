@@ -4,6 +4,11 @@ import { useState } from 'react'
 import { FormField } from '@/components/ui/FormField'
 import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { BIO_MAX } from '@/lib/markdownFieldCaps'
+import type { Messages } from '@/lib/i18n/server'
+
+// Pick<> keeps the prop surface minimal: the form renders before the dictionary exists in no
+// scenario, but it never needs nav/landing strings.
+type ProfileStrings = Pick<Messages, 'settings' | 'common' | 'language'>
 
 type ProfileValues = {
   displayName: string
@@ -14,12 +19,14 @@ type ProfileValues = {
   country: string
   discordTag: string
   birthDate: string
+  language: string
 }
 
 const inputCls =
   'w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 dark:border-zinc-700 dark:bg-base-dark-alt dark:text-zinc-50'
 
-export function ProfileForm({ initial, isMinor }: { initial: ProfileValues; isMinor: boolean }) {
+export function ProfileForm({ initial, isMinor, t }: { initial: ProfileValues; isMinor: boolean; t: ProfileStrings }) {
+  const tProfile = t.settings.profile
   const [values, setValues] = useState<ProfileValues>(initial)
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -43,24 +50,26 @@ export function ProfileForm({ initial, isMinor }: { initial: ProfileValues; isMi
         country: values.country || null,
         discordTag: values.discordTag || null,
         birthDate: values.birthDate || null,
+        // RC14 #17 — interface language; validated against SUPPORTED_LOCALES in the route.
+        language: values.language || null,
       }),
     })
     setPending(false)
     if (res.ok) {
-      setMessage({ ok: true, text: 'Profil gespeichert.' })
+      setMessage({ ok: true, text: tProfile.saved })
     } else {
       const body = await res.json().catch(() => null)
-      setMessage({ ok: false, text: `Speichern fehlgeschlagen${body?.error ? ` (${body.error})` : ''}.` })
+      setMessage({ ok: false, text: `${tProfile.saveFailed}${body?.error ? ` (${body.error})` : ''}.` })
     }
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <label className="block text-sm">
-        Anzeigename
+        {tProfile.displayName}
         <input className={inputCls} value={values.displayName} onChange={set('displayName')} maxLength={50} />
       </label>
-      <FormField label="Über mich">
+      <FormField label={tProfile.bio}>
         <MarkdownEditor
           value={values.bio}
           onChange={(bio) => setValues((v) => ({ ...v, bio }))}
@@ -70,28 +79,40 @@ export function ProfileForm({ initial, isMinor }: { initial: ProfileValues; isMi
       </FormField>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
-          Stadt
+          {tProfile.city}
           <input className={inputCls} value={values.city} onChange={set('city')} maxLength={100} />
         </label>
         <label className="block text-sm">
-          Postleitzahl
+          {tProfile.postalCode}
           <input className={inputCls} value={values.postalCode} onChange={set('postalCode')} maxLength={10} inputMode="numeric" />
         </label>
         <label className="block text-sm">
-          Bundesland / Kanton
+          {tProfile.state}
           <input className={inputCls} value={values.state} onChange={set('state')} maxLength={100} />
         </label>
         <label className="block text-sm">
-          Land
+          {tProfile.country}
           <select className={inputCls} value={values.country} onChange={set('country')}>
-            <option value="DE">Deutschland</option>
-            <option value="AT">Österreich</option>
-            <option value="CH">Schweiz</option>
+            <option value="DE">{tProfile.countryDE}</option>
+            <option value="AT">{tProfile.countryAT}</option>
+            <option value="CH">{tProfile.countryCH}</option>
           </select>
         </label>
       </div>
+      {/* RC14 #17 — the profile language setting: drives the interface language on every
+          signed-in request (lib/i18n/server.ts). */}
       <label className="block text-sm">
-        Discord-Tag
+        {tProfile.language}
+        <select className={inputCls} value={values.language} onChange={set('language')}>
+          <option value="de">{t.language.de}</option>
+          <option value="en">{t.language.en}</option>
+        </select>
+        <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+          {tProfile.languageHint}
+        </span>
+      </label>
+      <label className="block text-sm">
+        {tProfile.discordTag}
         <input
           className={inputCls}
           value={values.discordTag}
@@ -102,13 +123,12 @@ export function ProfileForm({ initial, isMinor }: { initial: ProfileValues; isMi
         />
         {isMinor && (
           <span id="discord-minor-note" className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
-            Für Minderjährige ist der Discord-Tag ausgeschaltet — andere Nutzer:innen können ihn
-            aus Jugendschutzgründen nicht sehen, egal was hier eingetragen ist.
+            {tProfile.discordMinorNote}
           </span>
         )}
       </label>
       <label className="block text-sm">
-        Geburtsdatum
+        {tProfile.birthDate}
         <input className={inputCls} type="date" value={values.birthDate} onChange={set('birthDate')} />
       </label>
       {message && (
@@ -121,7 +141,7 @@ export function ProfileForm({ initial, isMinor }: { initial: ProfileValues; isMi
         disabled={pending}
         className="rounded-md bg-x-cyan px-4 py-2 font-medium text-base-dark disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-x-cyan"
       >
-        {pending ? 'Speichere…' : 'Speichern'}
+        {pending ? t.common.saving : t.common.save}
       </button>
     </form>
   )

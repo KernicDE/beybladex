@@ -2,22 +2,24 @@
 // Desktop-only static footer with legal page links (Impressum, Datenschutz)
 // and the deploy version (issue #77) so any visitor can reference the running build
 // in bug reports; the machine-readable form is /api/version.
+// RC14 #17 — chrome labels resolve from the request dictionary passed in by the root layout.
 import Link from 'next/link'
 import { LEGAL_LINKS } from '@/components/layout/legalLinks'
 import { APP_VERSION } from '@/lib/version'
+import type { Messages } from '@/lib/i18n/server'
 
-export function Footer() {
+export function Footer({ t }: { t: Messages }) {
   return (
     <footer className="hidden border-t border-x-cyan/20 px-4 py-6 text-sm text-current/60 md:block md:px-8">
       <div className="flex items-center justify-between gap-4">
         <p>© {new Date().getFullYear()} BeybladeX.de</p>
         <p aria-label="Version">v{APP_VERSION}</p>
-        <nav aria-label="Rechtliches">
+        <nav aria-label={t.legal.label}>
           <ul className="flex items-center gap-4">
-            {LEGAL_LINKS.map(({ href, label }) => (
+            {LEGAL_LINKS.map(({ href, labelKey }) => (
               <li key={href}>
                 <Link href={href} className="transition-colors hover:text-current">
-                  {label}
+                  {t.legal[labelKey]}
                 </Link>
               </li>
             ))}

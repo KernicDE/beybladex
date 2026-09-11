@@ -6,16 +6,12 @@
 // component is unit-testable with and without data.
 // #23's rules, binding: no empty/misleading placeholder — with no upcoming events the
 // section renders an honest fallback with a discovery CTA to /events instead of fake tiles.
+// RC14 #17 — copy resolves from the request dictionary passed in by GuestLanding.
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { formatDateDay, formatTimeHM } from '@/lib/formatDateTime'
 import type { DachCountry } from '@/lib/dachRegions'
-
-const COUNTRY_LABELS: Record<DachCountry, string> = {
-  DE: 'Deutschland',
-  AT: 'Österreich',
-  CH: 'Schweiz',
-}
+import type { Messages } from '@/lib/i18n/server'
 
 const TEASER_LIMIT = 3
 
@@ -28,20 +24,23 @@ export interface LandingTeaserEvent {
   country: DachCountry
 }
 
-export function LandingEventTeaser({ events }: { events: LandingTeaserEvent[] }) {
+export function LandingEventTeaser({ events, t }: { events: LandingTeaserEvent[]; t: Messages }) {
   const teaser = events.slice(0, TEASER_LIMIT)
+  // German appends the "Uhr" suffix to clock times; English (12h format from formatTimeHM)
+  // uses none — the empty string is intentional, so guard the join instead of trimming.
+  const clockSuffix = t.teaser.oClock ? ` ${t.teaser.oClock}` : ''
 
   return (
     <section aria-labelledby="landing-events-heading">
       <h2 id="landing-events-heading" className="text-2xl font-semibold">
-        Kommende Events
+        {t.teaser.heading}
       </h2>
       {teaser.length === 0 ? (
         // #23 — honest fallback, no fake tiles: the calendar exists, it is simply empty.
         <p className="mt-3 text-current/70">
-          Aktuell sind keine Events im Kalender — schau später nochmal vorbei oder{' '}
+          {t.teaser.empty}{' '}
           <Link href="/events" className="text-x-cyan-text hover:underline dark:text-x-cyan">
-            entdecke die Event-Übersicht →
+            {t.teaser.emptyLink}
           </Link>
         </p>
       ) : (
@@ -53,9 +52,9 @@ export function LandingEventTeaser({ events }: { events: LandingTeaserEvent[] })
                   <Card className="h-full">
                     <h3 className="font-semibold text-x-cyan-text dark:text-x-cyan">{event.title}</h3>
                     <p className="mt-2 text-sm text-current/70">
-                      {formatDateDay(event.startDate)}, {formatTimeHM(event.startDate)} Uhr
+                      {formatDateDay(event.startDate)}, {formatTimeHM(event.startDate)}{clockSuffix}
                       <br />
-                      {event.city}, {event.state} · {COUNTRY_LABELS[event.country]}
+                      {event.city}, {event.state} · {t.regions[event.country]}
                     </p>
                   </Card>
                 </Link>
@@ -67,7 +66,7 @@ export function LandingEventTeaser({ events }: { events: LandingTeaserEvent[] })
               href="/events"
               className="text-sm font-medium text-x-cyan-text hover:underline dark:text-x-cyan"
             >
-              Alle Events anzeigen →
+              {t.teaser.showAll}
             </Link>
           </p>
         </>

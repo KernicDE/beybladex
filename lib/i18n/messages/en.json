@@ -1,0 +1,112 @@
+{
+  "common": {
+    "search": "Search",
+    "searchPlaceholder": "Search…",
+    "login": "Sign in",
+    "register": "Register now",
+    "save": "Save",
+    "saving": "Saving…"
+  },
+  "nav": {
+    "main": "Main navigation",
+    "more": "More",
+    "morePages": "More pages",
+    "loginRequired": "Sign-in required",
+    "search": "Search",
+    "events": "Events",
+    "decks": "Decks",
+    "builds": "Builds",
+    "collection": "Collection",
+    "clubs": "Clubs",
+    "rules": "Rules",
+    "leaderboard": "Rankings",
+    "home": "Home",
+    "profile": "Profile"
+  },
+  "legal": {
+    "label": "Legal",
+    "imprint": "Imprint",
+    "privacy": "Privacy"
+  },
+  "language": {
+    "label": "Language",
+    "de": "Deutsch",
+    "en": "English"
+  },
+  "settings": {
+    "profile": {
+      "heading": "Edit profile",
+      "intro": "Change your profile details here (GDPR Art. 16). Your username is your platform identity and cannot be changed.",
+      "displayName": "Display name",
+      "bio": "About me",
+      "city": "City",
+      "postalCode": "Postal code",
+      "state": "State / canton",
+      "country": "Country",
+      "countryDE": "Germany",
+      "countryAT": "Austria",
+      "countryCH": "Switzerland",
+      "discordTag": "Discord tag",
+      "discordMinorNote": "The Discord tag is disabled for minors — other users cannot see it for youth-protection reasons, no matter what is entered here.",
+      "birthDate": "Date of birth",
+      "language": "Language",
+      "languageHint": "Sets the language of the entire interface — on any device, as soon as you are signed in.",
+      "saved": "Profile saved.",
+      "saveFailed": "Saving failed"
+    }
+  },
+  "notFound": {
+    "heading": "Page not found",
+    "body": "This page does not exist (anymore). The link may be outdated — or the page has been moved.",
+    "home": "Back to home",
+    "events": "Discover events"
+  },
+  "landing": {
+    "heroTagline": "The platform for Beyblade X tournaments in the DACH region.",
+    "heroBody": "Find events and clubs near you, manage your collection and your decks — and battle other Bladers.",
+    "featuresHeading": "Everything for your X adventure",
+    "galleryHeading": "A look inside the app",
+    "dachHeading": "The DACH community",
+    "dachBody": "BeybladeX.de connects Bladers from Germany, Austria and Switzerland: from local club meetups to big tournaments — with a shared calendar, map and rankings.",
+    "ctaHeading": "Ready for your first tournament?",
+    "ctaBody": "Create your free profile and become part of the DACH Beyblade community.",
+    "features": {
+      "events": {
+        "title": "Events & Tournaments",
+        "description": "Find events in the DACH region and sign up — with check-in and live scoring right on the platform."
+      },
+      "clubs": {
+        "title": "Clubs & Community",
+        "description": "Find Beyblade clubs near you, join them and stay connected with your fellow Bladers via the club map and chat."
+      },
+      "decks": {
+        "title": "Deck Builder",
+        "description": "Build your tournament decks and validate them directly against your format's deck rules."
+      },
+      "collection": {
+        "title": "Collection Manager",
+        "description": "Track your Beyblades, parts and builds — your inventory, always at hand."
+      },
+      "leaderboard": {
+        "title": "Rankings & Meta",
+        "description": "ELO rankings, statistics and a look at which parts are winning in the meta."
+      },
+      "rules": {
+        "title": "Rulebook",
+        "description": "The official rulebook with checklists — from stadium setup to the WBO deck regulations."
+      }
+    }
+  },
+  "teaser": {
+    "heading": "Upcoming events",
+    "empty": "There are no events in the calendar right now — check back later or",
+    "emptyLink": "discover the event overview →",
+    "showAll": "Show all events →",
+    "oClock": ""
+  },
+  "regions": {
+    "DE": "Germany",
+    "AT": "Austria",
+    "CH": "Switzerland"
+  }
+}

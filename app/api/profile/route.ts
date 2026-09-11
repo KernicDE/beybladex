@@ -10,6 +10,7 @@ import { calculateAge, MINOR_CONSENT_AGE_THRESHOLD } from '@/lib/age'
 import { BIO_MAX } from '@/lib/markdownFieldCaps'
 import { geocodePostalCode, type DachCountry } from '@/lib/geo'
 import { normalizeDisplayName } from '@/lib/displayName'
+import { isSupportedLocale } from '@/lib/i18n/locales'
 
 // Free-text length caps — the bio/displayName convention every later phase's forms follow.
 const DISPLAY_NAME_MAX = 50
@@ -67,6 +68,15 @@ export async function PATCH(req: Request) {
       return Response.json({ error: 'invalid_country' }, { status: 400 })
     }
     data.country = fields.country
+  }
+
+  // RC14 #17 — interface language. Validated against the i18n locale registry (bare codes),
+  // not a local enum, so a new supported language needs no route change.
+  if (fields.language !== undefined) {
+    if (typeof fields.language !== 'string' || !isSupportedLocale(fields.language)) {
+      return Response.json({ error: 'invalid_language' }, { status: 400 })
+    }
+    data.language = fields.language
   }
 
   if (fields.birthDate !== undefined) {

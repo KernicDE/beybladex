@@ -16,7 +16,7 @@ function useRouterSafe() {
   }
 }
 
-export function SearchInput({ action = '/search', className = '' }: { action?: string; className?: string }) {
+export function SearchInput({ action = '/search', className = '', placeholder = 'Suchen…', submitLabel = 'Suchen' }: { action?: string; className?: string; placeholder?: string; submitLabel?: string }) {
   const router = useRouterSafe()
   // Read ?q= straight from the URL — no useSearchParams(), so this works in any
   // context (including unit tests without a router).
@@ -37,14 +37,14 @@ export function SearchInput({ action = '/search', className = '' }: { action?: s
   return (
     <form role="search" onSubmit={onSubmit} className={className}>
       <label htmlFor="global-search" className="sr-only">
-        Suchen
+        {submitLabel}
       </label>
       <input
         id="global-search"
         type="search"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Suchen…"
+        placeholder={placeholder}
         className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-current/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-x-cyan-text dark:border-zinc-700 dark:bg-base-dark-alt dark:text-zinc-50"
       />
     </form>

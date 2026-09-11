@@ -1,0 +1,112 @@
+{
+  "common": {
+    "search": "Suche",
+    "searchPlaceholder": "Suchen…",
+    "login": "Anmelden",
+    "register": "Jetzt registrieren",
+    "save": "Speichern",
+    "saving": "Speichere…"
+  },
+  "nav": {
+    "main": "Hauptnavigation",
+    "more": "Mehr",
+    "morePages": "Weitere Seiten",
+    "loginRequired": "Anmeldung erforderlich",
+    "search": "Suche",
+    "events": "Events",
+    "decks": "Decks",
+    "builds": "Builds",
+    "collection": "Sammlung",
+    "clubs": "Clubs",
+    "rules": "Regeln",
+    "leaderboard": "Rangliste",
+    "home": "Startseite",
+    "profile": "Profil"
+  },
+  "legal": {
+    "label": "Rechtliches",
+    "imprint": "Impressum",
+    "privacy": "Datenschutz"
+  },
+  "language": {
+    "label": "Sprache",
+    "de": "Deutsch",
+    "en": "English"
+  },
+  "settings": {
+    "profile": {
+      "heading": "Profil bearbeiten",
+      "intro": "Hier kannst du deine Profilangaben ändern (Art. 16 DSGVO). Dein Benutzername ist deine Plattform-Identität und kann nicht geändert werden.",
+      "displayName": "Anzeigename",
+      "bio": "Über mich",
+      "city": "Stadt",
+      "postalCode": "Postleitzahl",
+      "state": "Bundesland / Kanton",
+      "country": "Land",
+      "countryDE": "Deutschland",
+      "countryAT": "Österreich",
+      "countryCH": "Schweiz",
+      "discordTag": "Discord-Tag",
+      "discordMinorNote": "Für Minderjährige ist der Discord-Tag ausgeschaltet — andere Nutzer:innen können ihn aus Jugendschutzgründen nicht sehen, egal was hier eingetragen ist.",
+      "birthDate": "Geburtsdatum",
+      "language": "Sprache",
+      "languageHint": "Bestimmt die Sprache der gesamten Oberfläche — auch auf anderen Geräten, sobald du angemeldet bist.",
+      "saved": "Profil gespeichert.",
+      "saveFailed": "Speichern fehlgeschlagen"
+    }
+  },
+  "notFound": {
+    "heading": "Seite nicht gefunden",
+    "body": "Diese Seite existiert nicht (mehr). Der Link kann veraltet sein — oder die Seite wurde zwischenzeitlich verschoben.",
+    "home": "Zur Startseite",
+    "events": "Events entdecken"
+  },
+  "landing": {
+    "heroTagline": "Die Plattform für Beyblade X Turniere in der DACH-Region.",
+    "heroBody": "Finde Events und Clubs in deiner Nähe, verwalte deine Sammlung und deine Decks — und tritt gegen andere Blader an.",
+    "featuresHeading": "Alles für dein X-Abenteuer",
+    "galleryHeading": "Ein Blick in die App",
+    "dachHeading": "Die DACH-Community",
+    "dachBody": "BeybladeX.de vernetzt Blader aus Deutschland, Österreich und der Schweiz: von lokalen Club-Treffen bis zu großen Turnieren — mit gemeinsamem Kalender, Karte und Rangliste.",
+    "ctaHeading": "Bereit für dein erstes Turnier?",
+    "ctaBody": "Erstelle dein kostenloses Profil und werde Teil der DACH-Beyblade-Community.",
+    "features": {
+      "events": {
+        "title": "Events & Turniere",
+        "description": "Finde Events in der DACH-Region, melde dich an — mit Check-in und Live-Scoring direkt auf der Plattform."
+      },
+      "clubs": {
+        "title": "Clubs & Community",
+        "description": "Finde Beyblade-Clubs in deiner Nähe, tritt bei und bleib über die Club-Karte und den Chat mit deinen Mitbladern verbunden."
+      },
+      "decks": {
+        "title": "Deck-Builder",
+        "description": "Baue deine Turnier-Decks und prüfe sie direkt gegen die Deck-Regeln deines Formats."
+      },
+      "collection": {
+        "title": "Sammlungsverwaltung",
+        "description": "Erfasse deine Beyblades, Teile und Builds — dein Inventar, immer griffbereit."
+      },
+      "leaderboard": {
+        "title": "Rangliste & Meta",
+        "description": "ELO-Rangliste, Statistiken und ein Blick darauf, welche Teile sich in der Meta durchsetzen."
+      },
+      "rules": {
+        "title": "Regelwerk",
+        "description": "Das offizielle Regelwerk mit Checklisten — vom Aufbau des Stadiums bis zu den WBO-Deck-Bestimmungen."
+      }
+    }
+  },
+  "teaser": {
+    "heading": "Kommende Events",
+    "empty": "Aktuell sind keine Events im Kalender — schau später nochmal vorbei oder",
+    "emptyLink": "entdecke die Event-Übersicht →",
+    "showAll": "Alle Events anzeigen →",
+    "oClock": "Uhr"
+  },
+  "regions": {
+    "DE": "Deutschland",
+    "AT": "Österreich",
+    "CH": "Schweiz"
+  }
+}
