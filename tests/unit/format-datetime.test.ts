@@ -5,7 +5,7 @@
 // Berlin wall-clock times — if the explicit timeZone option ever regresses, the host's zone
 // decides the output and these assertions fail regardless of where the suite runs.
 import { describe, it, expect } from 'vitest'
-import { formatDateTime } from '@/lib/formatDateTime'
+import { formatDateTime, formatDateDay, formatTimeHM } from '@/lib/formatDateTime'
 
 describe('formatDateTime (issue #98)', () => {
   it('renders Europe/Berlin time even when the host runs UTC (CEST summer)', () => {
@@ -26,5 +26,17 @@ describe('formatDateTime (issue #98)', () => {
   it('formats with the German weekday/month vocabulary', () => {
     // 2026-09-11 is a Friday
     expect(formatDateTime(new Date('2026-09-11T14:00:00Z'))).toMatch(/^Fr\./)
+  })
+})
+
+describe('formatDateDay / formatTimeHM (RC11 #80)', () => {
+  it('renders the long weekday plus TT.MM.JJJJ in Berlin time', () => {
+    // 2026-09-11 is a Friday
+    expect(formatDateDay(new Date('2026-09-11T14:00:00Z'))).toBe('Freitag, 11.09.2026')
+  })
+
+  it('renders HH:MM in Berlin time', () => {
+    // 2026-09-11 14:00 UTC = 16:00 CEST
+    expect(formatTimeHM(new Date('2026-09-11T14:00:00Z'))).toBe('16:00')
   })
 })

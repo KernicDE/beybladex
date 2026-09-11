@@ -15,3 +15,31 @@ export function formatDateTime(date: Date): string {
     minute: '2-digit',
   })
 }
+
+// --- RC11 additions (#80 event list, #81 event detail) -------------------------------------
+// All helpers below pin Europe/Berlin exactly like formatDateTime — the host's zone must never
+// leak into rendered output (see the header comment).
+
+const DATE_DAY_OPTS: Intl.DateTimeFormatOptions = {
+  timeZone: 'Europe/Berlin',
+  weekday: 'long',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+}
+
+const TIME_OPTS: Intl.DateTimeFormatOptions = {
+  timeZone: 'Europe/Berlin',
+  hour: '2-digit',
+  minute: '2-digit',
+}
+
+/** `Freitag, 11.09.2026` — ausgeschriebener Wochentag + TT.MM.JJJJ (#80). */
+export function formatDateDay(date: Date): string {
+  return date.toLocaleDateString('de-DE', DATE_DAY_OPTS)
+}
+
+/** `10:30` — Uhrzeit (HH:MM, Berlin) ohne "Uhr"-Suffix. */
+export function formatTimeHM(date: Date): string {
+  return date.toLocaleTimeString('de-DE', TIME_OPTS)
+}
