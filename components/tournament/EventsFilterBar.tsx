@@ -45,9 +45,12 @@ export function EventsFilterBar({
 
   const regions = country ? DACH_REGIONS[country as DachCountry] : null
 
+  // #79 — feste sm:-Breiten sind weg: die Grid-Zellen des umgebenden GET-Formulars
+  // (app/events/page.tsx, sm:grid-cols-6) bestimmen die Breiten, der Umbruch erfolgt nur
+  // noch an der gestalteten Zeilengrenze, nicht mehr inzidentell per flex-wrap.
   return (
     <>
-      <div className="sm:w-48">
+      <div>
         <label htmlFor="filter-country" className="mb-1 block text-sm">
           Land
         </label>
@@ -59,7 +62,7 @@ export function EventsFilterBar({
           ))}
         </Select>
       </div>
-      <div className="sm:w-48">
+      <div>
         <label htmlFor="filter-state" className="mb-1 block text-sm">
           Bundesland / Kanton
         </label>
@@ -78,19 +81,19 @@ export function EventsFilterBar({
           ))}
         </Select>
       </div>
-      <div className="sm:w-40">
+      <div>
         <label htmlFor="filter-from" className="mb-1 block text-sm">
           Von
         </label>
         <Input id="filter-from" name="from" type="date" defaultValue={initialFrom} />
       </div>
-      <div className="sm:w-40">
+      <div>
         <label htmlFor="filter-to" className="mb-1 block text-sm">
           Bis
         </label>
         <Input id="filter-to" name="to" type="date" defaultValue={initialTo} />
       </div>
-      <div className="sm:w-28">
+      <div>
         <label htmlFor="filter-plz" className="mb-1 block text-sm">
           PLZ
         </label>
@@ -104,7 +107,7 @@ export function EventsFilterBar({
           defaultValue={initialPlz}
         />
       </div>
-      <div className="sm:w-36">
+      <div>
         <label htmlFor="filter-radius" className="mb-1 block text-sm">
           Umkreis
         </label>
