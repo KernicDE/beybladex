@@ -49,6 +49,31 @@ describe('withPublicCache (issue #43)', () => {
     expect(value.startDate.toISOString()).toBe('2026-10-01T10:00:00.000Z')
   })
 
+  it('hotfix #126: full write→read round-trip — the SET payload itself must carry $d tags', async () => {
+    // Regression test for the live /clubs/[slug] 500: Date.prototype.toJSON runs BEFORE the
+    // JSON.stringify replacer, so an `v instanceof Date` check on the replacer argument never
+    // fires and dates were cached as plain ISO strings. Decode the actual SET payload and serve
+    // it as the next GET hit — exactly what Redis does in production.
+    const produced = [
+      { id: 't1', title: 'Club-Cup', startDate: new Date('2026-10-01T10:00:00Z'), endDate: null },
+      { id: 't2', title: 'Weekly', startDate: new Date('2026-10-08T18:30:00Z') },
+    ]
+
+    await withPublicCache('public:v1:club-events:c1', 120, async () => produced)
+    const written = redisSet.mock.calls[0][1] as string
+    expect(written).toContain('"$d"')
+
+    redisGet.mockResolvedValue(written)
+    const produce = vi.fn()
+    const hit = await withPublicCache<typeof produced>('public:v1:club-events:c1', 120, produce)
+
+    expect(produce).not.toHaveBeenCalled()
+    expect(hit[0].startDate).toBeInstanceOf(Date)
+    expect(() => hit[0].startDate.toLocaleDateString('de-DE')).not.toThrow()
+    expect(hit[1].startDate).toBeInstanceOf(Date)
+    expect(hit[0].endDate).toBeNull()
+  })
+
   it('does not cache null results (fresh creates must show up immediately)', async () => {
     const produce = vi.fn().mockResolvedValue(null)
 

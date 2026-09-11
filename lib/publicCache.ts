@@ -36,7 +36,14 @@
 import { redis } from '@/lib/redis'
 
 function encode(value: unknown): string {
-  return JSON.stringify(value, (_key, v: unknown) => (v instanceof Date ? { $d: v.toISOString() } : v))
+  // The replacer MUST read the original value from the holder (`this[key]`): Date.prototype.toJSON
+  // runs BEFORE the replacer, so the `v` argument is already an ISO string and `v instanceof Date`
+  // is never true — the $d tag never got written and cache hits returned raw strings (hotfix #126,
+  // `toLocaleDateString is not a function` on /clubs/[slug]).
+  return JSON.stringify(value, function (this: Record<string, unknown>, key: string, v: unknown) {
+    const original = this[key]
+    return original instanceof Date ? { $d: original.toISOString() } : v
+  })
 }
 
 function decode<T>(raw: string): T {
