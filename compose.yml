@@ -54,6 +54,10 @@ services:
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
+      # Phase 18 — UGC-Übersetzung (lib/i18n/deepl.ts, optional: ohne Key log-and-noop).
+      # Stand 11.09.2026: lag zwar in der Server-.env, wurde aber nie in den Container
+      # weitergereicht — DeepL war auf Produktion nie aktiv.
+      DEEPL_API_KEY: ${DEEPL_API_KEY}
       # MediaAsset files (Phase 11's generic upload pipeline) live on the bind-mounted volume
       # below — the container FS is ephemeral (Watchtower recreates on every deploy).
       MEDIA_UPLOADS_DIR: /app/media_uploads
