@@ -20,7 +20,7 @@ const RESERVED_USERNAMES = new Set(['admin', 'api', 'root', 'support', 'moderato
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const EMAIL_MAX_LENGTH = 254
 
-const PRIVACY_POLICY_VERSION = '2026-09-08' // bump whenever /datenschutz's content changes materially
+const PRIVACY_POLICY_VERSION = '2026-09-11' // bump whenever /datenschutz's content changes materially (issue #71)
 
 export async function POST(req: Request) {
   const ip = getClientIp(req) // last XFF hop — leftmost entries are client-spoofable (issue #34)
