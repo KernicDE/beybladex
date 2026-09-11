@@ -5,7 +5,11 @@
 // naming it). Shared by the public rules page — a pure function so it can't drift from what
 // actually renders, and so a later long-form Markdown body (Phase 8-dependent) can sit
 // alongside this without replacing it.
+// RC10 #72: each entry now also carries `deviates` (differs from the WoB base, lib/wobBase)
+// so the UI can keep the prose as SECONDARY detail (behind "Erklärung anzeigen") while the
+// primary rendering is the compact ✓/✗ checklist.
 import type { Ruleset } from '@prisma/client'
+import { WOB_BASE } from '@/lib/wobBase'
 
 type ProseField =
   | 'lockedDecks'
@@ -19,6 +23,8 @@ type ProseField =
 export interface RulesetToggleProse {
   label: string
   value: boolean
+  // RC10 #72: true when this option deviates from the WoB base ruleset (lib/wobBase).
+  deviates: boolean
   paragraph: string
 }
 
@@ -29,8 +35,9 @@ function relaunchClause(relaunchLimit: number): string {
 }
 
 export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchLimit'>): RulesetToggleProse[] {
-  return [
+  const prose: (Omit<RulesetToggleProse, 'deviates'> & { key: ProseField })[] = [
     {
+      key: 'lockedDecks',
       label: 'Gesperrte Decks',
       value: ruleset.lockedDecks,
       paragraph: ruleset.lockedDecks
@@ -38,6 +45,7 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Gesperrte Decks inaktiv: Teilnehmer:innen dürfen ihr Deck auch nach Turnierstart zwischen Matches umbauen — etwa um auf die Builds der Gegner:innen zu reagieren. Der Deck-Check gilt dann nur für das jeweils aktuelle Match, nicht für das ganze Turnier.',
     },
     {
+      key: 'allowForceSwitch',
       label: 'Force-Switch erlaubt',
       value: ruleset.allowForceSwitch,
       paragraph: ruleset.allowForceSwitch
@@ -45,6 +53,7 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Force-Switch nicht erlaubt: Das zu Matchbeginn gewählte Build bleibt für die gesamte Dauer des Matches fest — ein Wechsel ist erst im nächsten Match möglich. Das erhöht das Gewicht der Build-Wahl vor jedem einzelnen Match.',
     },
     {
+      key: 'arenaTurnAllowed',
       label: 'Arena-Drehung erlaubt',
       value: ruleset.arenaTurnAllowed,
       paragraph: ruleset.arenaTurnAllowed
@@ -52,6 +61,7 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Arena-Drehung nicht erlaubt: Die Arena bleibt für das gesamte Match in der ursprünglichen Ausrichtung, wie sie zu Beginn des Matches aufgestellt wurde.',
     },
     {
+      key: 'outOfBounds2Pts',
       label: 'Out-of-Bounds = 2 Punkte',
       value: ruleset.outOfBounds2Pts,
       paragraph: ruleset.outOfBounds2Pts
@@ -59,6 +69,7 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Out-of-Bounds zählt 1 Punkt: Ein Ring-Out wird wie ein einfaches Spin Finish gewertet und bringt dem Gegner den regulären 1 Punkt.',
     },
     {
+      key: 'ownFinishPenalty',
       label: 'Own-Finish-Strafe',
       value: ruleset.ownFinishPenalty,
       paragraph: ruleset.ownFinishPenalty
@@ -66,6 +77,7 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Own-Finish-Strafe inaktiv: Ein Own-Finish wird nicht gesondert bestraft — der Durchgang wird lediglich wiederholt, ohne dass dem Gegner ein zusätzlicher Punkt gutgeschrieben wird.',
     },
     {
+      key: 'aerialContactRerun',
       label: 'Wiederholung bei Luftkontakt',
       value: ruleset.aerialContactRerun,
       paragraph: ruleset.aerialContactRerun
@@ -73,6 +85,7 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Wiederholung bei Luftkontakt inaktiv: Ein Luftkontakt beim Start wird wie ein regulärer Durchgang gewertet; das Ergebnis zählt, auch wenn sich die Beys vor der Arena berührt haben.',
     },
     {
+      key: 'externalDisturbanceRerun',
       label: 'Wiederholung bei äußeren Störungen',
       value: ruleset.externalDisturbanceRerun,
       paragraph: ruleset.externalDisturbanceRerun
@@ -80,4 +93,10 @@ export function buildRulesetProse(ruleset: Pick<Ruleset, ProseField | 'relaunchL
         : 'Wiederholung bei äußeren Störungen inaktiv: Ein durch äußere Umstände gestörter Durchgang zählt trotzdem regulär; eine Wiederholung liegt nicht im automatischen Ermessen der Judge.',
     },
   ]
+  // #72: flag every option that deviates from the WoB base — the UI renders this as the
+  // compact ✓/✗ checklist with deviation marks, so the deviation info must not drift.
+  return prose.map(({ key, ...entry }) => ({
+    ...entry,
+    deviates: ruleset[key] !== WOB_BASE[key],
+  }))
 }

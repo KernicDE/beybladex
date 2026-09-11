@@ -13,6 +13,8 @@ import { Card } from '@/components/ui/Card'
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 import { DECK_FORMAT_LABELS } from '@/lib/rulesetLabels'
 import { buildRulesetProse } from '@/lib/rulesetProse'
+import { isWobStandard } from '@/lib/wobBase'
+import { RulesetToggleChecklist } from '@/components/rules/RulesetToggleChecklist'
 
 export const revalidate = 300 // [REVIEW-FIX: performance P16]
 
@@ -30,13 +32,17 @@ export default async function RulesetPage({ params }: { params: Promise<{ slug: 
   const isOwner = ruleset.createdById === session?.user?.id
   // Phase 10 item 3 — full explanatory paragraphs per toggle, modeled on the WBO rules page's
   // depth, instead of a bare badge + one-line hint.
+  // RC10 #72: prose is now SECONDARY (behind "Erklärung anzeigen" in the checklist); the
+  // primary rendering is the compact ✓/✗ list with per-option WoB deviation marks.
   const toggleProse = buildRulesetProse(ruleset)
+  const wobStandard = isWobStandard(ruleset)
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{ruleset.title}</h1>
         <Badge tone="cyan">{DECK_FORMAT_LABELS[ruleset.deckFormat]}</Badge>
+        {wobStandard && <Badge tone="green">WoB-Standard</Badge>}
         {!ruleset.isPublic && <Badge tone="neutral">Privat</Badge>}
       </div>
 
@@ -59,19 +65,14 @@ export default async function RulesetPage({ params }: { params: Promise<{ slug: 
 
       <Card>
         <h2 className="text-lg font-semibold">Sonderregeln</h2>
-        <ul className="mt-3 space-y-4">
-          {toggleProse.map((toggle) => (
-            <li key={toggle.label} className="flex items-start gap-3">
-              <Badge tone={toggle.value ? 'green' : 'neutral'} className="mt-0.5 shrink-0">
-                {toggle.value ? 'An' : 'Aus'}
-              </Badge>
-              <div>
-                <p className="text-sm font-medium">{toggle.label}</p>
-                <p className="mt-1 text-sm text-current/70">{toggle.paragraph}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <p className="mt-1 text-sm text-current/60">
+          Dieses Regelwerk basiert auf dem WoB-Standard (World Beyblade Organization).
+          Abweichungen von diesem Standard sind pro Regel gekennzeichnet; die ausführliche
+          Erklärung steht hinter „Erklärung anzeigen“.
+        </p>
+        <div className="mt-3">
+          <RulesetToggleChecklist items={toggleProse} />
+        </div>
       </Card>
 
       <p className="text-sm text-current/60">

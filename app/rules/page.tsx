@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { DECK_FORMAT_LABELS } from '@/lib/rulesetLabels'
+import { isWobStandard } from '@/lib/wobBase'
 
 export const revalidate = 300 // public, infrequently-mutated content [REVIEW-FIX: performance P16]
 
@@ -34,7 +35,25 @@ export default async function RulesPage({
     orderBy: { id: 'desc' },
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: { id: true, title: true, slug: true, description: true, deckFormat: true, isPublic: true },
+    // RC10 #72: the WoB comparison needs every comparable field, not just the card basics.
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      description: true,
+      deckFormat: true,
+      isPublic: true,
+      targetPoints: true,
+      finalsTargetPoints: true,
+      relaunchLimit: true,
+      lockedDecks: true,
+      allowForceSwitch: true,
+      arenaTurnAllowed: true,
+      outOfBounds2Pts: true,
+      ownFinishPenalty: true,
+      aerialContactRerun: true,
+      externalDisturbanceRerun: true,
+    },
   })
 
   const hasMore = rulesets.length > PAGE_SIZE
@@ -77,6 +96,9 @@ export default async function RulesPage({
                     {ruleset.title}
                   </Link>
                   <Badge tone="cyan">{DECK_FORMAT_LABELS[ruleset.deckFormat]}</Badge>
+                  {/* #72: rulesets matching the WoB base in every comparable field are
+                      flagged as the standard — deviations are visible on the detail page. */}
+                  {isWobStandard(ruleset) && <Badge tone="green">WoB-Standard</Badge>}
                   {!ruleset.isPublic && <Badge tone="neutral">Privat</Badge>}
                 </div>
                 {ruleset.description && (

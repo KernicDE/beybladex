@@ -32,6 +32,9 @@ export type RulesetFormValues = {
   externalDisturbanceRerun: boolean
 }
 
+// The form defaults ARE the WoB base ruleset (RC10 #72): a new ruleset starts as the
+// WoB standard, and every deliberate change is a deviation — canonical values live in
+// lib/wobBase.ts and must stay in sync with these.
 export const DEFAULT_RULESET_VALUES: RulesetFormValues = {
   title: '',
   description: '',
