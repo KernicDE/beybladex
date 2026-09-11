@@ -72,6 +72,10 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
       spinDirection: values.spinDirection,
       weightGrams: values.weightGrams === '' ? null : Number(values.weightGrams),
     }
+    // lib/partValidation requires the metadata KEY on create (nullable value). The form has no
+    // metadata editing — send null on CREATE only; PATCH must omit it so partial updates don't
+    // wipe existing metadata (hotfix issue #101).
+    if (!editing) payload.metadata = null
     if (editing) payload.id = initial.id
     const res = await fetch('/api/admin/parts', {
       method: editing ? 'PATCH' : 'POST',
