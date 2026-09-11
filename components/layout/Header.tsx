@@ -21,7 +21,9 @@ import { BrandMark } from '@/components/brand/BrandMark'
 // RC8 #20: `auth` marks routes that render a GuestGate for guests (/decks,
 // /collection) — they get a lock icon in the nav when there is no session.
 const NAV_LINKS: { href: string; label: string; auth?: boolean }[] = [
-  { href: '/events', label: 'Turniere & Events' },
+  // RC10 #29: the public IA term is "Events" (matching /events and the bottom nav's tab)
+  // — one name per route across header and MobileNav.
+  { href: '/events', label: 'Events' },
   { href: '/decks', label: 'Decks', auth: true },
   { href: '/builds', label: 'Builds' },
   { href: '/collection', label: 'Sammlung', auth: true },
