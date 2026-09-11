@@ -4,7 +4,7 @@
 // semantics, the monotonic-decrease guard and the finals-aware win threshold, so the rules
 // can't silently drift between server arithmetic and tests. No HTTP, no DB.
 import { describe, it, expect } from 'vitest'
-import { SCORED_EVENTS, RERUN_EVENTS, pointsForEvent, isKnownEventType, applyEvent, isMonotonicDecrease, winThreshold } from '@/lib/scoring'
+import { SCORED_EVENTS, RERUN_EVENTS, SCORE_EVENT_TYPES, pointsForEvent, pointValuesFor, isKnownEventType, applyEvent, isMonotonicDecrease, winThreshold } from '@/lib/scoring'
 
 const RULESET = { outOfBounds2Pts: false, ownFinishPenalty: false }
 
@@ -29,6 +29,46 @@ describe('pointsForEvent (point values live in the Ruleset, never hardcoded in t
   it('SCORED_EVENTS / RERUN_EVENTS partition the event vocabulary', () => {
     expect(SCORED_EVENTS.size).toBe(7)
     expect(RERUN_EVENTS).toEqual(['EXTERNAL_DISTURBANCE', 'AERIAL_CONTACT'])
+  })
+})
+
+// RC6 #46 — pointValuesFor is the single UI-side point table (judge page + JudgeScorePad both
+// render from it); these pin it byte-for-byte to the server-side pointsForEvent matrix so the
+// client can never drift from the authoritative arithmetic in applyEvent.
+describe('pointValuesFor (the one point table, client and server)', () => {
+  it('matches pointsForEvent for every pad event', () => {
+    for (const ruleset of [
+      { outOfBounds2Pts: false, ownFinishPenalty: false },
+      { outOfBounds2Pts: true, ownFinishPenalty: true },
+    ]) {
+      for (const t of SCORE_EVENT_TYPES) {
+        expect(pointValuesFor(ruleset)[t]).toBe(pointsForEvent(t, ruleset))
+      }
+    }
+  })
+
+  it('base matrix: Spin=1, Over/Burst/Overfinish=2, Xtreme=3, rerun triggers=0', () => {
+    expect(pointValuesFor({ outOfBounds2Pts: false, ownFinishPenalty: false })).toEqual({
+      SPIN: 1,
+      OVER: 2,
+      BURST: 2,
+      XTREME: 3,
+      OUT_OF_BOUNDS: 1,
+      OVERFINISH: 2,
+      OWN_FINISH: 0,
+      EXTERNAL_DISTURBANCE: 0,
+      AERIAL_CONTACT: 0,
+    })
+  })
+
+  it('Ruleset toggles flip OUT_OF_BOUNDS and OWN_FINISH in the table', () => {
+    const v = pointValuesFor({ outOfBounds2Pts: true, ownFinishPenalty: true })
+    expect(v.OUT_OF_BOUNDS).toBe(2)
+    expect(v.OWN_FINISH).toBe(1)
+  })
+
+  it('SCORE_EVENT_TYPES covers the scored events plus the rerun triggers and nothing else', () => {
+    expect(new Set(SCORE_EVENT_TYPES)).toEqual(new Set([...SCORED_EVENTS, ...RERUN_EVENTS]))
   })
 })
 

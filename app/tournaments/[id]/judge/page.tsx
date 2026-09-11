@@ -10,8 +10,9 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { JudgeScorePad, type PadPlayer, type ScoreEventType } from '@/components/judge/JudgeScorePad'
+import { JudgeScorePad, type PadPlayer } from '@/components/judge/JudgeScorePad'
 import { eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
+import { pointValuesFor } from '@/lib/scoring'
 
 export const dynamic = 'force-dynamic'
 
@@ -130,17 +131,11 @@ export default async function JudgePage({
   }
 
   // Point values derived server-side from the Ruleset — the pad displays local arithmetic with
-  // these, and the score API recomputes authoritatively from the same Ruleset.
+  // these, and the score API recomputes authoritatively from the same Ruleset. lib/scoring.ts's
+  // pointValuesFor is the ONE point table (issue #46): the old hand-rolled literal here was a
+  // third copy that could drift from the server's applyEvent mid-match.
   const r = tournament.ruleset
-  const pointValues = {
-    SPIN: 1,
-    OVER: 2,
-    BURST: 2,
-    XTREME: 3,
-    OUT_OF_BOUNDS: r.outOfBounds2Pts ? 2 : 1,
-    OVERFINISH: 2,
-    OWN_FINISH: r.ownFinishPenalty ? 1 : 0,
-  } as Record<ScoreEventType, number>
+  const pointValues = pointValuesFor(r)
 
   return (
     <JudgeScorePad

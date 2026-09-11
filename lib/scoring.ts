@@ -40,6 +40,31 @@ export function pointsForEvent(type: string, ruleset: ScoringRuleset): number {
   }
 }
 
+// RC6 #46 — the UI-side point table was a THIRD hand-rolled copy of the matrix above (judge page
+// literal + JudgeScorePad's event union), drifting risk in front of live judges. The vocabulary
+// and the per-Ruleset values have exactly one home now: clients render from pointValuesFor().
+/** Full judge-pad event vocabulary: the 7 scored events + the 2 rerun triggers. */
+export const SCORE_EVENT_TYPES = [
+  'SPIN',
+  'OVER',
+  'BURST',
+  'XTREME',
+  'OUT_OF_BOUNDS',
+  'OVERFINISH',
+  'OWN_FINISH',
+  'EXTERNAL_DISTURBANCE',
+  'AERIAL_CONTACT',
+] as const
+
+export type ScoreEventType = (typeof SCORE_EVENT_TYPES)[number]
+
+/** Point value per pad event for a given Ruleset (rerun triggers are always 0 — flag only). */
+export type PointValues = Record<ScoreEventType, number>
+
+export function pointValuesFor(ruleset: ScoringRuleset): PointValues {
+  return Object.fromEntries(SCORE_EVENT_TYPES.map((t) => [t, pointsForEvent(t, ruleset)])) as PointValues
+}
+
 /** Is this event type part of the rulebook at all? (Scored events + rerun triggers.)
  *  NOTE: the pre-extraction route accepted the rerun triggers unconditionally — the Ruleset
  *  toggle VALUES were never consulted (`type in rematchTriggers` is key presence, not
