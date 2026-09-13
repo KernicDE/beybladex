@@ -1,6 +1,6 @@
 // components/home/GuestLanding.tsx (RC13 issue #88)
 // The guest home page as a full marketing page: hero, feature overview, screenshot gallery
-// (decorative mockups, see LandingScreenshotMockups), upcoming-events teaser, DACH-community
+// (real production screenshots, see LandingScreenshotMockups), upcoming-events teaser, DACH-community
 // info, and a closing register CTA. Presentational by design — app/page.tsx fetches the
 // teaser events and passes plain props. Pure server components, zero client JS, so the
 // guest page stays fully static-renderable per request without any hydration shift.
@@ -82,7 +82,7 @@ export function GuestLanding({ upcomingEvents, t }: { upcomingEvents: LandingTea
         </div>
       </section>
 
-      {/* Screenshot gallery — decorative mockup frames until real assets exist (#88). */}
+      {/* Screenshot gallery — real production screenshots in browser frames (#88). */}
       <section aria-labelledby="landing-gallery-heading">
         <h2 id="landing-gallery-heading" className="text-2xl font-semibold">
           {t.landing.galleryHeading}
