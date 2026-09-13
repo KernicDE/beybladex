@@ -1,12 +1,15 @@
-// app/parts/[id]/page.tsx (RC16 #105)
+// app/parts/[id]/page.tsx (RC16 #105; #108 Kuratoren-Edit, #106 Bit-Anzeige)
 // Oeffentliche Einzelteil-Detailseite (Blade/Ratchet/Bit/…): Name, Kategorie, Hersteller,
 // Bey-Typ, Gewicht, Bild plus Auto-Meta-Winrate (getPartStats) und dem Rueckverweis, in
 // welchen Builds das Teil vorkommt (OR ueber alle 7 Slot-FKs, RC16 #122). Oeffentliche
-// Katalog-Oberflaeche wie /builds — revalidated statt force-dynamic. Bits rendern als
+// Katalog-Oberflaeche; seit #108 aber force-dynamic — das Kuratoren-Formular (PartForm,
+// Direct-Authoring-Tier TRUSTED/ADMIN, gleiche Gate-Logik wie app/settings/admin/parts)
+// darf nicht in den Full-Route-Cache fuer Gaeste geraten. Bits rendern als
 // „Kurzcode (Vollname)" (#106).
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -14,11 +17,13 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { BuildCard } from '@/components/beyblade/BuildCard'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { PartForm } from '@/components/admin/PartForm'
+import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { BUILD_PART_SLOTS } from '@/lib/buildSearch'
 import { formatBitDisplay } from '@/lib/buildNaming'
 
-export const revalidate = 60
+export const dynamic = 'force-dynamic'
 
 const BUILDS_PER_PAGE = 50
 
@@ -34,8 +39,17 @@ const BUILD_INCLUDE = {
 
 export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'>) {
   const { id } = await params
+  const session = await auth()
   const part = await prisma.part.findUnique({ where: { id } })
   if (!part) notFound()
+
+  // RC16 (#108): Direct-Authoring-Tier (TRUSTED/ADMIN, gleiche Logik wie
+  // app/settings/admin/parts/page.tsx) sieht den Bearbeiten-Modus — der Server (/api/admin/parts)
+  // bleibt das eigentliche Authz-Gate.
+  const caller = session?.user?.id
+    ? await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+    : null
+  const canAuthor = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
 
   const [stats, builds] = await Promise.all([
     getPartStats([id]),
@@ -121,6 +135,28 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
           </ul>
         )}
       </section>
+      {canAuthor && (
+        <section aria-labelledby="part-edit" className="space-y-3">
+          <h2 id="part-edit" className="text-lg font-semibold">Kuratieren</h2>
+          <Card>
+            <EditToggle label="Teil bearbeiten">
+              <PartForm
+                initial={{
+                  id: part.id,
+                  name: part.name,
+                  manufacturer: part.manufacturer,
+                  category: part.category,
+                  beyType: part.beyType ?? '',
+                  spinDirection: part.spinDirection,
+                  weightGrams: part.weightGrams?.toString() ?? '',
+                  imageId: part.imageId,
+                  isRatchetIntegrated: part.isRatchetIntegrated,
+                }}
+              />
+            </EditToggle>
+          </Card>
+        </section>
+      )}
     </main>
   )
 }

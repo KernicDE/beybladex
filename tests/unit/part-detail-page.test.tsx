@@ -9,8 +9,10 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     part: { findUnique: vi.fn() },
     build: { findMany: vi.fn() },
+    user: { findUnique: vi.fn() },
   },
 }))
+vi.mock('@/lib/auth', () => ({ auth: vi.fn(async () => null) }))
 vi.mock('@/lib/metaCache', () => ({
   getPartStats: vi.fn(async () => new Map([['p1', { appearances: 1, wins: 1, winRate: 1, decisiveMatches: 1 }]])),
   getBuildStats: vi.fn(async () => new Map()),

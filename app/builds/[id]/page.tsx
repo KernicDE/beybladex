@@ -14,6 +14,8 @@ import { RatingList } from '@/components/beyblade/RatingList'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
+import { BuildForm } from '@/components/admin/BuildForm'
+import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
 
@@ -46,10 +48,13 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   if (!build) notFound()
 
   let canModerate = false
+  let canAuthor = false
   let viewerUsername: string | null = null
   if (viewerId) {
     const caller = await prisma.user.findUnique({ where: { id: viewerId }, select: { role: true, username: true } })
     canModerate = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
+    // RC16 (#108): Direct-Authoring-Tier sieht den Bearbeiten-Modus (Name/Typ/Bild).
+    canAuthor = canModerate
     viewerUsername = caller?.username ?? null
   }
 
@@ -181,6 +186,19 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           <Card>
             <h3 className="mb-3 text-sm font-semibold">Set als gekauft markieren</h3>
             <MarkSetPurchasedForm build={{ id: build.id, name: build.name }} />
+          </Card>
+        </section>
+      )}
+
+      {/* RC16 (#108): Kuratoren bearbeiten Name/Typ/Bild direkt auf der Detailseite
+          (PATCH /api/admin/builds/[id] + ./image — Server-Gate: requireCurator). */}
+      {canAuthor && (
+        <section aria-labelledby="build-edit" className="space-y-3">
+          <h2 id="build-edit" className="text-lg font-semibold">Kuratieren</h2>
+          <Card>
+            <EditToggle label="Build bearbeiten">
+              <BuildForm initial={{ id: build.id, name: build.name ?? '', type: build.type, imageId: build.imageId }} />
+            </EditToggle>
           </Card>
         </section>
       )}
