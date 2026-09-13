@@ -15,7 +15,7 @@ import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 import { BuildComboForm } from '@/components/beyblade/BuildComboForm'
-import type { BuildCardData } from '@/components/beyblade/BuildCard'
+import { buildDisplayName, buildPartSummary, type BuildCardData } from '@/components/beyblade/BuildCard'
 import type { WinRateStats } from '@/components/beyblade/WinRateBadge'
 import { validateNoDuplicateParts } from '@/lib/deckValidation'
 
@@ -26,8 +26,12 @@ interface SearchResult {
   type: BuildCardData['type']
   name: string | null
   isOfficialSet: boolean
-  blade: { id: string; name: string; imageId: string | null }
-  ratchet: { id: string; name: string }
+  blade: { id: string; name: string; imageId: string | null } | null
+  lockChip: { id: string; name: string } | null
+  overBlade: { id: string; name: string } | null
+  metalBlade: { id: string; name: string } | null
+  assistBlade: { id: string; name: string } | null
+  ratchet: { id: string; name: string } | null
   bit: { id: string; name: string }
   winRate: WinRateStats | null
   // Phase 11 (item 6): true/false when the search ran with onlyMine=1, absent otherwise.
@@ -47,10 +51,28 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
 
   // Client-side deck rule check — instant feedback while composing. Same library function
   // the API route runs server-side; BuildCardData carries the part ids for exactly this.
+  // RC16 (#122): alle 7 Slots (leere Slots zählen nicht — zwei Ratchet-Integrated-Builds
+  // teilen sich NICHT das Ratchet null).
   const { valid, conflicts } = useMemo(
     () =>
       validateNoDuplicateParts(
-        deck.map((b) => ({ id: b.id, bladeId: b.blade.id, ratchetId: b.ratchet.id, bitId: b.bit.id, blade: b.blade, ratchet: b.ratchet, bit: b.bit })),
+        deck.map((b) => ({
+          id: b.id,
+          bladeId: b.blade?.id ?? null,
+          lockChipId: b.lockChip?.id ?? null,
+          overBladeId: b.overBlade?.id ?? null,
+          metalBladeId: b.metalBlade?.id ?? null,
+          assistBladeId: b.assistBlade?.id ?? null,
+          ratchetId: b.ratchet?.id ?? null,
+          bitId: b.bit.id,
+          blade: b.blade,
+          lockChip: b.lockChip,
+          overBlade: b.overBlade,
+          metalBlade: b.metalBlade,
+          assistBlade: b.assistBlade,
+          ratchet: b.ratchet,
+          bit: b.bit,
+        })),
       ),
     [deck],
   )
@@ -59,7 +81,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
     e.preventDefault()
     const params = new URLSearchParams({ q: query.trim() })
     // Phase 11 (item 6): "nur meine Teile" — a build is offered only when the caller owns all
-    // three constituent parts (CollectionItem, any sourceBuildId or none).
+    // of its constituent parts (RC16 #122: 2–6 je nach Bauform; leere Slots zählen nicht).
     if (onlyMine) params.set('onlyMine', '1')
     const res = await fetch(`/api/builds?${params}`)
     if (!res.ok) return
@@ -73,6 +95,10 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
       id: build.id,
       type: build.type,
       blade: build.blade,
+      lockChip: build.lockChip,
+      overBlade: build.overBlade,
+      metalBlade: build.metalBlade,
+      assistBlade: build.assistBlade,
       ratchet: build.ratchet,
       bit: build.bit,
       ...(build.name !== undefined ? { name: build.name, isOfficialSet: build.isOfficialSet } : {}),
@@ -118,11 +144,11 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
               <li key={build.id} className="flex items-center gap-3 rounded-xl border border-x-cyan/20 p-3">
                 <Badge tone="cyan">#{i + 1}</Badge>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{build.blade.name}</p>
-                  <p className="truncate text-sm text-current/60">{build.ratchet.name} · {build.bit.name}</p>
+                  <p className="truncate font-medium">{buildDisplayName(build)}</p>
+                  <p className="truncate text-sm text-current/60">{buildPartSummary(build)}</p>
                 </div>
                 <TypeBadge type={build.type} />
-                <Button variant="ghost" size="sm" onClick={() => remove(build.id)} aria-label={`${build.blade.name} entfernen`}>
+                <Button variant="ghost" size="sm" onClick={() => remove(build.id)} aria-label={`${buildDisplayName(build)} entfernen`}>
                   Entfernen
                 </Button>
               </li>
@@ -180,8 +206,8 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
               return (
                 <li key={build.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{build.blade.name}</p>
-                    <p className="truncate text-sm text-current/60">{build.ratchet.name} · {build.bit.name}</p>
+                    <p className="truncate font-medium">{buildDisplayName(build)}</p>
+                    <p className="truncate text-sm text-current/60">{buildPartSummary(build)}</p>
                   </div>
                   <TypeBadge type={build.type} />
                   {build.available !== undefined && (

@@ -21,8 +21,21 @@ const NOTES_MAX = 500
 const MANUFACTURERS = ['TT', 'HASBRO'] as const
 const BEY_TYPES = ['ATTACK', 'DEFENSE', 'STAMINA', 'BALANCE'] as const
 const SPIN_DIRECTIONS = ['RIGHT', 'LEFT'] as const
-export const PROPOSAL_CATEGORIES = ['BLADE', 'RATCHET', 'BIT', 'ACCESSORY'] as const
-export const PROPOSAL_SLOT_CATEGORIES = { blade: 'BLADE', ratchet: 'RATCHET', bit: 'BIT' } as const
+export const PROPOSAL_CATEGORIES = ['BLADE', 'RATCHET', 'BIT', 'ACCESSORY', 'LOCK_CHIP', 'OVER_BLADE', 'METAL_BLADE', 'ASSIST_BLADE'] as const
+// RC16 (#122) — variable Slot-Modell: 'blade' XOR alle vier 'customLine'-Slots; 'ratchet'
+// bedingt optional (fehlt bei Ratchet-Integrated-Blades; das entscheidet der Approval anhand
+// von Part.isRatchetIntegrated, der Payload-Parser kennt die DB nicht).
+export const PROPOSAL_SLOT_CATEGORIES = {
+  blade: 'BLADE',
+  lockChip: 'LOCK_CHIP',
+  overBlade: 'OVER_BLADE',
+  metalBlade: 'METAL_BLADE',
+  assistBlade: 'ASSIST_BLADE',
+  ratchet: 'RATCHET',
+  bit: 'BIT',
+} as const
+export const PROPOSAL_CUSTOM_LINE_SLOTS = ['lockChip', 'overBlade', 'metalBlade', 'assistBlade'] as const
+export type ProposalSlot = keyof typeof PROPOSAL_SLOT_CATEGORIES
 
 export interface InlinePartPayload {
   name: string
@@ -44,7 +57,9 @@ export interface PartProposalPayload extends InlinePartPayload {
 
 export interface BuildProposalPayload {
   name: string
-  slots: Record<keyof typeof PROPOSAL_SLOT_CATEGORIES, BuildSlotPayload>
+  // Pflicht-Slots blade + bit; ratchet bedingt optional (RC16 #122); die vier CX-Slots
+  // komplett oder gar nicht — Vollständigkeit prüft parseBuildProposalPayload.
+  slots: Record<'blade' | 'ratchet' | 'bit', BuildSlotPayload> & Partial<Record<(typeof PROPOSAL_CUSTOM_LINE_SLOTS)[number], BuildSlotPayload>>
 }
 
 export type ProposalPayload = PartProposalPayload | BuildProposalPayload
@@ -106,9 +121,10 @@ export function parsePartProposalPayload(body: unknown): { data?: PartProposalPa
   return { data: { ...part, category: data.category as PartProposalPayload['category'], notes: (data.notes ?? null) as string | null } }
 }
 
-function parseBuildSlot(body: unknown, slot: keyof typeof PROPOSAL_SLOT_CATEGORIES, errors: string[]): BuildSlotPayload {
+function parseBuildSlot(body: unknown, slot: ProposalSlot, errors: string[], allowEmpty: boolean): BuildSlotPayload {
   // Slot UNION (existing Part.id XOR inline-new part) — custom control flow, not a flat field.
   if (!isRecord(body)) {
+    if (allowEmpty) return { partId: null, inline: null }
     errors.push(`invalid_slot_${slot}`)
     return { partId: null, inline: null }
   }
@@ -121,11 +137,12 @@ function parseBuildSlot(body: unknown, slot: keyof typeof PROPOSAL_SLOT_CATEGORI
   if (isRecord(inline)) {
     return { partId: null, inline: parseInlinePart(inline, errors, `slot_${slot}`) }
   }
+  if (allowEmpty) return { partId: null, inline: null }
   errors.push(`invalid_slot_${slot}`)
   return { partId: null, inline: null }
 }
 
-/** Parses a kind=BUILD proposal payload (Set name + three slots). */
+/** Parses a kind=BUILD proposal payload (Set name + variable Slots, RC16 #122). */
 export function parseBuildProposalPayload(body: unknown): { data?: BuildProposalPayload; errors?: string[] } {
   if (!isRecord(body)) return { errors: ['invalid_body'] }
   const { data, errors } = parseBody(
@@ -139,8 +156,31 @@ export function parseBuildProposalPayload(body: unknown): { data?: BuildProposal
     return { errors }
   }
   const slots = {} as BuildProposalPayload['slots']
-  for (const slot of Object.keys(PROPOSAL_SLOT_CATEGORIES) as (keyof typeof PROPOSAL_SLOT_CATEGORIES)[]) {
-    slots[slot] = parseBuildSlot(rawSlots[slot], slot, errors)
+  // blade bleibt Pflicht, aber parse-seitig tolerant (leer = null), damit die CX-Präsenzregel
+  // unten exakt einen Token liefert statt zwei. ratchet darf leer bleiben (Ratchet-Integrated-
+  // Entscheidung fällt erst am Approval gegen die DB). Die CX-Slots sind optional, aber ein
+  // Teil-Stack (irgendein CX-Slot gesetzt, nicht alle vier) wird als fehlende Slots benamt abgelehnt.
+  slots.blade = parseBuildSlot(rawSlots.blade, 'blade', errors, true)
+  slots.bit = parseBuildSlot(rawSlots.bit, 'bit', errors, false)
+  slots.ratchet = parseBuildSlot(rawSlots.ratchet, 'ratchet', errors, true)
+  const cxPresent = PROPOSAL_CUSTOM_LINE_SLOTS.filter((s) => rawSlots[s] !== undefined).length
+  for (const slot of PROPOSAL_CUSTOM_LINE_SLOTS) {
+    if (cxPresent === PROPOSAL_CUSTOM_LINE_SLOTS.length || rawSlots[slot] !== undefined) {
+      slots[slot] = parseBuildSlot(rawSlots[slot], slot, errors, false)
+    }
+  }
+  if (cxPresent > 0 && cxPresent < PROPOSAL_CUSTOM_LINE_SLOTS.length) {
+    for (const slot of PROPOSAL_CUSTOM_LINE_SLOTS) {
+      if (rawSlots[slot] === undefined) errors.push(`invalid_slot_${slot}`)
+    }
+  }
+  // Blade-Assembly: bei CX muss der blade-Slot LEER sein (CX-Stack ersetzt das Blade-Teil);
+  // ohne jeden CX-Slot muss blade belegt sein. Ein Teil-Stack benennt nur die fehlenden
+  // CX-Slots — blade zusätzlich zu bemängeln wäre doppelte Fehlerfläche. Genau ein Token.
+  if (cxPresent === PROPOSAL_CUSTOM_LINE_SLOTS.length) {
+    if (slots.blade.partId !== null || slots.blade.inline !== null) errors.push('invalid_slot_blade')
+  } else if (cxPresent === 0 && slots.blade.partId === null && slots.blade.inline === null) {
+    errors.push('invalid_slot_blade')
   }
   return errors.length > 0 ? { errors } : { data: { name: data.name as string, slots } }
 }

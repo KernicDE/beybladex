@@ -126,7 +126,9 @@ describe('catalog proposal flow', () => {
     const build = await prisma.build.findUnique({ where: { id: createdBuildId } })
     expect(build?.isOfficialSet).toBe(true)
     expect(build?.name).toBe(`Testset ${suffix}`)
-    const createdParts = await prisma.part.findMany({ where: { id: { in: [build!.bladeId, build!.ratchetId, build!.bitId] } } })
+    const createdParts = await prisma.part.findMany({
+      where: { id: { in: [build!.bladeId, build!.ratchetId, build!.bitId].filter((id): id is string => id !== null) } },
+    })
     expect(createdParts).toHaveLength(3)
 
     // Reject a second proposal, no note -> 400; with a note -> 200, stored, submitter notified.

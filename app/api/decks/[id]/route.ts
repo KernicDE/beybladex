@@ -47,7 +47,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (buildIds) {
     const builds = await prisma.build.findMany({
       where: { id: { in: buildIds } },
-      include: { blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } } },
+      include: {
+        blade: { select: { name: true } }, lockChip: { select: { name: true } },
+        overBlade: { select: { name: true } }, metalBlade: { select: { name: true } },
+        assistBlade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
+      },
     })
     if (builds.length !== buildIds.length) return Response.json({ error: 'unknown_build' }, { status: 400 })
     const { valid, conflicts } = validateNoDuplicateParts(builds)

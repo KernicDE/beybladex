@@ -80,6 +80,33 @@ describe('aggregateWinRates (pure)', () => {
     }
   })
 
+  it('RC16 (#122): Custom-Line-Build attributieren auf alle 6 Slots; Ratchet-Integrated ohne Ratchet-Teil', () => {
+    const matches = Array.from({ length: MIN_APPEARANCES }, (_, i) => match('p1', 'cx', `o${i}`, `ob${i}`, 'p1'))
+    matches.push(match('p3', 'integrated', 'p4', 'obx', 'p3'))
+    const buildParts = new Map<string, BuildPartsRow>([
+      ...matches.map((m) => [m.player2BuildId!, bp(m.player2BuildId!, 'other')] as const),
+      ['cx', {
+        id: 'cx',
+        bladeId: null,
+        lockChipId: 'chipX',
+        overBladeId: 'overX',
+        metalBladeId: 'metalX',
+        assistBladeId: 'assistX',
+        ratchetId: 'ratchetX',
+        bitId: 'bitX',
+      }],
+      // Ratchet-Integrated: ratchetId null — kein Ratchet-Teil im Build.
+      ['integrated', { id: 'integrated', bladeId: 'bisonFB', ratchetId: null, bitId: 'bitI' }],
+    ])
+    const { parts, builds } = aggregateWinRates(matches, buildParts)
+    for (const partId of ['chipX', 'overX', 'metalX', 'assistX', 'ratchetX', 'bitX']) {
+      expect(parts.get(partId)!.wins).toBe(MIN_APPEARANCES)
+    }
+    // Beim Ratchet-Integrated-Build gibt es KEINE Ratchet-Attribution (kein solches Teil).
+    expect(parts.has('bisonFB-ratchet')).toBe(false)
+    expect(builds.get('integrated')).toMatchObject({ wins: 1, losses: 0 })
+  })
+
   it('a side without a confirmed build (playerNBuildId null) is not attributed', () => {
     const matches = [match('p1', null, 'p2', 'bx', 'p2')]
     const { builds } = aggregateWinRates(matches, new Map([['bx', bp('bx', 'bladeX')]]))

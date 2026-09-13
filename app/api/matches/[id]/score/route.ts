@@ -264,13 +264,25 @@ export async function POST(req: Request, { params }: Ctx) {
   // meaningless spin mode to an ordinary build, silently feeding a fake entry into the Auto-Meta
   // per-mode buckets (lib/meta.ts). Checked against whichever build is EFFECTIVE for this
   // request (the one just confirmed, or the already-stored one if none is being confirmed here).
+  // RC16 (#122) — über ALLE belegten Slots (blade, CX-Stack, ratchet, bit), nicht nur das Trio.
   async function assertBuildIsDualSpin(effectiveBuildId: string | undefined): Promise<boolean> {
     if (!effectiveBuildId) return false
     const build = await prisma.build.findUnique({
       where: { id: effectiveBuildId },
-      select: { blade: { select: { dualSpin: true } }, ratchet: { select: { dualSpin: true } }, bit: { select: { dualSpin: true } } },
+      select: {
+        blade: { select: { dualSpin: true } },
+        lockChip: { select: { dualSpin: true } },
+        overBlade: { select: { dualSpin: true } },
+        metalBlade: { select: { dualSpin: true } },
+        assistBlade: { select: { dualSpin: true } },
+        ratchet: { select: { dualSpin: true } },
+        bit: { select: { dualSpin: true } },
+      },
     })
-    return build !== null && (build.blade.dualSpin || build.ratchet.dualSpin || build.bit.dualSpin)
+    if (!build) return false
+    return [build.blade, build.lockChip, build.overBlade, build.metalBlade, build.assistBlade, build.ratchet, build.bit].some(
+      (p) => p?.dualSpin,
+    )
   }
   if (player1SpinMode !== undefined) {
     const effectiveBuildId = player1BuildId ?? match.player1BuildId ?? undefined
@@ -443,9 +455,23 @@ export async function POST(req: Request, { params }: Ctx) {
       if (completedBuildIds.length > 0) {
         const builds = await prisma.build.findMany({
           where: { id: { in: completedBuildIds } },
-          select: { bladeId: true, ratchetId: true, bitId: true },
+          select: {
+            bladeId: true,
+            lockChipId: true,
+            overBladeId: true,
+            metalBladeId: true,
+            assistBladeId: true,
+            ratchetId: true,
+            bitId: true,
+          },
         })
-        const partIds = [...new Set(builds.flatMap((b) => [b.bladeId, b.ratchetId, b.bitId]))]
+        // RC16 (#122) — leere Slots (Ratchet-Integrated, CX-Blade) tragen keine Part-Ids bei.
+        const partIds = [
+          ...new Set(
+            builds.flatMap((b) => [b.bladeId, b.lockChipId, b.overBladeId, b.metalBladeId, b.assistBladeId, b.ratchetId, b.bitId])
+              .filter((id): id is string => id !== null),
+          ),
+        ]
         await markMetaDirty(completedBuildIds, partIds)
       }
     } catch {

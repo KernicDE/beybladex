@@ -30,6 +30,10 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/item/
           build: {
             include: {
               blade: { select: { id: true, name: true, imageId: true } },
+              lockChip: { select: { id: true, name: true } },
+              overBlade: { select: { id: true, name: true } },
+              metalBlade: { select: { id: true, name: true } },
+              assistBlade: { select: { id: true, name: true } },
               ratchet: { select: { id: true, name: true } },
               bit: { select: { id: true, name: true } },
             },
@@ -51,6 +55,10 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/item/
             id: db.build.id,
             type: db.build.type,
             blade: db.build.blade,
+            lockChip: db.build.lockChip,
+            overBlade: db.build.overBlade,
+            metalBlade: db.build.metalBlade,
+            assistBlade: db.build.assistBlade,
             ratchet: db.build.ratchet,
             bit: db.build.bit,
           }))}

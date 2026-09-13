@@ -76,7 +76,9 @@ describe('duplicate build combo prevention (Phase 20)', () => {
     ids.builds.push(firstBody.id)
     expect(firstBody.build.isOfficialSet).toBe(false)
     // canonical "<Blade> <Ratchet><Bit-short>" auto-naming (bit short code from "Low Rush" → "LR")
-    expect(firstBody.build.name).toBe(deriveBuildName(parts.blade.name, parts.ratchet.name, parts.bit.name))
+    expect(firstBody.build.name).toBe(
+      deriveBuildName({ bladeName: parts.blade.name, ratchetName: parts.ratchet.name, bitName: parts.bit.name }),
+    )
     expect(firstBody.build.name).toContain('4-60LR')
 
     const second = await CREATE_BUILD(postCombo(parts))

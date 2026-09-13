@@ -28,6 +28,10 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
     where: { id },
     include: {
       blade: true,
+      lockChip: true,
+      overBlade: true,
+      metalBlade: true,
+      assistBlade: true,
       ratchet: true,
       bit: true,
       ratings: {
@@ -50,18 +54,23 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   const aggregate = await prisma.rating.aggregate({ where: { buildId: id }, _avg: { stars: true }, _count: true })
   const ownRating = viewerUsername ? build.ratings.find((r) => r.user.id === viewerId) : undefined
 
-  // Auto-Meta win rates (Phase 5 Part D) — batch cache reads (single-key for the build,
-  // one mget for its three parts), with direct-compute fallback on an empty cache.
-  const [buildStats, partStats] = await Promise.all([
-    getBuildStats([id]),
-    getPartStats([build.bladeId, build.ratchetId, build.bitId]),
-  ])
-
+  // Auto-Meta win rates (Phase 5 Part D) — batch cache reads (single-key for the build, one
+  // mget for its parts), with direct-compute fallback on an empty cache. RC16 (#122): über
+  // alle belegten Slots (2–6 je nach Bauform).
   const parts = [
+    { label: 'Lock Chip', part: build.lockChip },
     { label: 'Blade', part: build.blade },
+    { label: 'Over Blade', part: build.overBlade },
+    { label: 'Metal Blade', part: build.metalBlade },
+    { label: 'Assist Blade', part: build.assistBlade },
     { label: 'Ratchet', part: build.ratchet },
     { label: 'Bit', part: build.bit },
-  ] as const
+  ].filter((p): p is { label: string; part: (typeof p.part & object) } => p.part !== null)
+
+  const [buildStats, partStats] = await Promise.all([
+    getBuildStats([id]),
+    getPartStats(parts.map((p) => p.part.id)),
+  ])
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
@@ -71,12 +80,15 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             {/* [Fix while adding productCode] title always rendered the blade name, never the
-                curated Set name (e.g. "Sword Dran 3-60F") — same fallback BuildCard already uses. */}
+                curated Set name (e.g. "Sword Dran 3-60F") — same fallback BuildCard already uses
+                (RC16 #122 erweitert: Lock Chip als CX-Fallback). */}
             <h1 className="text-2xl font-semibold">
-              {build.name ?? build.blade.name}
+              {build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name}
               {build.productCode && <span className="ml-2 text-base font-normal text-current/50">{build.productCode}</span>}
             </h1>
-            <p className="text-current/60">{build.blade.name} · {build.ratchet.name} · {build.bit.name}</p>
+            <p className="text-current/60">
+              {parts.map((p) => p.part.name).join(' · ')}
+            </p>
           </div>
           <TypeBadge type={build.type} />
         </div>

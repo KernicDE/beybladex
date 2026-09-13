@@ -82,6 +82,10 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
                   id: build.id,
                   type: build.type,
                   blade: build.blade,
+                  lockChip: build.lockChip,
+                  overBlade: build.overBlade,
+                  metalBlade: build.metalBlade,
+                  assistBlade: build.assistBlade,
                   ratchet: build.ratchet,
                   bit: build.bit,
                   // [Fix while touching this object for productCode] name/isOfficialSet/imageId

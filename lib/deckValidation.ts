@@ -1,8 +1,12 @@
 // lib/deckValidation.ts (Phase 5 Part A; Phase 16 adds format-aware validation)
-// Deck rule validator: a deck may not contain two builds that share ANY part (blade, ratchet
-// or bit) — the WBO-counterdeck / 3on3 rule. Enforced BOTH client-side (DeckBuilder instant
-// feedback via validateNoDuplicateParts) and server-side in app/api/decks/route.ts; the
-// DeckBuild @@unique([deckId, buildId]) backstop covers the "same build twice" case at the DB.
+// Deck rule validator: a deck may not contain two builds that share ANY part — the
+// WBO-counterdeck / 3on3 rule. Enforced BOTH client-side (DeckBuilder instant feedback via
+// validateNoDuplicateParts) and server-side in app/api/decks/route.ts; the DeckBuild
+// @@unique([deckId, buildId]) backstop covers the "same build twice" case at the DB.
+//
+// RC16 (#122): Builds haben 2–6 Teile je nach Bauform — die Duplikat-Prüfung läuft über alle
+// sieben Slot-Spalten und überspringt LEERE Slots (null heißt „diese Bauform hat kein Teil
+// hier", nie „gleiches Teil"): zwei Ratchet-Integrated-Builds teilen NICHT das Ratchet null.
 //
 // Phase 16 item 4: `validateNoDuplicateParts` itself is UNCHANGED (decks aren't tied to a
 // Ruleset at creation time — a deck is a personal, reusable object that may later be registered
@@ -12,7 +16,10 @@
 // the tournament's linked Ruleset.deckFormat.
 import type { Build, DeckFormat } from '@prisma/client'
 
-export type DeckBuildInput = Pick<Build, 'id' | 'bladeId' | 'ratchetId' | 'bitId'>
+export type DeckBuildInput = Pick<
+  Build,
+  'id' | 'bladeId' | 'lockChipId' | 'overBladeId' | 'metalBladeId' | 'assistBladeId' | 'ratchetId' | 'bitId'
+>
 
 export interface DeckValidationResult {
   valid: boolean
@@ -22,12 +29,20 @@ export interface DeckValidationResult {
 
 const SLOTS = [
   { key: 'bladeId', label: 'Blade', nameOf: (b: SlotSource) => b.blade?.name },
+  { key: 'lockChipId', label: 'Lock Chip', nameOf: (b: SlotSource) => b.lockChip?.name },
+  { key: 'overBladeId', label: 'Over Blade', nameOf: (b: SlotSource) => b.overBlade?.name },
+  { key: 'metalBladeId', label: 'Metal Blade', nameOf: (b: SlotSource) => b.metalBlade?.name },
+  { key: 'assistBladeId', label: 'Assist Blade', nameOf: (b: SlotSource) => b.assistBlade?.name },
   { key: 'ratchetId', label: 'Ratchet', nameOf: (b: SlotSource) => b.ratchet?.name },
   { key: 'bitId', label: 'Bit', nameOf: (b: SlotSource) => b.bit?.name },
 ] as const
 
 type SlotSource = DeckBuildInput & {
   blade?: { name: string } | null
+  lockChip?: { name: string } | null
+  overBlade?: { name: string } | null
+  metalBlade?: { name: string } | null
+  assistBlade?: { name: string } | null
   ratchet?: { name: string } | null
   bit?: { name: string } | null
 }
@@ -38,6 +53,7 @@ export function validateNoDuplicateParts(builds: SlotSource[]): DeckValidationRe
     const byPart = new Map<string, { count: number; name: string }>()
     for (const build of builds) {
       const partId = build[key]
+      if (partId === null) continue // RC16 — leerer Slot (CX-Blade / integriertes Ratchet): kein Teil, kein Konflikt
       const entry = byPart.get(partId) ?? { count: 0, name: nameOf(build) ?? 'Unbekanntes Teil' }
       entry.count += 1
       byPart.set(partId, entry)

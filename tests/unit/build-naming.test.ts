@@ -58,10 +58,24 @@ describe('bitShortCode — initials of the bit name words', () => {
   })
 })
 
-describe('deriveBuildName — full part names in, canonical name out', () => {
-  it('derives the bit short code and applies the grammar in one step', () => {
-    expect(deriveBuildName('Circle Ghost', '4-60', 'Low Rush')).toBe('Circle Ghost 4-60LR')
-    expect(deriveBuildName('DranSword', '3-60', 'Rush')).toBe('DranSword 3-60R')
-    expect(deriveBuildName('KnightShield', '3-80', 'Ball')).toBe('KnightShield 3-80B')
+describe('deriveBuildName — Bauform-abhängig, RC16 (#122)', () => {
+  it('Standard: "<Blade> <Ratchet><Bit-short>" (Bit-Shortcode wird abgeleitet)', () => {
+    expect(deriveBuildName({ bladeName: 'Circle Ghost', ratchetName: '4-60', bitName: 'Low Rush' })).toBe('Circle Ghost 4-60LR')
+    expect(deriveBuildName({ bladeName: 'DranSword', ratchetName: '3-60', bitName: 'Rush' })).toBe('DranSword 3-60R')
+    expect(deriveBuildName({ bladeName: 'KnightShield', ratchetName: '3-80', bitName: 'Ball' })).toBe('KnightShield 3-80B')
+  })
+
+  it('Ratchet-Integrated: kein Ratchet-Segment — "<Blade> <Bit-short>"', () => {
+    expect(deriveBuildName({ bladeName: 'Valor Bison FB', ratchetName: null, bitName: 'Gear Flat' })).toBe('Valor Bison FB GF')
+  })
+
+  it('Custom Line: Lock Chip führt den Namen — "<LockChip> <Ratchet><Bit-short>"', () => {
+    expect(
+      deriveBuildName({ bladeName: null, lockChipName: 'Hurricane Enlil', ratchetName: '7-55', bitName: 'Taper' }),
+    ).toBe('Hurricane Enlil 7-55T')
+  })
+
+  it('ohne jede Blade-Assembly ein Fehler (Builds haben immer Blade ODER CX-Stack)', () => {
+    expect(() => deriveBuildName({ bladeName: null, ratchetName: '4-60', bitName: 'Flat' })).toThrow('build_name_no_blade_assembly')
   })
 })

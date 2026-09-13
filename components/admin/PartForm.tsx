@@ -20,6 +20,7 @@ export interface PartFormValues {
   spinDirection: string
   weightGrams: string
   imageId: string | null
+  isRatchetIntegrated: boolean
 }
 
 const EMPTY: PartFormValues = {
@@ -30,6 +31,7 @@ const EMPTY: PartFormValues = {
   spinDirection: 'RIGHT',
   weightGrams: '',
   imageId: null,
+  isRatchetIntegrated: false,
 }
 
 export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
@@ -60,6 +62,9 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
   const set = (key: keyof PartFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setValues((v) => ({ ...v, [key]: e.target.value }))
 
+  const setBool = (key: 'isRatchetIntegrated') => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setValues((v) => ({ ...v, [key]: e.target.checked }))
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
@@ -71,6 +76,9 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
       beyType: values.beyType === '' ? null : values.beyType,
       spinDirection: values.spinDirection,
       weightGrams: values.weightGrams === '' ? null : Number(values.weightGrams),
+      // isRatchetIntegrated (RC16 #122): nur bei BLADE übernehmen — die Checkbox ist sonst
+      // nicht sichtbar, ihr Wert wäre ein versteckter Zustand (Server lehnt Flag ≠ BLADE ab).
+      isRatchetIntegrated: values.category === 'BLADE' && values.isRatchetIntegrated,
     }
     // lib/partValidation requires the metadata KEY on create (nullable value). The form has no
     // metadata editing — send null on CREATE only; PATCH must omit it so partial updates don't
@@ -110,6 +118,11 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
             <option value="RATCHET">Ratchet</option>
             <option value="BIT">Bit</option>
             <option value="ACCESSORY">Zubehör</option>
+            {/* RC16 (#122) — Hasbro Custom Line (CX) */}
+            <option value="LOCK_CHIP">Lock Chip (CX)</option>
+            <option value="OVER_BLADE">Over Blade (CX)</option>
+            <option value="METAL_BLADE">Metal Blade (CX)</option>
+            <option value="ASSIST_BLADE">Assist Blade (CX)</option>
           </Select>
         </FormField>
         <FormField label="Bey-Typ (optional)">
@@ -131,6 +144,20 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
           <Input type="number" min="0" step="0.01" value={values.weightGrams} onChange={set('weightGrams')} />
         </FormField>
       </div>
+      {/* RC16 (#122) — Ratchet-Integrated Blades (z. B. Hasbro „Valor Bison FB"): das Blade
+          enthält das Ratchet physisch; Builds damit haben kein eigenes Ratchet-Teil. Nur bei
+          Kategorie „Blade" sinnvoll (der Server lehnt die Kombination sonst ab). */}
+      {values.category === 'BLADE' && (
+        <label className="flex items-center gap-2 text-sm text-current/80">
+          <input
+            type="checkbox"
+            checked={values.isRatchetIntegrated}
+            onChange={setBool('isRatchetIntegrated')}
+            className="size-4 accent-x-cyan"
+          />
+          Ratchet integriert (Blade enthält das Ratchet — kein eigenes Ratchet-Teil)
+        </label>
+      )}
       {editing && (
         <FormField label="Bild (optional)">
           <div className="flex items-center gap-3">

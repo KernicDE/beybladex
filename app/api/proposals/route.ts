@@ -13,7 +13,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { PART_IMAGE_TARGET, mediaFilePath, processAndStoreImage } from '@/lib/media'
-import { parsePartProposalPayload, parseBuildProposalPayload } from '@/lib/proposalValidation'
+import { parsePartProposalPayload, parseBuildProposalPayload, PROPOSAL_SLOT_CATEGORIES } from '@/lib/proposalValidation'
 import { unlink } from 'node:fs/promises'
 
 export async function POST(req: Request): Promise<Response> {
@@ -51,16 +51,16 @@ export async function POST(req: Request): Promise<Response> {
       : parseBuildProposalPayload(body)
   if (parsed.errors) return Response.json({ error: parsed.errors[0], errors: parsed.errors }, { status: 400 })
 
-  // Verify BUILD slots that reference existing catalog parts (existence + slot category).
+  // Verify BUILD slots that reference existing catalog parts (existence + slot category;
+  // RC16 #122 — über alle Slot-Kategorien inkl. der vier CX-Slots).
   if (kind === 'BUILD') {
     const payload = parsed.data as import('@/lib/proposalValidation').BuildProposalPayload
     const refs = Object.values(payload.slots).map((s) => s.partId).filter((id): id is string => id !== null)
     if (refs.length > 0) {
       const found = await prisma.part.findMany({ where: { id: { in: refs } }, select: { id: true, category: true } })
       const byId = new Map(found.map((p) => [p.id, p.category]))
-      const slotCategory = { blade: 'BLADE', ratchet: 'RATCHET', bit: 'BIT' } as const
       for (const [slot, s] of Object.entries(payload.slots)) {
-        if (s.partId && byId.get(s.partId) !== slotCategory[slot as keyof typeof slotCategory]) {
+        if (s.partId && byId.get(s.partId) !== PROPOSAL_SLOT_CATEGORIES[slot as keyof typeof PROPOSAL_SLOT_CATEGORIES]) {
           return Response.json({ error: `invalid_slot_${slot}` }, { status: 400 })
         }
       }

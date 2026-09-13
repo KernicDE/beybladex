@@ -74,13 +74,22 @@ export async function recomputeDirtyMeta(): Promise<{ parts: number; builds: num
 
   // A dirty part means "every build referencing it is stale": expand parts → builds so one
   // match query covers both kinds. (recompute is per-id, but matches are shared between a
-  // build and its three parts — one query for the union is cheaper than one per dirty id.)
+  // build and its parts — one query for the union is cheaper than one per dirty id.)
+  // RC16 (#122): OR über alle 7 Slots, damit CX- und Ratchet-Integrated-Builds miterfasst.
   const partBuilds = dirtyParts.length
     ? await prisma.build.findMany({
         where: {
-          OR: [{ bladeId: { in: dirtyParts } }, { ratchetId: { in: dirtyParts } }, { bitId: { in: dirtyParts } }],
+          OR: [
+            { bladeId: { in: dirtyParts } },
+            { lockChipId: { in: dirtyParts } },
+            { overBladeId: { in: dirtyParts } },
+            { metalBladeId: { in: dirtyParts } },
+            { assistBladeId: { in: dirtyParts } },
+            { ratchetId: { in: dirtyParts } },
+            { bitId: { in: dirtyParts } },
+          ],
         },
-        select: { id: true, bladeId: true, ratchetId: true, bitId: true },
+        select: { id: true, bladeId: true, lockChipId: true, overBladeId: true, metalBladeId: true, assistBladeId: true, ratchetId: true, bitId: true },
       })
     : []
   const affectedBuildIds = [...new Set([...dirtyBuilds, ...partBuilds.map((b) => b.id)])]
@@ -113,7 +122,7 @@ export async function recomputeDirtyMeta(): Promise<{ parts: number; builds: num
   ]
   const buildRows = await prisma.build.findMany({
     where: { id: { in: matchBuildIds } },
-    select: { id: true, bladeId: true, ratchetId: true, bitId: true },
+    select: { id: true, bladeId: true, lockChipId: true, overBladeId: true, metalBladeId: true, assistBladeId: true, ratchetId: true, bitId: true },
   })
   const buildParts = new Map(buildRows.map((r) => [r.id, r]))
 

@@ -55,10 +55,17 @@ export interface CompletedMatchRow {
   player2SpinMode?: 'RIGHT' | 'LEFT' | null
 }
 
+/** The build→parts shape the pure aggregator needs — satisfied by a Prisma select.
+ *  RC16 (#122): variable Bauformen — die vier CX-Slots optional (Custom Line), ratchetId
+ *  null bei Ratchet-Integrated; partIdsOf filtert leere Slots heraus. */
 export interface BuildPartsRow {
   id: string
-  bladeId: string
-  ratchetId: string
+  bladeId: string | null
+  lockChipId?: string | null
+  overBladeId?: string | null
+  metalBladeId?: string | null
+  assistBladeId?: string | null
+  ratchetId: string | null
   bitId: string
 }
 
@@ -89,8 +96,9 @@ function finalize<T extends { appearances: number; wins: number; losses: number;
  * @param matches   Completed match rows (status/winner filtering is the CALLER's job; this
  *                  function still defensively skips rows whose winnerId matches neither
  *                  player — the draw case — and rows with null build ids on a side).
- * @param buildParts  Map of buildId → its three part ids, for every build that can appear in
- *                  `matches` (and every build to be seeded with a zero entry).
+ * @param buildParts  Map of buildId → its slot part ids (2–6 je nach Bauform, RC16 #122), for
+ *                  every build that can appear in `matches` (and every build to be seeded with
+ *                  a zero entry).
  * @param allPartIds  Optional catalog-wide part ids: every one is seeded with a zero-stats
  *                  entry so full-catalog surfaces (the /meta page, computePartWinRates) can
  *                  distinguish "no data" from "not in result". Omit in unit tests.
@@ -123,7 +131,10 @@ export function aggregateWinRates(
     }
   }
 
-  const partIdsOf = (row: BuildPartsRow): string[] => [row.bladeId, row.ratchetId, row.bitId]
+  const partIdsOf = (row: BuildPartsRow): string[] =>
+    [row.bladeId, row.lockChipId, row.overBladeId, row.metalBladeId, row.assistBladeId, row.ratchetId, row.bitId].filter(
+      (id): id is string => id !== null && id !== undefined,
+    )
 
   const bump = (key: string, won: boolean) => {
     const p = parts.get(key) ?? zeroPartStats(key)
@@ -167,7 +178,16 @@ export function aggregateWinRates(
   return { builds, parts }
 }
 
-const BUILD_PARTS_SELECT = { id: true, bladeId: true, ratchetId: true, bitId: true } as const
+const BUILD_PARTS_SELECT = {
+  id: true,
+  bladeId: true,
+  lockChipId: true,
+  overBladeId: true,
+  metalBladeId: true,
+  assistBladeId: true,
+  ratchetId: true,
+  bitId: true,
+} as const
 
 const MATCH_ROW_SELECT = {
   player1Id: true,

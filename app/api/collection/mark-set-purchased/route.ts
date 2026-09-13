@@ -1,11 +1,12 @@
-// app/api/collection/mark-set-purchased/route.ts (Phase 11, item 6)
+// app/api/collection/mark-set-purchased/route.ts (Phase 11, item 6; RC16 #122 variable Slots)
 // "Set als gekauft markieren" — selecting an official Build (isOfficialSet: true) and marking
-// it purchased creates THREE linked CollectionItem rows (one per constituent part: blade,
-// ratchet, bit), sharing the entered purchasePrice/currency/merchant/boughtAt. This is
-// provenance, not a new ownership unit — the three rows stay independently editable/deletable
-// afterward via the existing single-Part collection routes (e.g. if the user later sells just
-// the bit). AUTHZ RULE (standing Global-Constraints requirement): owner-only — the three rows
-// are always created for session.user.id, never a body-supplied userId (negative test in
+// it purchased creates ONE linked CollectionItem row per constituent part (je nach Bauform
+// 2–6: Standard 3, Ratchet-Integrated 2, Custom Line 6), sharing the entered
+// purchasePrice/currency/merchant/boughtAt. This is provenance, not a new ownership unit —
+// the rows stay independently editable/deletable afterward via the existing single-Part
+// collection routes (e.g. if the user later sells just the bit). AUTHZ RULE (standing
+// Global-Constraints requirement): owner-only — the rows are always created for
+// session.user.id, never a body-supplied userId (negative test in
 // tests/integration/mark-set-purchased.test.ts).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -30,13 +31,23 @@ export async function POST(req: Request): Promise<Response> {
 
   // Reuse the single-part form's field parser for the shared purchase fields (price/currency/
   // merchant/boughtAt) — same validation, no second implementation. requirePart: false since
-  // this route supplies its own three partIds from the Set, not a client-picked one.
+  // this route supplies its own partIds from the Set, not a client-picked one.
   const parsed = parseCollectionItemBody(body, { requirePart: false })
   if (parsed.error) return Response.json({ error: parsed.error }, { status: 400 })
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },
-    select: { id: true, isOfficialSet: true, bladeId: true, ratchetId: true, bitId: true },
+    select: {
+      id: true,
+      isOfficialSet: true,
+      bladeId: true,
+      lockChipId: true,
+      overBladeId: true,
+      metalBladeId: true,
+      assistBladeId: true,
+      ratchetId: true,
+      bitId: true,
+    },
   })
   if (!build) return Response.json({ error: 'not_found' }, { status: 404 })
   if (!build.isOfficialSet) return Response.json({ error: 'not_an_official_set' }, { status: 400 })
@@ -51,10 +62,19 @@ export async function POST(req: Request): Promise<Response> {
     boughtAt: boughtAt ?? null,
   }
 
-  const items = await prisma.$transaction([
-    prisma.collectionItem.create({ data: { ...shared, partOrBeyId: build.bladeId } }),
-    prisma.collectionItem.create({ data: { ...shared, partOrBeyId: build.ratchetId } }),
-    prisma.collectionItem.create({ data: { ...shared, partOrBeyId: build.bitId } }),
-  ])
+  // RC16 (#122) — je belegtem Slot eine CollectionItem-Row; leere Slots (Ratchet-Integrated,
+  // CX-Blade) erzeugen bewusst keine Row.
+  const partIds = [
+    build.bladeId,
+    build.lockChipId,
+    build.overBladeId,
+    build.metalBladeId,
+    build.assistBladeId,
+    build.ratchetId,
+    build.bitId,
+  ].filter((id): id is string => id !== null)
+  const items = await prisma.$transaction(
+    partIds.map((partOrBeyId) => prisma.collectionItem.create({ data: { ...shared, partOrBeyId } })),
+  )
   return Response.json({ ids: items.map((i) => i.id) }, { status: 201 })
 }

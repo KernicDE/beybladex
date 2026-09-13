@@ -10,7 +10,19 @@ import { validateDeckForFormat, requiredBuildCountForFormat } from '@/lib/deckVa
 const P = { b1: 'blade-1', b2: 'blade-2', b3: 'blade-3', r1: 'ratchet-1', r2: 'ratchet-2', r3: 'ratchet-3', t1: 'bit-1', t2: 'bit-2', t3: 'bit-3' }
 
 function build(id: string, bladeId: string, ratchetId: string, bitId: string) {
-  return { id, bladeId, ratchetId, bitId, blade: { name: bladeId }, ratchet: { name: ratchetId }, bit: { name: bitId } }
+  return {
+    id,
+    bladeId,
+    lockChipId: null,
+    overBladeId: null,
+    metalBladeId: null,
+    assistBladeId: null,
+    ratchetId,
+    bitId,
+    blade: { name: bladeId },
+    ratchet: { name: ratchetId },
+    bit: { name: bitId },
+  }
 }
 
 const threeDistinctBuilds = [
