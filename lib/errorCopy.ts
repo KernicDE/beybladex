@@ -66,6 +66,11 @@ const COPY: Record<string, string> = {
   invalid_longitude: 'Der Längengrad muss zwischen -180 und 180 liegen.',
   invalid_entry_fee: 'Der Eintrittspreis ist ungültig.',
   invalid_currency: 'Die Währung ist ungültig (EUR, CHF oder USD).',
+  // purchases (#142) — Kauf-Flow: Beyblade als gekauft markieren
+  invalid_price: 'Der Preis ist ungültig (keine negative Zahl).',
+  invalid_merchant: 'Der Händlername ist ungültig (maximal 120 Zeichen).',
+  invalid_boughtAt: 'Das Kaufdatum liegt zu weit in der Zukunft oder ist ungültig.',
+  invalid_query: 'Die Suchanfrage ist ungültig (mindestens 3 Zeichen).',
   invalid_recurring_days: 'Der Wiederholungstag ist ungültig (0–6).',
   invalid_ruleset: 'Das ausgewählte Regelwerk ist ungültig.',
   end_before_start: 'Das Enddatum darf nicht vor dem Startdatum liegen.',
