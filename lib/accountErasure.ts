@@ -58,6 +58,9 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // explicit deleteMany keeps the erasure matrix self-documenting, per the Cross-Phase
     // Regression Guard's standing rule that a new User-owned model ships with its entry).
     await tx.rating.deleteMany({ where: { userId } })
+    // MVP4 (#141): Kauf-Daten (Purchase, User ↔ Beyblade) sind persönlich und sterben mit dem
+    // Account (Cascade backstop, explicit deleteMany for the same self-documenting reason).
+    await tx.purchase.deleteMany({ where: { userId } })
     // Phase 11: catalog proposals are personal and die with the account (Cascade backstop,
     // explicit deleteMany for the same self-documenting reason as above). MediaAsset rows are
     // different — a real catalog image (a Part/Build/Tournament's picture) must survive the

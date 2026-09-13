@@ -1,22 +1,25 @@
-// app/api/admin/builds/route.ts
-// Curator direct-create of an official Set (Phase 11's third creation path, wired for Phase 20
-// naming/dedup). AUTHZ RULE (standing Global-Constraints requirement): TRUSTED/JUDGE/
-// ORGANIZER/ADMIN only (same widened reviewer tier as CatalogProposal review — 401 anonymous,
-// 403 plain USER). POST creates the Build with isOfficialSet=true; the curator-entered retail
-// box name is used verbatim when provided and NEVER overridden by the canonical name — the
-// canonical name (Bauform-abhängig, RC16 #122) is derived only when no name was given.
-// Duplicate combo (exakte 7-Slot-Teilekombination) returns the existing Build's id gracefully
-// ({ id, existing: true }) instead of a raw unique-constraint 500. Every successful create
-// writes an append-only AuditLog row; rate-limited per curator.
-// PATCH — narrow follow-up edit of a single existing official Set's `productCode` (the
-// manufacturer retail SKU, e.g. Hasbro "F9580"). Deliberately minimal: a full Build-edit
-// surface (name/type/image, reachable from the detail page) is tracked separately (issue #108)
-// — this only unblocks setting/correcting the product code without going back through create.
+// app/api/admin/builds/route.ts (Phase 11's third creation path; MVP4 #141 — Build-Split)
+// Curator direct-create of an official Set — erzeugt seit dem Split eine BEYBLADE-Zeile (der
+// Route-Pfad /api/admin/builds bleibt bis zur IA-Umstellung in MVP4/4 bestehen; das Aggregat
+// heißt kanonisch Beyblade, siehe Terminologie-Regel in AGENTS.md). AUTHZ RULE (standing
+// Global-Constraints requirement): TRUSTED/JUDGE/ORGANIZER/ADMIN only (same widened reviewer
+// tier as CatalogProposal review — 401 anonymous, 403 plain USER). Der Set-Name ist required
+// (Retail-Produkt), fehlt er, greift die kanonische Bauform-abhängige Ableitung (RC16 #122) —
+// ein vom Kurator eingegebener Name gewinnt niemals. Duplicate combo (exakte 7-Slot-
+// Teilekombination, NULL-sicher) returns the existing Beyblade's id gracefully ({ id,
+// existing: true }) instead of a raw unique-constraint 500. Every successful create writes an
+// append-only AuditLog row; rate-limited per curator.
+// PATCH — narrow follow-up edit of a single existing Beyblade's `productCode` (the
+// manufacturer retail SKU, e.g. Hasbro "F9580"). Deliberately minimal: a full Beyblade-edit
+// surface (name/image, reachable from the detail page) lands with the Beyblade-Detailseite
+// (MVP4/4, issue #144) — this only unblocks setting/correcting the product code without
+// going back through create.
 import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseBody, type BodySchema } from '@/lib/parseBody'
-import { parseBuildInput, verifyBuildParts, comboWhere } from '@/lib/buildInput'
+import { parseBeybladeInput } from '@/lib/beybladeInput'
+import { comboWhere, verifyAssemblyParts } from '@/lib/assembly'
 import { deriveBuildNameFromParts } from '@/lib/buildNaming'
 
 const PATCH_SCHEMA: BodySchema = {
@@ -36,38 +39,44 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return Response.json({ error: 'invalid_json' }, { status: 400 })
   }
-  const { data, errors } = parseBuildInput(body, { official: true })
+  const { data, errors } = parseBeybladeInput(body)
   if (errors) return Response.json({ error: errors[0], errors }, { status: 400 })
 
-  const verified = await verifyBuildParts(prisma, data!)
+  const verified = await verifyAssemblyParts(prisma, data!)
   if ('error' in verified) return Response.json({ error: verified.error }, { status: 400 })
 
-  // Phase 20 duplicate-combo pre-check (RC16 #122: exakte 7-Slot-Kombination, NULL-sicher) —
-  // even for official Sets the same parts must not back two Build rows; point the curator at
-  // the existing build instead.
+  // Duplicate-combo pre-check (RC16 #122: exakte 7-Slot-Teilekombination, NULL-sicher) —
+  // dieselben Teile dürfen nicht zwei Beyblade-Zeilen tragen; point the curator at the
+  // existing Beyblade instead. (Dieselbe Kombination als USER-BUILD zu haben, ist erlaubt.)
   const combo = comboWhere(data!)
-  const existing = await prisma.build.findFirst({ where: combo, select: { id: true } })
+  const existing = await prisma.beyblade.findFirst({ where: combo, select: { id: true } })
   if (existing) return Response.json({ id: existing.id, existing: true }, { status: 200 })
 
-  // Retail box name wins when the curator entered one; only a nameless create gets the
-  // canonical Bauform-abhängige Ableitung (RC16 #122).
-  const name = data!.name ?? deriveBuildNameFromParts(verified.parts, data!)
-  const build = await prisma.$transaction(async (tx) => {
-    const created = await tx.build.create({
-      data: { ...combo, name, type: data!.type ?? undefined, isOfficialSet: true, productCode: data!.productCode },
+  // Der Set-Name ist required; ein nameless Payload wird vom Parser abgelehnt — diese
+  // Fallback-Ableitung deckt den Fall ab, dass künftig ein Create ohne expliziten Namen
+  // erlaubt wird (Kanone bleibt Bauform-abhängig, RC16 #122).
+  const name = data!.name || deriveBuildNameFromParts(verified.parts, data!)
+  const beyblade = await prisma.$transaction(async (tx) => {
+    const created = await tx.beyblade.create({
+      data: {
+        ...combo,
+        name,
+        manufacturer: data!.manufacturer,
+        productCode: data!.productCode,
+      },
     })
     await tx.auditLog.create({
       data: {
         actorId: gate.userId,
-        action: 'build.create',
-        targetType: 'build',
+        action: 'beyblade.create',
+        targetType: 'beyblade',
         targetId: created.id,
         summary: `Set „${created.name}“ angelegt`,
       },
     })
     return created
   })
-  return Response.json({ id: build.id, existing: false }, { status: 201 })
+  return Response.json({ id: beyblade.id, existing: false }, { status: 201 })
 }
 
 export async function PATCH(req: Request): Promise<Response> {
@@ -86,27 +95,26 @@ export async function PATCH(req: Request): Promise<Response> {
   if (errors.length > 0) return Response.json({ error: errors[0], errors }, { status: 400 })
   const { id, productCode } = data as { id: string; productCode: string | null }
 
-  const existing = await prisma.build.findUnique({ where: { id }, select: { id: true, name: true, isOfficialSet: true } })
+  const existing = await prisma.beyblade.findUnique({ where: { id }, select: { id: true, name: true } })
   if (!existing) return Response.json({ error: 'not_found' }, { status: 404 })
-  if (!existing.isOfficialSet) return Response.json({ error: 'not_official_set' }, { status: 400 })
 
   if (productCode) {
-    const conflict = await prisma.build.findUnique({ where: { productCode }, select: { id: true } })
+    const conflict = await prisma.beyblade.findUnique({ where: { productCode }, select: { id: true } })
     if (conflict && conflict.id !== id) return Response.json({ error: 'product_code_taken' }, { status: 409 })
   }
 
-  const build = await prisma.$transaction(async (tx) => {
-    const updated = await tx.build.update({ where: { id }, data: { productCode } })
+  const beyblade = await prisma.$transaction(async (tx) => {
+    const updated = await tx.beyblade.update({ where: { id }, data: { productCode } })
     await tx.auditLog.create({
       data: {
         actorId: gate.userId,
-        action: 'build.update',
-        targetType: 'build',
+        action: 'beyblade.update',
+        targetType: 'beyblade',
         targetId: updated.id,
         summary: `Set „${existing.name}“ — Product Code auf „${productCode ?? '—'}“ gesetzt`,
       },
     })
     return updated
   })
-  return Response.json({ id: build.id, productCode: build.productCode }, { status: 200 })
+  return Response.json({ id: beyblade.id, productCode: beyblade.productCode }, { status: 200 })
 }

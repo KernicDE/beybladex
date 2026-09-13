@@ -13,12 +13,14 @@ export async function GET() {
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
 
-  const [user, collection, decks, ratings, catalogProposals, mediaAssets, friendships, clubMemberships, tournamentParticipations, stageStandings, clubMessages, teamMemberships, teamCreations, teamSlots] =
+  const [user, collection, decks, ratings, purchases, catalogProposals, mediaAssets, friendships, clubMemberships, tournamentParticipations, stageStandings, clubMessages, teamMemberships, teamCreations, teamSlots] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
       prisma.collectionItem.findMany({ where: { userId }, include: { pricePoints: true } }),
       prisma.deck.findMany({ where: { userId }, include: { builds: true } }),
       prisma.rating.findMany({ where: { userId } }),
+      // MVP4 (#141) — Kauf-Daten (User ↔ Beyblade) sind User-owned wie CollectionItems.
+      prisma.purchase.findMany({ where: { userId } }),
       prisma.catalogProposal.findMany({ where: { submittedById: userId } }),
       prisma.mediaAsset.findMany({ where: { uploadedById: userId }, select: { id: true, filename: true, mimeType: true, width: true, height: true, createdAt: true } }),
       prisma.friendship.findMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
@@ -62,6 +64,7 @@ export async function GET() {
     collection,
     decks,
     ratings,
+    purchases,
     catalogProposals,
     mediaAssets,
     friendships,

@@ -9,15 +9,19 @@
 // POST — any logged-in user registers a one-off personal combo (the deck builder's
 // BuildComboForm posts here). AUTHZ RULE (standing Global-Constraints requirement): a session
 // is required (401 anonymous — negative test in tests/integration/duplicate-build-combo.test.ts);
-// the server forces isOfficialSet=false and derives the canonical name from the parts when the
-// creator gave none (Phase 20). Duplicate combo (same parts across all 7 slots, RC16 #122)
-// returns the EXISTING build ({ id, existing: true, build }) instead of a raw unique-constraint 500.
+// the server derives the canonical name from the parts when the creator gave none (Phase 20).
+// Duplicate combo (same parts across all 7 slots, RC16 #122) returns the EXISTING build
+// ({ id, existing: true, build }) instead of a raw unique-constraint 500.
+// MVP4 (#141): offizielle Sets leben im Beyblade-Modell — dieser Pfad erzeugt ausschließlich
+// persönliche Builds (visibility UNLISTED default); Set-Anlage läuft über die Curator-Pfade
+// (POST /api/admin/builds bzw. CatalogProposal-Approval), die Beyblade-Zeilen erzeugen.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { searchBuilds } from '@/lib/buildSearch'
 import { getBuildStats } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
-import { parseBuildInput, verifyBuildParts, comboWhere } from '@/lib/buildInput'
+import { parseBuildInput } from '@/lib/buildInput'
+import { comboWhere, verifyAssemblyParts } from '@/lib/assembly'
 import { deriveBuildNameFromParts } from '@/lib/buildNaming'
 
 export async function GET(req: Request) {
@@ -41,7 +45,7 @@ export async function GET(req: Request) {
         id: b.id,
         type: b.type,
         name: b.name,
-        isOfficialSet: b.isOfficialSet,
+        visibility: b.visibility,
         blade: b.blade,
         lockChip: b.lockChip,
         overBlade: b.overBlade,
@@ -84,7 +88,7 @@ export async function POST(req: Request): Promise<Response> {
   const { data, errors } = parseBuildInput(body, { official: false })
   if (errors) return Response.json({ error: errors[0], errors }, { status: 400 })
 
-  const verified = await verifyBuildParts(prisma, data!)
+  const verified = await verifyAssemblyParts(prisma, data!)
   if ('error' in verified) return Response.json({ error: verified.error }, { status: 400 })
 
   // Phase 20 duplicate-combo pre-check (RC16 #122: exakte 7-Slot-Kombination, NULL-sicher):
