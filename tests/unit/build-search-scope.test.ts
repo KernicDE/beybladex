@@ -45,8 +45,8 @@ describe('searchBuilds nach dem Build-Split (MVP4 #141)', () => {
   })
 })
 
-describe('searchBeyblades (Katalog-Tab / Set-Picker, MVP4 #141)', () => {
-  it('matcht Name ODER productCode (Präfix, case-insensitive)', async () => {
+describe('searchBeyblades (Katalog-Tab / Set-Picker, MVP4 #141; Teilcode-Suche #144)', () => {
+  it('matcht Name, productCode UND Teilnamen über alle 7 Slots (Präfix, case-insensitive)', async () => {
     await searchBeyblades({ q: 'G0290' })
 
     const call = beybladeFindMany.mock.calls[0][0] as { where: { AND: Array<{ OR?: unknown[] }> } }
@@ -54,6 +54,8 @@ describe('searchBeyblades (Katalog-Tab / Set-Picker, MVP4 #141)', () => {
     expect(orClause?.OR).toEqual([
       { name: { startsWith: 'G0290', mode: 'insensitive' } },
       { productCode: { startsWith: 'G0290', mode: 'insensitive' } },
+      // #144 — Teilcode-Suche: „4-60" findet alle Sets mit einem 4-60-Ratchet.
+      ...ASSEMBLY_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: 'G0290', mode: 'insensitive' } } })),
     ])
   })
 
