@@ -1,7 +1,12 @@
-// app/api/builds/[id]/ratings/route.ts
-// Rating/comment CRUD for a build. AUTHZ RULES (standing Global-Constraints requirement):
-//   POST   — any logged-in user; one rating per user per build, enforced by the
-//            @@unique([buildId, userId]) constraint (upsert — a second POST edits, never duplicates)
+// app/api/builds/[id]/ratings/route.ts (Phase 5 Part A; MVP4 #141 — polymorphes Rating)
+// Rating/comment CRUD for a build. Das Rating-Modell ist seit MVP4 polymorph
+// (RatingTargetType BEYBLADE|BUILD|PART, targetId ohne FK — Integrität via lib/ratingTarget.ts);
+// dieser Route-Pfad bleibt der BUILD-Einstieg, bis MVP4/3 (#143) die polymorphe Rating-API mit
+// UI auf Beyblade/Build/Teil baut.
+// AUTHZ RULES (standing Global-Constraints requirement):
+//   POST   — any logged-in user; one rating per user per target, enforced by the
+//            @@unique([targetType, targetId, userId]) constraint (upsert — a second POST edits,
+//            never duplicates)
 //   GET    — public, cursor-paginated (list endpoint pagination rule)
 //   PATCH  — owner-only (401 / 403 / 404 — negative test in tests/integration/build-ratings.test.ts)
 //   DELETE — owner, or TRUSTED/ADMIN moderating any rating; moderation writes an append-only
@@ -12,6 +17,8 @@ import { rateLimit } from '@/lib/rateLimit'
 import { RATING_COMMENT_MAX as COMMENT_MAX } from '@/lib/markdownFieldCaps'
 
 const PAGE_SIZE = 20
+// Dieser Route-Pfad bewertet Builds; Beyblade-/Teil-Ratings kommen mit der polymorphen API.
+const TARGET_TYPE = 'BUILD' as const
 type Ctx = { params: Promise<{ id: string }> }
 
 function parseRatingBody(body: unknown): { stars?: number; comment?: string | null; errors?: string[] } {
@@ -40,7 +47,7 @@ export async function GET(_req: Request, { params }: Ctx) {
   const cursor = url.searchParams.get('cursor')
 
   const rows = await prisma.rating.findMany({
-    where: { buildId },
+    where: { targetType: TARGET_TYPE, targetId: buildId },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -57,7 +64,7 @@ export async function GET(_req: Request, { params }: Ctx) {
         createdAt: r.createdAt.toISOString(),
         username: r.user.username, // username is the platform identity — always visible, even for minors (lib/privacy.ts)
       })),
-      nextCursor: hasMore ? ratings[ratings.length - 1].id : null,
+      nextCursor: hasMore ? ratings[ratings.length - 1]!.id : null,
     },
     { status: 200 },
   )
@@ -82,11 +89,11 @@ export async function POST(req: Request, { params }: Ctx) {
   const { stars, comment, errors } = parseRatingBody(body)
   if (errors) return Response.json({ error: errors[0], errors }, { status: 400 })
 
-  // Upsert via the @@unique([buildId, userId]) constraint — a second rating from the same
-  // user EDITS their existing one instead of duplicating.
+  // Upsert via the @@unique([targetType, targetId, userId]) constraint — a second rating from
+  // the same user EDITS their existing one instead of duplicating.
   const rating = await prisma.rating.upsert({
-    where: { buildId_userId: { buildId, userId: session.user.id } },
-    create: { buildId, userId: session.user.id, stars: stars!, comment: comment ?? null },
+    where: { targetType_targetId_userId: { targetType: TARGET_TYPE, targetId: buildId, userId: session.user.id } },
+    create: { targetType: TARGET_TYPE, targetId: buildId, userId: session.user.id, stars: stars!, comment: comment ?? null },
     update: { stars: stars!, comment: comment ?? null },
   })
   return Response.json({ id: rating.id }, { status: 201 })
@@ -101,9 +108,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const ratingId = url.searchParams.get('ratingId')
   if (!ratingId) return Response.json({ error: 'invalid_ratingId' }, { status: 400 })
 
-  const rating = await prisma.rating.findUnique({ where: { id: ratingId }, select: { id: true, userId: true, buildId: true } })
-  // 404 (not 403) when the rating doesn't exist OR belongs to another build — existence isn't leaked.
-  if (!rating || rating.buildId !== buildId) return Response.json({ error: 'not_found' }, { status: 404 })
+  const rating = await prisma.rating.findUnique({ where: { id: ratingId }, select: { id: true, userId: true, targetType: true, targetId: true } })
+  // 404 (not 403) when the rating doesn't exist OR belongs to another target — existence isn't leaked.
+  if (!rating || rating.targetType !== TARGET_TYPE || rating.targetId !== buildId) return Response.json({ error: 'not_found' }, { status: 404 })
   if (rating.userId !== session.user.id) return Response.json({ error: 'forbidden' }, { status: 403 })
 
   let body: unknown
@@ -134,9 +141,9 @@ export async function DELETE(req: Request, { params }: Ctx) {
 
   const rating = await prisma.rating.findUnique({
     where: { id: ratingId },
-    select: { id: true, userId: true, buildId: true, comment: true },
+    select: { id: true, userId: true, targetType: true, targetId: true, comment: true },
   })
-  if (!rating || rating.buildId !== buildId) return Response.json({ error: 'not_found' }, { status: 404 })
+  if (!rating || rating.targetType !== TARGET_TYPE || rating.targetId !== buildId) return Response.json({ error: 'not_found' }, { status: 404 })
 
   const isOwner = rating.userId === session.user.id
   let moderating = false

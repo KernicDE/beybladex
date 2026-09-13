@@ -25,7 +25,7 @@ interface SearchResult {
   id: string
   type: BuildCardData['type']
   name: string | null
-  isOfficialSet: boolean
+  visibility?: 'PUBLIC' | 'UNLISTED'
   blade: { id: string; name: string; imageId: string | null } | null
   lockChip: { id: string; name: string } | null
   overBlade: { id: string; name: string } | null
@@ -101,7 +101,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
       assistBlade: build.assistBlade,
       ratchet: build.ratchet,
       bit: build.bit,
-      ...(build.name !== undefined ? { name: build.name, isOfficialSet: build.isOfficialSet } : {}),
+      ...(build.name !== undefined ? { name: build.name } : {}),
     }])
   }
 

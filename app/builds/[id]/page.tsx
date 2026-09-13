@@ -13,7 +13,6 @@ import { RatingForm } from '@/components/beyblade/RatingForm'
 import { RatingList } from '@/components/beyblade/RatingList'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
-import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
 import { BuildForm } from '@/components/admin/BuildForm'
 import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
@@ -38,14 +37,18 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
       assistBlade: true,
       ratchet: true,
       bit: true,
-      ratings: {
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: RATING_PAGE_SIZE,
-        include: { user: { select: { id: true, username: true } } },
-      },
     },
   })
   if (!build) notFound()
+
+  // MVP4 (#141): Ratings sind polymorph — die Build-Bewertungen werden separat gelesen
+  // (keine Prisma-Relation mehr, targetId trägt keine FK).
+  const buildRatings = await prisma.rating.findMany({
+    where: { targetType: 'BUILD', targetId: id },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: RATING_PAGE_SIZE,
+    include: { user: { select: { id: true, username: true } } },
+  })
 
   let canModerate = false
   let canAuthor = false
@@ -58,8 +61,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
     viewerUsername = caller?.username ?? null
   }
 
-  const aggregate = await prisma.rating.aggregate({ where: { buildId: id }, _avg: { stars: true }, _count: true })
-  const ownRating = viewerUsername ? build.ratings.find((r) => r.user.id === viewerId) : undefined
+  const aggregate = await prisma.rating.aggregate({ where: { targetType: 'BUILD', targetId: id }, _avg: { stars: true }, _count: true })
+  const ownRating = viewerUsername ? buildRatings.find((r) => r.user.id === viewerId) : undefined
 
   // Auto-Meta win rates (Phase 5 Part D) — batch cache reads (single-key for the build, one
   // mget for its parts), with direct-compute fallback on an empty cache. RC16 (#122): über
@@ -86,12 +89,9 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            {/* [Fix while adding productCode] title always rendered the blade name, never the
-                curated Set name (e.g. "Sword Dran 3-60F") — same fallback BuildCard already uses
-                (RC16 #122 erweitert: Lock Chip als CX-Fallback). */}
+            {/* Titel: kanonischer/vergebener Name → Blade → Lock Chip → Bit (RC16 #122). */}
             <h1 className="text-2xl font-semibold">
               {build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name}
-              {build.productCode && <span className="ml-2 text-base font-normal text-current/50">{build.productCode}</span>}
             </h1>
             <p className="text-current/60">
               {/* RC16 (#106): Bit als „Kurzcode (Vollname)". */}
@@ -167,7 +167,7 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         <RatingList
           buildId={id}
           canModerate={canModerate}
-          ratings={build.ratings.map((r) => ({
+          ratings={buildRatings.map((r) => ({
             id: r.id,
             stars: r.stars,
             comment: r.comment,
@@ -177,18 +177,6 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           }))}
         />
       </section>
-
-      {/* RC16 (#103): offizielle Sets direkt auf der Detailseite als gekauft markieren —
-          dieselbe API wie MarkSetPurchasedForm, aber ohne den Umweg ueber die Set-Suche. */}
-      {build.isOfficialSet && viewerId && (
-        <section aria-labelledby="build-purchase" className="space-y-3">
-          <h2 id="build-purchase" className="text-lg font-semibold">In deiner Sammlung</h2>
-          <Card>
-            <h3 className="mb-3 text-sm font-semibold">Set als gekauft markieren</h3>
-            <MarkSetPurchasedForm build={{ id: build.id, name: build.name }} />
-          </Card>
-        </section>
-      )}
 
       {/* RC16 (#108): Kuratoren bearbeiten Name/Typ/Bild direkt auf der Detailseite
           (PATCH /api/admin/builds/[id] + ./image — Server-Gate: requireCurator). */}

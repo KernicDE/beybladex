@@ -97,6 +97,24 @@ enum MatchStatus {
   COMPLETED
 }
 
+// MVP4 (#139/#141) — Build-Sichtbarkeit: PUBLIC = in Listen/Übersichten gelistet,
+// UNLISTED = nur per Direktlink/Teilen/Turnier auffindbar. Es gibt kein PRIVATE/GEHEIM —
+// spätestens in Turnieren sind Builds sichtbar, die Sichtbarkeit steuert nur die Listung.
+enum Visibility {
+  PUBLIC
+  UNLISTED
+}
+
+// MVP4 (#139/#141) — polymorphes Rating: ein Ziel je User (@@unique unten), das Ziel ist
+// BEYBLADE | BUILD | PART. targetId trägt KEINE FK (gleiche Begründung wie AuditLog.targetId):
+// ein Rating soll weder Löschung noch Migration des Ziels blockieren — die Integrität prüft
+// die Lib (lib/ratingTarget.ts), nie der DB-Constraint.
+enum RatingTargetType {
+  BEYBLADE
+  BUILD
+  PART
+}
+
 // Phase 5 Part C2 — multi-format tournaments: one Tournament runs 1+ ordered stages.
 enum TournamentFormat {
   SINGLE_ELIMINATION
@@ -173,7 +191,7 @@ model User {
   // TOTP deactivation (and, by contract, any future password-change route), stamped into every
   // new JWT as the `tv` claim and re-checked on every request — a token minted before the bump
   // stops authenticating immediately instead of living out its 30 days.
-  tokenVersion Int       @default(0)
+  tokenVersion Int @default(0)
 
   collection    CollectionItem[]
   decks         Deck[]
@@ -181,19 +199,22 @@ model User {
   judgedMatches Match[]                 @relation("JudgeMatches")
   createdRules  Ruleset[]
   notifications Notification[]
+  // MVP4 (#141) — Kauf-Daten (User ↔ Beyblade) sind persönlich und sterben mit dem Account
+  // (Cascade; die Erasure-Matrix löscht sie zusätzlich explizit, siehe lib/accountErasure.ts).
+  purchases     Purchase[]
 
   sentFriendRequests     Friendship[] @relation("SentFriends")
   receivedFriendRequests Friendship[] @relation("ReceivedFriends")
 
-  ownedClubs           Club[]            @relation("ClubOwner")
+  ownedClubs           Club[]               @relation("ClubOwner")
   clubMemberships      ClubMember[]
-  organizedTournaments Tournament[]      @relation("TournamentOrganizer")
+  organizedTournaments Tournament[]         @relation("TournamentOrganizer")
   judgedTournaments    TournamentJudge[]
   ratings              Rating[]
   // Phase 11: submitted catalog proposals die with the account (Cascade);
   // reviewedById is SetNull so a reviewer's erasure never takes their reviews with them.
-  catalogProposals     CatalogProposal[] @relation("CatalogProposalSubmitter")
-  reviewedProposals    CatalogProposal[] @relation("CatalogProposalReviewer")
+  catalogProposals     CatalogProposal[]    @relation("CatalogProposalSubmitter")
+  reviewedProposals    CatalogProposal[]    @relation("CatalogProposalReviewer")
   // No mediaAssets relation here — MediaAsset.uploadedById is a plain String (see that
   // model's own comment), not a FK, so it never appears as a Prisma relation on User.
   // Phase 21: the user's own profile photo IS a real FK (onDelete: SetNull — the DB severs
@@ -201,14 +222,14 @@ model User {
   // backstop: account erasure (lib/accountErasure.ts) explicitly deletes the avatar's
   // MediaAsset row + on-volume file first — an avatar is personal-only data, it must not
   // survive its owner's erasure as an orphan.
-  avatarImage   MediaAsset? @relation("UserAvatar", fields: [avatarImageId], references: [id], onDelete: SetNull)
-  avatarImageId String?
+  avatarImage          MediaAsset?          @relation("UserAvatar", fields: [avatarImageId], references: [id], onDelete: SetNull)
+  avatarImageId        String?
   stageStandings       StageStanding[]
   // RC15 #12 — teams the user created (captain-by-default membership is a TeamMember row) and
   // the 3-vs-3 team rosters / tournament lineups they belong to. TeamMember cascades with the
   // account (a roster slot simply opens); TeamTournamentSlot rows survive erasure like
   // TournamentParticipant (opponents' match history is Art. 17(3) data — see accountErasure).
-  createdTeams         Team[]                @relation("TeamCreator")
+  createdTeams         Team[]               @relation("TeamCreator")
   teamMemberships      TeamMember[]
   teamSlots            TeamTournamentSlot[]
   // Phase 14 — real FK (not a plain String like AuditLog.actorId/MediaAsset.uploadedById):
@@ -560,8 +581,8 @@ model TournamentStage {
   // by the generate route as this stage's participant pool (NOT a new join model, per plan).
   qualifiedUserIds  String[]         @default([])
 
-  matches   Match[]
-  standings StageStanding[]
+  matches     Match[]
+  standings   StageStanding[]
   // RC15 #12 — team-mode bracket nodes for this stage (TeamMatch); solo matches stay [].
   teamMatches TeamMatch[]
 
@@ -593,35 +614,43 @@ model StageStanding {
 // catalog. Phase 11 replaced the free-text imageUrl column with a real FK to MediaAsset (the
 // generic upload pipeline): one owned asset per image, served by /api/media/[id].
 model Part {
-  id            String        @id @default(uuid())
-  name          String
-  manufacturer  Manufacturer
-  category      PartCategory
-  beyType       BeyType?
-  spinDirection SpinDirection
+  id                  String        @id @default(uuid())
+  name                String
+  manufacturer        Manufacturer
+  category            PartCategory
+  beyType             BeyType?
+  spinDirection       SpinDirection
   // Phase 16 — current-gen CX-series dual-spin parts: when true, `spinDirection` above is only
   // the SUGGESTED/default mode — the actual in-match mode is chosen per match (Match.player1SpinMode
   // / player2SpinMode) and locked at build confirmation, per the real WBO rulebook procedure.
-  dualSpin      Boolean       @default(false)
+  dualSpin            Boolean       @default(false)
   // RC16 (#122) — Ratchet-Integrated Blades (z. B. Hasbro „Valor Bison FB"): das Blade-Teil
   // enthält physisch das Ratchet; ein Build damit hat KEIN eigenes RATCHET-Teil (Build.ratchetId
   // bleibt null). Nur auf BLADE-Teilen sinnvoll, das erzwingt lib/partValidation.ts.
-  isRatchetIntegrated Boolean @default(false)
-  weightGrams   Float?
-  imageId       String?
-  image         MediaAsset?   @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
-  metadata      Json?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  isRatchetIntegrated Boolean       @default(false)
+  weightGrams         Float?
+  imageId             String?
+  image               MediaAsset?   @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
+  metadata            Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
-  buildsBlade     Build[]          @relation("BuildBlade")
-  buildsLockChip  Build[]          @relation("BuildLockChip")
-  buildsOverBlade Build[]          @relation("BuildOverBlade")
-  buildsMetalBlade Build[]         @relation("BuildMetalBlade")
-  buildsAssistBlade Build[]        @relation("BuildAssistBlade")
-  buildsRatchet   Build[]          @relation("BuildRatchet")
-  buildsBit       Build[]          @relation("BuildBit")
-  collectionItems CollectionItem[]
+  buildsBlade          Build[]          @relation("BuildBlade")
+  buildsLockChip       Build[]          @relation("BuildLockChip")
+  buildsOverBlade      Build[]          @relation("BuildOverBlade")
+  buildsMetalBlade     Build[]          @relation("BuildMetalBlade")
+  buildsAssistBlade    Build[]          @relation("BuildAssistBlade")
+  buildsRatchet        Build[]          @relation("BuildRatchet")
+  buildsBit            Build[]          @relation("BuildBit")
+  // MVP4 (#141) — dieselben 7 Slots auf Beyblade (offizielle Sets), gleiche Restrict-Regeln.
+  beybladesBlade       Beyblade[]       @relation("BeybladeBlade")
+  beybladesLockChip    Beyblade[]       @relation("BeybladeLockChip")
+  beybladesOverBlade   Beyblade[]       @relation("BeybladeOverBlade")
+  beybladesMetalBlade  Beyblade[]       @relation("BeybladeMetalBlade")
+  beybladesAssistBlade Beyblade[]       @relation("BeybladeAssistBlade")
+  beybladesRatchet     Beyblade[]       @relation("BeybladeRatchet")
+  beybladesBit         Beyblade[]       @relation("BeybladeBit")
+  collectionItems      CollectionItem[]
 
   @@index([category, name])
 }
@@ -649,7 +678,7 @@ model CatalogProposal {
 }
 
 model Build {
-  id        String  @id @default(uuid())
+  id            String  @id @default(uuid())
   // RC16 (#122) — die Blade-Assembly existiert in zwei sich ausschließenden Formen: EIN BLADE-Teil
   // (Standard- und Ratchet-Integrated-Builds) ODER der vierteilige Custom-Line-Stack (lockChip +
   // overBlade + metalBlade + assistBlade). Genau-eine-Form erzwingt lib/buildInput.ts
@@ -665,41 +694,36 @@ model Build {
   metalBlade    Part?   @relation("BuildMetalBlade", fields: [metalBladeId], references: [id], onDelete: Restrict)
   assistBladeId String?
   assistBlade   Part?   @relation("BuildAssistBlade", fields: [assistBladeId], references: [id], onDelete: Restrict)
-  ratchetId String?
-  ratchet   Part?   @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
-  bitId     String
-  bit       Part    @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
-  type      BeyType @default(ATTACK)
+  ratchetId     String?
+  ratchet       Part?   @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
+  bitId         String
+  bit           Part    @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
+  type          BeyType @default(ATTACK)
 
-  // Phase 11 — official Sets: `name` is the retail product name (nullable — a user-created
-  // combo has no single official name); isOfficialSet marks curated retail products (created
-  // via CatalogProposal approval or the curator direct-create path, never by POST /api/builds);
-  // imageId is the Set photo via the media pipeline. Builds stay catalog rows without a user
-  // FK — a user's personal combo is just a non-official Build.
-  name          String?
-  isOfficialSet Boolean     @default(false)
-  imageId       String?
-  image         MediaAsset? @relation("BuildImage", fields: [imageId], references: [id], onDelete: SetNull)
-  // Manufacturer retail product/SKU code for an official Set (e.g. Hasbro "F9580", Takara Tomy
-  // "BX-01") — printed on the box, distinct from our own internal `id`. Only meaningful for
-  // isOfficialSet: true; a user's personal combo has no product code. Unique when present so
-  // the same retail SKU can't be catalogued twice, but nullable since older/non-official rows
-  // and not-yet-researched Sets have none.
-  productCode String? @unique
+  // MVP4 (#139/#141) — Build-Split: Builds sind ausschließlich persönliche Kombinationen
+  // (offizielle Sets leben im Beyblade-Modell). visibility steuert nur die Listung —
+  // PUBLIC = in öffentlichen Übersichten gelistet, UNLISTED (Default) = nicht gelistet,
+  // aber per Direktlink/Teilen/Turnier weiterhin sichtbar. Niemals geheim.
+  visibility Visibility  @default(UNLISTED)
+  // Phase 20 — kanonische Auto-Benennung (deriveBuildName) oder kuratierter Name.
+  name       String?
+  imageId    String?
+  image      MediaAsset? @relation("BuildImage", fields: [imageId], references: [id], onDelete: SetNull)
 
-  ratings                Rating[]
-  deckBuilds             DeckBuild[]
-  matchesP1              Match[]          @relation("Player1Build")
-  matchesP2              Match[]          @relation("Player2Build")
-  // Phase 11 — provenance for collection rows created by "Set als gekauft markieren".
-  sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBuild")
+  // MVP4 (#141) — Ratings sind polymorph (Rating.targetType/targetId); Build hat keine
+  // eigene Rating-Relation mehr.
+  deckBuilds DeckBuild[]
+  matchesP1  Match[]     @relation("Player1Build")
+  matchesP2  Match[]     @relation("Player2Build")
 
   // RC16 (#122) — dieselbe Teile-Kombination (über alle 7 Slots, NULL-sicher) kann nie zwei
   // Build-Rows stützen. Prisma kann keinen Unique-Index mit COALESCE-Ausdrücken ausdrücken;
   // der Index "Build_combo_key" wird deshalb handschriftlich in der Migration
   // 20260911140000_catalog_custom_line_ratchet_integrated gepflegt (COALESCE pro Slot-Spalte,
   // damit Builds mit leeren Slots — Ratchet-Integrated, Custom Line — korrekt deduplizieren).
-  // Jeder Creation-Path pre-checkt die Kombination per findFirst (lib/buildInput.ts comboWhere).
+  // Jeder Creation-Path pre-checkt die Kombination per findFirst (lib/assembly.ts comboWhere).
+  // MVP4 (#141): dieselbe Kombination darf zusätzlich BEWUSST auch eine Beyblade-Zeile tragen
+  // ("Build von einer Beyblade erstellen") — der Combo-Key bleibt je Tabelle, nicht quer.
   @@index([bladeId])
   @@index([lockChipId])
   @@index([overBladeId])
@@ -707,6 +731,82 @@ model Build {
   @@index([assistBladeId])
   @@index([ratchetId])
   @@index([bitId])
+}
+
+// Beyblade (MVP4, #139/#141) — Datenbank aller offiziell erschienenen Sets (Hasbro / Takara
+// Tomy). Die 7 Assembly-Slots folgen EXAKT denselben Regeln wie Build (blade XOR CX-Stack, bit
+// Pflicht, ratchet nur null bei isRatchetIntegrated-Blade) — die Validierung lebt in
+// lib/assembly.ts, damit Beyblade UND Build dieselbe Logik nutzen. type/spinDirection gibt es
+// hier BEWUSST nicht als Spalten: beides wird aus dem Blade-Teil abgeleitet (Helper in
+// lib/assembly.ts) — kein Drift-Risiko zwischen gepflegtem Wert und Teile-Katalog.
+// Anlegen: nur Curator-Stufe (TRUSTED/ADMIN); Vorschläge jeder Angemeldete (CatalogProposal).
+model Beyblade {
+  id           String       @id @default(uuid())
+  name         String // Retail-Name (required — ein Set hat immer einen Produktnamen)
+  manufacturer Manufacturer
+  // Hersteller-Artikelnummer (z. B. Hasbro "G0290", Takara Tomy "BX-01") — auf der Box
+  // gedruckt, eindeutig wenn vorhanden (der Katalog soll dieselbe SKU nicht zweimal führen).
+  productCode  String?      @unique
+  imageId      String?
+  image        MediaAsset?  @relation("BeybladeImage", fields: [imageId], references: [id], onDelete: SetNull)
+
+  // Assembly-Slots — identische FK-Regeln wie Build (Restrict: ein Teil im Katalog darf nicht
+  // hinter einem versteckt gelöscht werden; blade XOR CX-Stack erzwingt lib/assembly.ts).
+  bladeId       String?
+  blade         Part?   @relation("BeybladeBlade", fields: [bladeId], references: [id], onDelete: Restrict)
+  lockChipId    String?
+  lockChip      Part?   @relation("BeybladeLockChip", fields: [lockChipId], references: [id], onDelete: Restrict)
+  overBladeId   String?
+  overBlade     Part?   @relation("BeybladeOverBlade", fields: [overBladeId], references: [id], onDelete: Restrict)
+  metalBladeId  String?
+  metalBlade    Part?   @relation("BeybladeMetalBlade", fields: [metalBladeId], references: [id], onDelete: Restrict)
+  assistBladeId String?
+  assistBlade   Part?   @relation("BeybladeAssistBlade", fields: [assistBladeId], references: [id], onDelete: Restrict)
+  ratchetId     String?
+  ratchet       Part?   @relation("BeybladeRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
+  bitId         String
+  bit           Part    @relation("BeybladeBit", fields: [bitId], references: [id], onDelete: Restrict)
+
+  purchases              Purchase[]
+  // Phase 11 (MVP4 #141: auf Beyblade umgezogen) — provenance for collection rows created by
+  // "Set als gekauft markieren".
+  sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBeyblade")
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  // Wie Build: der NULL-sichere Combo-Unique-Index "Beyblade_combo_key" ist nicht deklarativ
+  // darstellbar und wird handschriftlich in der MVP4-Migration gepflegt (COALESCE pro Slot).
+  @@index([bladeId])
+  @@index([lockChipId])
+  @@index([overBladeId])
+  @@index([metalBladeId])
+  @@index([assistBladeId])
+  @@index([ratchetId])
+  @@index([bitId])
+}
+
+// Purchase (MVP4, #139/#141) — User ↔ Beyblade. UNBEGRENZT viele Käufe pro User und Beyblade
+// (Wiederholungskäufe, Geschenke), einzeln löschbar. Händler/Kaufdatum/Preis sind optional —
+// "als gekauft markieren" ohne Details ist der Minimal-Fall. currency ist bewusst KEIN DB-Enum:
+// die zulässigen Werte (EUR|CHF|USD) validiert die Lib (lib/currency.ts, gleiche Quelle wie
+// CollectionItem.currency). Cascade auf beiden Seiten: Kauf-Daten eines Users sterben mit dem
+// Account; die Preishistorie einer Beyblade stirbt mit dem Katalog-Eintrag (Aggregat-Grenze).
+model Purchase {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  beybladeId String
+  beyblade   Beyblade  @relation(fields: [beybladeId], references: [id], onDelete: Cascade)
+  merchant   String?
+  boughtAt   DateTime?
+  price      Float?
+  currency   String    @default("EUR")
+  createdAt  DateTime  @default(now())
+
+  // Preisverlauf-Aggregation: alle gemeldeten Preise einer Beyblade über Zeit (pro Währung
+  // gruppiert in der Lib).
+  @@index([beybladeId, createdAt])
+  @@index([userId])
 }
 
 model Deck {
@@ -814,18 +914,18 @@ enum TeamRole {
 }
 
 model Team {
-  id          String   @id @default(uuid())
+  id          String                @id @default(uuid())
   name        String
-  slug        String   @unique
+  slug        String                @unique
   // Nullable FK per the MVP3 sketch: a team MAY be club-affiliated ("Club X Team A") or stand
   // alone. SetNull — the team survives its club's dissolution.
   clubId      String?
-  club        Club?    @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  club        Club?                 @relation(fields: [clubId], references: [id], onDelete: SetNull)
   createdById String
-  createdBy   User     @relation("TeamCreator", fields: [createdById], references: [id])
+  createdBy   User                  @relation("TeamCreator", fields: [createdById], references: [id])
   members     TeamMember[]
   entries     TeamTournamentEntry[]
-  createdAt   DateTime @default(now())
+  createdAt   DateTime              @default(now())
 }
 
 // A team's roster. Capped at 3 ACTIVE members by the route layer (TeamTournamentEntry's
@@ -848,21 +948,21 @@ model TeamMember {
 // A team's registration for ONE team-mode tournament. Mirrors TournamentParticipant's shape
 // (checkedIn/withdrawn/seed) so the organizer-console and generation flows stay symmetric.
 model TeamTournamentEntry {
-  id           String     @id @default(uuid())
+  id           String               @id @default(uuid())
   tournamentId String
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament           @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   teamId       String
-  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  checkedIn    Boolean    @default(false)
+  team         Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  checkedIn    Boolean              @default(false)
   // No-show handling, mirroring TournamentParticipant.withdrawn: skipped by bracket generation.
-  withdrawn    Boolean    @default(false)
+  withdrawn    Boolean              @default(false)
   // Phase-15-style seed placeholder for future team seeding; null = deterministic id order.
   seed         Int?
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime             @default(now())
   slots        TeamTournamentSlot[]
   // Both sides of every TeamMatch this entry plays in the tournament.
-  teamMatches1 TeamMatch[] @relation("TeamMatchSide1")
-  teamMatches2 TeamMatch[] @relation("TeamMatchSide2")
+  teamMatches1 TeamMatch[]          @relation("TeamMatchSide1")
+  teamMatches2 TeamMatch[]          @relation("TeamMatchSide2")
 
   @@unique([tournamentId, teamId])
   @@index([tournamentId, checkedIn])
@@ -871,17 +971,17 @@ model TeamTournamentEntry {
 // One lineup slot of a TeamTournamentEntry: position 1..3. Encounter games pair slot i of
 // team 1 against slot i of team 2 (fixed order — no captain-order shenanigans in v1).
 model TeamTournamentSlot {
-  entryId  String
-  entry    TeamTournamentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  position Int // 1..3 — (entryId, position) is the row's identity within the lineup (cf. DeckBuild)
-  userId   String
-  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deckId   String?
-  deck     Deck?               @relation(fields: [deckId], references: [id], onDelete: SetNull)
+  entryId        String
+  entry          TeamTournamentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  position       Int // 1..3 — (entryId, position) is the row's identity within the lineup (cf. DeckBuild)
+  userId         String
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckId         String?
+  deck           Deck?               @relation(fields: [deckId], references: [id], onDelete: SetNull)
   // Phase-16-style snapshot of this slot's deck builds at "Turnier starten" (only when the
   // linked Ruleset locks decks) — same snapshot-not-live-reference contract as
   // TournamentParticipant.lockedBuildIds. Empty = no snapshot.
-  lockedBuildIds String[]      @default([])
+  lockedBuildIds String[]            @default([])
 
   @@id([entryId, position])
   @@unique([entryId, userId])
@@ -893,24 +993,24 @@ model TeamTournamentSlot {
 // bracket-shape columns mirror Match so the elimination pure libs (lib/bracket.ts,
 // lib/doubleElimination.ts) and ranking logic apply unchanged.
 model TeamMatch {
-  id           String          @id @default(uuid())
+  id           String               @id @default(uuid())
   tournamentId String
-  tournament   Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament           @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   stageId      String
-  stage        TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  stage        TournamentStage      @relation(fields: [stageId], references: [id], onDelete: Cascade)
   team1EntryId String?
   team1Entry   TeamTournamentEntry? @relation("TeamMatchSide1", fields: [team1EntryId], references: [id], onDelete: Cascade)
   team2EntryId String?
   team2Entry   TeamTournamentEntry? @relation("TeamMatchSide2", fields: [team2EntryId], references: [id], onDelete: Cascade)
 
-  round        Int          @default(0) // same semantics as Match.round (1-based per stage)
-  bracketOrder Int          @default(0)
-  bracketSide  BracketSide? // DOUBLE_ELIMINATION only, same as Match.bracketSide
-  status       MatchStatus  @default(PENDING)
+  round         Int          @default(0) // same semantics as Match.round (1-based per stage)
+  bracketOrder  Int          @default(0)
+  bracketSide   BracketSide? // DOUBLE_ELIMINATION only, same as Match.bracketSide
+  status        MatchStatus  @default(PENDING)
   // Running sub-game win counts (first to 2 ends the encounter; the third game only plays
   // when the first two split).
-  winsTeam1    Int          @default(0)
-  winsTeam2    Int          @default(0)
+  winsTeam1     Int          @default(0)
+  winsTeam2     Int          @default(0)
   winnerEntryId String?
 
   games Match[]
@@ -930,11 +1030,11 @@ model CollectionItem {
   merchant      String?
   boughtAt      DateTime?
 
-  // Phase 11 — provenance only: "this part entry came from buying Set X" (item 6). Not a new
-  // ownership unit — the three rows created by marking a Set purchased stay independently
-  // editable/deletable. SetNull so deleting a catalog Build never blocks collection edits.
-  sourceBuildId String?
-  sourceBuild   Build?  @relation("CollectionItemSourceBuild", fields: [sourceBuildId], references: [id], onDelete: SetNull)
+  // MVP4 (#141) — provenance only: "this part entry came from buying Beyblade X" (item 6).
+  // Not a new ownership unit — the rows created by marking a Set purchased stay independently
+  // editable/deletable. SetNull so deleting a catalog Beyblade never blocks collection edits.
+  sourceBeybladeId String?
+  sourceBeyblade   Beyblade? @relation("CollectionItemSourceBeyblade", fields: [sourceBeybladeId], references: [id], onDelete: SetNull)
 
   pricePoints PricePoint[]
 
@@ -965,6 +1065,7 @@ model MediaAsset {
 
   parts       Part[]            @relation("PartImage")
   builds      Build[]           @relation("BuildImage")
+  beyblades   Beyblade[]        @relation("BeybladeImage")
   tournaments Tournament[]      @relation("TournamentHeaderImage")
   proposals   CatalogProposal[] @relation("CatalogProposalImage")
   // Phase 21: users whose current profile photo is this asset (User.avatarImageId,
@@ -988,23 +1089,26 @@ model PricePoint {
   @@index([collectionItemId, recordedAt])
 }
 
-// Rating (Phase 5 Part A fix, [REVIEW-FIX: backend-security #1 "Rating has no userId"]) —
-// one rating per user per build (@@unique([buildId, userId])), so edit/delete-your-own and
-// abuse attribution work at all. Cascade: a user's ratings die with their account (the erasure
-// matrix also deletes them explicitly — this is the backstop).
+// Rating (MVP4, #139/#141 — polymorph; ursprünglich Phase 5 Part A als Build-only-Modell mit
+// @@unique([buildId, userId])) — ein Rating pro User je Ziel (@@unique([targetType, targetId,
+// userId])), editierbar/löschbar (eigene), moderierbar (TRUSTED/ADMIN). targetId ist ein plain
+// String, KEINE FK (Begründung am RatingTargetType-Enum): das Ziel kann gelöscht werden, ohne
+// fremde Ratings zu blockieren — die Existenz des Ziels verifiziert lib/ratingTarget.ts beim
+// Schreiben, nie ein DB-Constraint. Cascade: a user's ratings die with their account (the
+// erasure matrix also deletes them explicitly — this is the backstop).
 model Rating {
-  id        String   @id @default(uuid())
-  buildId   String
-  build     Build    @relation(fields: [buildId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stars     Int
-  comment   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String           @id @default(uuid())
+  targetType RatingTargetType
+  targetId   String
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stars      Int
+  comment    String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
-  @@unique([buildId, userId])
-  @@index([buildId, createdAt])
+  @@unique([targetType, targetId, userId])
+  @@index([targetType, targetId, createdAt])
 }
 
 // AuditLog (Phase 4, [REVIEW-FIX: privacy-dsgvo #8]) — append-only record of privileged

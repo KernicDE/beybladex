@@ -1,10 +1,11 @@
 // app/collection/page.tsx
 // The logged-in user's collection surface (Phase 5 Part B), RC16 (#102/#104) neu geordnet in
 // zwei Tabs: "Katalog" (ALLE offiziellen Beyblades/Sets zum Durchstöbern — unabhängig vom
-// Besitz, Klick führt zur Build-Detailseite /builds/[id]) und "Meine Sammlung" (eigene
-// CollectionItems, ?neu=1 zeigt die Create-Formulare). Offizielle Sets leben also im Katalog,
-// persönliche Kombis auf /builds. Per-user surface — force-dynamic per the caching half of
-// the Regression Guard; guests get the explained GuestGate (RC8 #20) with a callbackUrl.
+// Besitz; seit MVP4 #141 leben Sets im Beyblade-Modell und werden über lib/beybladeSearch.ts
+// gelistet) und "Meine Sammlung" (eigene CollectionItems, ?neu=1 zeigt die Create-Formulare).
+// Offizielle Sets leben also im Katalog, persönliche Kombis auf /builds. Per-user surface —
+// force-dynamic per the caching half of the Regression Guard; guests get the explained
+// GuestGate (RC8 #20) with a callbackUrl.
 // Paginated (take/cursor) per the list-endpoint rule; the catalog tab pages via ?tab=katalog
 // &kcursor= so the two cursors never interfere.
 import Link from 'next/link'
@@ -12,8 +13,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getRateTable, type FxCurrency } from '@/lib/currency'
 import { getDictionary } from '@/lib/i18n/server'
-import { searchBuilds } from '@/lib/buildSearch'
-import { getBuildStats } from '@/lib/metaCache'
+import { searchBeyblades } from '@/lib/beybladeSearch'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
@@ -47,17 +47,16 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const [viewer, fx, catalog] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.user.id }, select: { country: true } }),
     getRateTable(),
-    // Katalog-Tab (#102): alle offiziellen Sets, unabhängig vom Besitz.
-    searchBuilds({
+    // Katalog-Tab (#102): alle offiziellen Sets (Beyblades), unabhängig vom Besitz.
+    searchBeyblades({
       cursor: typeof kcursor === 'string' ? kcursor : null,
       take: KATALOG_PAGE_SIZE,
-      officialOnly: true,
     }),
   ])
+
   // No per-user currency preference exists in the schema — the hint target is inferred from
   // the viewer's country (CH → CHF, else EUR). See components/collection/PriceDisplay.tsx.
   const target: FxCurrency = viewer?.country === 'CH' ? 'CHF' : 'EUR'
-  const catalogWinRates = await getBuildStats(catalog.builds.map((b) => b.id))
 
   const rows = await prisma.collectionItem.findMany({
     where: { userId: session.user.id },
@@ -117,29 +116,30 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   const catalogContent = (
     <div className="space-y-6">
-      {catalog.builds.length === 0 ? (
+      {catalog.beyblades.length === 0 ? (
         <EmptyState title={t.collection.katalogEmptyTitle} description={t.collection.katalogEmptyDescription} />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {catalog.builds.map((build) => (
-            <li key={build.id}>
+          {catalog.beyblades.map((beyblade) => (
+            <li key={beyblade.id}>
               <BuildCard
                 build={{
-                  id: build.id,
-                  type: build.type,
-                  blade: build.blade,
-                  lockChip: build.lockChip,
-                  overBlade: build.overBlade,
-                  metalBlade: build.metalBlade,
-                  assistBlade: build.assistBlade,
-                  ratchet: build.ratchet,
-                  bit: build.bit,
-                  name: build.name,
-                  isOfficialSet: build.isOfficialSet,
-                  imageId: build.imageId,
-                  productCode: build.productCode,
+                  id: beyblade.id,
+                  // type/spinDirection sind keine Spalten — abgeleitet aus dem Blade-Teil
+                  // (bzw. Lock Chip bei Custom Line), Fallback nur für unvollständige Katalogdaten.
+                  type: beyblade.blade?.beyType ?? beyblade.lockChip?.beyType ?? 'BALANCE',
+                  blade: beyblade.blade,
+                  lockChip: beyblade.lockChip,
+                  overBlade: beyblade.overBlade,
+                  metalBlade: beyblade.metalBlade,
+                  assistBlade: beyblade.assistBlade,
+                  ratchet: beyblade.ratchet,
+                  bit: beyblade.bit,
+                  name: beyblade.name,
+                  imageId: beyblade.imageId,
+                  productCode: beyblade.productCode,
                 }}
-                winRate={catalogWinRates.get(build.id) ?? null}
+                href={`/beyblades/${beyblade.id}`}
               />
             </li>
           ))}

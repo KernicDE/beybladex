@@ -35,13 +35,13 @@ export interface BuildCardData {
   /** null bei Ratchet-Integrated (das Blade enthält das Ratchet). */
   ratchet?: BuildCardPart | null
   bit: BuildCardPart
-  // Phase 11 — official Sets: retail product name + own Set photo (both optional; a
-  // user-created combo carries neither).
+  // Phase 11 / MVP4 #141 — Sets: retail product name + own Set photo (Build: optional —
+  // a user-created combo carries neither; Beyblade: name immer vorhanden).
   name?: string | null
-  isOfficialSet?: boolean
   imageId?: string | null
   available?: boolean | null
-  // Manufacturer retail SKU (e.g. Hasbro "F9580") — official Sets only, see Build.productCode.
+  // Manufacturer retail SKU (e.g. Hasbro "F9580") — Beyblade.productCode (Builds haben seit
+  // dem Split keine productCode-Spalte mehr).
   productCode?: string | null
 }
 
@@ -65,12 +65,14 @@ export function buildDisplayName(build: BuildCardData): string {
   return build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name
 }
 
-export function BuildCard({ build, winRate }: { build: BuildCardData; winRate?: WinRateStats | null }) {
+export function BuildCard({ build, winRate, href }: { build: BuildCardData; winRate?: WinRateStats | null; href?: string }) {
   const title = buildDisplayName(build)
   const imageId = build.imageId ?? build.blade?.imageId ?? build.lockChip?.imageId ?? null
   return (
     <Card className="p-4">
-      <Link href={`/builds/${build.id}`} className="flex items-center gap-4">
+      {/* MVP4 #141: Beyblades (Katalog) leben unter /beyblades/[id], Builds unter /builds/[id] —
+          href-Override für den Aggregat-wechselnden Call-Site. */}
+      <Link href={href ?? `/builds/${build.id}`} className="flex items-center gap-4">
         {imageId ? (
           <Image
             src={`/api/media/${imageId}`}
@@ -86,7 +88,6 @@ export function BuildCard({ build, winRate }: { build: BuildCardData; winRate?: 
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">
             {title}
-            {build.isOfficialSet && <span className="ml-2"><Badge tone="cyan">Set</Badge></span>}
             {build.productCode && <span className="ml-2 text-xs font-normal text-current/50">{build.productCode}</span>}
           </p>
           <p className="truncate text-sm text-current/60">

@@ -58,9 +58,9 @@ export function deriveBuildName(parts: BuildNameParts): string {
   return parts.ratchetName !== null ? `${head} ${parts.ratchetName}${bit}` : `${head} ${bit}`
 }
 
-/** Convenience für Creation-Call-Sites mit der von verifyBuildParts verifizierten Teil-Menge:
+/** Convenience für Creation-Call-Sites mit der von verifyAssemblyParts verifizierten Teil-Menge:
  *  löst die Slot-Ids je nach Bauform auf (null-Slot → null-Name) und leitet daraus den
- *  kanonischen Namen. */
+ *  kanonischen Namen. Für Build UND Beyblade nutzbar — beide tragen dieselben Slot-Felder. */
 export function deriveBuildNameFromParts(
   parts: Map<string, { name: string }>,
   input: { bladeId: string | null; lockChipId: string | null; ratchetId: string | null; bitId: string },

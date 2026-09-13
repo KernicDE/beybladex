@@ -1,8 +1,9 @@
 // tests/integration/erasure-phase5-models.test.ts
-// Phase 5 Part A, Cross-Phase Regression Guard (privacy-dsgvo #3): the account-erasure matrix
-// handles the models this phase made User-owned — CollectionItem (now FK'd to Part), Deck /
-// DeckBuild, Rating (new userId), CatalogProposal, and TournamentParticipant (kept, link severed
-// by anonymization — Art. 17(3)). CI-only (Postgres/Redis).
+// Phase 5 Part A, Cross-Phase Regression Guard (privacy-dsgvo #3); MVP4 #141: the account-
+// erasure matrix handles the models this phase made User-owned — CollectionItem (now FK'd to
+// Part), Deck / DeckBuild, Rating (polymorph: targetType/targetId), Purchase (MVP4), and
+// CatalogProposal, and TournamentParticipant (kept, link severed by anonymization — Art. 17(3)).
+// CI-only (Postgres/Redis).
 import { describe, it, expect, afterEach } from 'vitest'
 import { eraseOrAnonymizeUser } from '@/lib/accountErasure'
 import { prisma } from '@/lib/db'
@@ -10,6 +11,7 @@ import { prisma } from '@/lib/db'
 const ids = {
   users: [] as string[], parts: [] as string[], builds: [] as string[], decks: [] as string[],
   collectionItems: [] as string[], ratings: [] as string[], requests: [] as string[],
+  purchases: [] as string[], beyblades: [] as string[],
   rulesets: [] as string[], tournaments: [] as string[], participants: [] as string[],
 }
 
@@ -35,6 +37,8 @@ afterEach(async () => {
     await prisma.deckBuild.deleteMany({ where: { deckId } })
     await prisma.deck.delete({ where: { id: deckId } }).catch(() => {})
   }
+  for (const id of ids.purchases) await prisma.purchase.delete({ where: { id } }).catch(() => {})
+  for (const id of ids.beyblades) await prisma.beyblade.delete({ where: { id } }).catch(() => {})
   for (const id of ids.builds) await prisma.build.delete({ where: { id } }).catch(() => {})
   for (const id of ids.users) await prisma.user.delete({ where: { id } }).catch(() => {})
   for (const id of ids.parts) await prisma.part.delete({ where: { id } }).catch(() => {})
@@ -57,10 +61,19 @@ describe('account erasure — Phase 5 models', () => {
     const deck = await prisma.deck.create({ data: { title: 'Erasure-Deck', userId: user.id } })
     ids.decks.push(deck.id)
     await prisma.deckBuild.create({ data: { deckId: deck.id, buildId: build.id, position: 1 } })
-    const rating = await prisma.rating.create({ data: { buildId: build.id, userId: user.id, stars: 4, comment: 'gut' } })
+    // MVP4 #141: Rating ist polymorph (targetType/targetId, keine FK).
+    const rating = await prisma.rating.create({ data: { targetType: 'BUILD', targetId: build.id, userId: user.id, stars: 4, comment: 'gut' } })
     ids.ratings.push(rating.id)
     const request = await prisma.catalogProposal.create({ data: { kind: 'PART', submittedById: user.id, payload: { name: `Wunschteil ${suffix}` } } })
     ids.requests.push(request.id)
+
+    // MVP4 #141: Purchase (User ↔ Beyblade) — persönlich, muss mit dem Account sterben.
+    const beyblade = await prisma.beyblade.create({
+      data: { name: `Erasure Set ${suffix}`, manufacturer: 'TT', bladeId: ids.parts[0], ratchetId: ids.parts[1], bitId: ids.parts[2] },
+    })
+    ids.beyblades.push(beyblade.id)
+    const purchase = await prisma.purchase.create({ data: { userId: user.id, beybladeId: beyblade.id, price: 19.99 } })
+    ids.purchases.push(purchase.id)
 
     // Art. 17(3) data: a tournament participant row must SURVIVE, stripped of PII by the
     // User row's own anonymization.
@@ -85,6 +98,7 @@ describe('account erasure — Phase 5 models', () => {
     expect(await prisma.deck.findUnique({ where: { id: deck.id } })).toBeNull()
     expect(await prisma.deckBuild.findMany({ where: { deckId: deck.id } })).toEqual([])
     expect(await prisma.rating.findUnique({ where: { id: rating.id } })).toBeNull()
+    expect(await prisma.purchase.findUnique({ where: { id: purchase.id } })).toBeNull()
     expect(await prisma.catalogProposal.findUnique({ where: { id: request.id } })).toBeNull()
 
     // Legitimate-interest rows: survive, personal link severed (the User row is anonymized in place).
