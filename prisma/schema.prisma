@@ -195,6 +195,9 @@ model User {
 
   collection    CollectionItem[]
   decks         Deck[]
+  // MVP4 (#144) — Builds, die der User erstellt hat (Build.creatorId, SetNull bei hartem
+  // Löschen; Erasure anonymisiert die User-Zeile in place, der Verweis bleibt bestehen).
+  createdBuilds Build[]                 @relation("BuildCreator")
   tournaments   TournamentParticipant[]
   judgedMatches Match[]                 @relation("JudgeMatches")
   createdRules  Ruleset[]
@@ -710,6 +713,13 @@ model Build {
   imageId    String?
   image      MediaAsset? @relation("BuildImage", fields: [imageId], references: [id], onDelete: SetNull)
 
+  // MVP4 (#144) — Ersteller:in des Builds (Öffentliche-Builds-Karten zeigen den Ersteller).
+  // Nullable: Rows aus der Vor-MVP4-Zeit haben keinen Creator. Account-Erasure anonymisiert
+  // die User-Zeile in place (lib/accountErasure.ts) — der Verweis bleibt bestehen und rendert
+  // dann "Gelöschter Nutzer" (gleicher Judgment-Call wie Match.player1Id).
+  creatorId String?
+  creator   User?   @relation("BuildCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+
   // MVP4 (#141) — Ratings sind polymorph (Rating.targetType/targetId); Build hat keine
   // eigene Rating-Relation mehr.
   deckBuilds DeckBuild[]
@@ -731,6 +741,7 @@ model Build {
   @@index([assistBladeId])
   @@index([ratchetId])
   @@index([bitId])
+  @@index([creatorId])
 }
 
 // Beyblade (MVP4, #139/#141) — Datenbank aller offiziell erschienenen Sets (Hasbro / Takara
@@ -819,6 +830,14 @@ model Deck {
   // RC15 #12 — team-mode lineup slots reference a member's deck (SetNull mirrors the solo
   // TournamentParticipant.deck treatment).
   teamSlots   TeamTournamentSlot[]
+
+  // MVP4 (#144) — Deck-Sichtbarkeit. PUBLIC (Default) = in öffentlichen Deck-Listungen
+  // sichtbar; UNLISTED = nicht gelistet, aber NIEMALS geheim — per Direktlink und in
+  // Turnieren weiterhin sichtbar (#139: "Decks können öffentlich oder unlisted sein, aber
+  // niemals geheim"). Default PUBLIC, damit die bestehende /decks/[username]-Listung
+  // (gesteuert über das Privacy-Setting decksVisibility) regressionsfrei bleibt; UNLISTED
+  // ist der bewusste Opt-out pro Deck.
+  visibility Visibility @default(PUBLIC)
 
   // RC7 (#36): per-user deck list.
   @@index([userId])

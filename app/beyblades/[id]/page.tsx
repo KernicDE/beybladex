@@ -1,9 +1,9 @@
-// app/beyblades/[id]/page.tsx (MVP4, #139/#141/#142/#143)
-// Beyblade-Detailseite (offizielles Set) — Minimal-Version zum Build-Split: Teile, abgeleiteter
-// Typ/Spinrichtung, Hersteller, Product Code, Set-Bild. Seit #142: Kauf-Flow (Formular +
-// eigene Käufe, logged-in) und der öffentliche Preisverlauf. Seit #143: polymorphe Bewertung
-// (Durchschnitt im Header, Formular + Liste für eigene/alle). Die restliche IA/UX baut in
-// #144 auf („Build daraus erstellen").
+// app/beyblades/[id]/page.tsx (MVP4, #139/#141/#142/#143/#144)
+// Beyblade-Detailseite (offizielles Set): Teile, abgeleiteter Typ/Spinrichtung, Hersteller,
+// Product Code, Set-Bild. Seit #142: Kauf-Flow (Formular + eigene Käufe, logged-in) und der
+// öffentliche Preisverlauf. Seit #143: polymorphe Bewertung (Durchschnitt im Header,
+// Formular + Liste für eigene/alle). Seit #144: "Build daraus erstellen" (BeybladeBuildButton
+// → POST /api/builds mit denselben Teilen, Redirect auf den neuen Build, logged-in).
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -23,6 +23,7 @@ import { deriveAssemblyTraits } from '@/lib/assembly'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import { shapePriceHistory } from '@/lib/purchasePriceHistory'
 import { shapeRatingAggregate } from '@/lib/ratingAggregate'
+import { BeybladeBuildButton } from '@/components/beyblade/BeybladeBuildButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,7 +99,7 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <Link href="/collection?tab=katalog" className="text-sm text-current/60 underline underline-offset-2">← Katalog</Link>
+      <Link href="/collection?tab=beyblades" className="text-sm text-current/60 underline underline-offset-2">← Sammlung</Link>
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -125,6 +126,26 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
           </div>
           {traits?.beyType && <TypeBadge type={traits.beyType} />}
         </div>
+        {/* #144 — "Build daraus erstellen": persönlicher Build mit denselben Teilen via der
+            bestehenden Build-Create-API (die Kombination dedupliziert serverseitig). Nur
+            angemeldet — ein Build ist eine Nutzersache (#139). */}
+        {session?.user?.id && (
+          <div className="mt-3 border-t border-current/10 pt-3">
+            <BeybladeBuildButton
+              parts={{
+                bladeId: beyblade.bladeId,
+                lockChipId: beyblade.lockChipId,
+                overBladeId: beyblade.overBladeId,
+                metalBladeId: beyblade.metalBladeId,
+                assistBladeId: beyblade.assistBladeId,
+                ratchetId: beyblade.ratchetId,
+                bitId: beyblade.bitId,
+              }}
+              label="Build daraus erstellen"
+              errorLabel="Fehler"
+            />
+          </div>
+        )}
       </Card>
 
       <section aria-labelledby="beyblade-parts" className="space-y-3">

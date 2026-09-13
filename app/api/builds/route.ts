@@ -105,7 +105,9 @@ export async function POST(req: Request): Promise<Response> {
   // non-official creates) — derive the canonical name for the build's Bauform.
   const name = deriveBuildNameFromParts(verified.parts, data!)
   const build = await prisma.build.create({
-    data: { ...combo, name, type: data!.type ?? undefined },
+    // #144 — der Ersteller wird am Build vermerkt (Öffentliche-Builds-Karten zeigen ihn);
+    // beim Duplicate-Combo-Return oben bleibt der bestehende Datensatz unverändert.
+    data: { ...combo, name, type: data!.type ?? undefined, creatorId: session.user.id },
     include: BUILD_INCLUDE,
   })
   return Response.json({ id: build.id, existing: false, build }, { status: 201 })

@@ -1,23 +1,39 @@
 // app/collection/page.tsx
-// The logged-in user's collection surface (Phase 5 Part B), RC16 (#102/#104) neu geordnet in
-// zwei Tabs: "Katalog" (ALLE offiziellen Beyblades/Sets zum Durchstöbern — unabhängig vom
-// Besitz; seit MVP4 #141 leben Sets im Beyblade-Modell und werden über lib/beybladeSearch.ts
-// gelistet) und "Meine Sammlung" (eigene CollectionItems, ?neu=1 zeigt die Create-Formulare).
-// Offizielle Sets leben also im Katalog, persönliche Kombis auf /builds. Per-user surface —
-// force-dynamic per the caching half of the Regression Guard; guests get the explained
-// GuestGate (RC8 #20) with a callbackUrl.
-// Paginated (take/cursor) per the list-endpoint rule; the catalog tab pages via ?tab=katalog
-// &kcursor= so the two cursors never interfere.
+// Die Sammlung nach dem IA/UX-Umbau (MVP4/4, #144 — UX-Baum in #139): drei Tabs.
+//   1. "Beyblades" — der Katalog aller offiziellen Sets (das ist der alte Katalog-Tab,
+//      aufgewertet): Liste mit Name, Typ, Spinrichtung (beides abgeleitet aus dem Blade-Teil),
+//      Hersteller-Badge und Batch-Rating-Summary; Filter: Suche (Name, Produktcode UND
+//      Teilcode — "4-60" findet alle Sets mit einem 4-60-Ratchet, OR über alle 7 Slots),
+//      Hersteller, Typ, "Nur im Besitz" (Purchase-Subquery). Klick → /beyblades/[id].
+//   2. "Teile" — der Teile-Katalog: Suche + Kategorie-Filter, gruppiert nach Kategorie
+//      (kanonische Assembly-Ordnung, lib/buildSearch.ts groupPartsByCategory). Klick → /parts/[id].
+//   3. "Mein Inventar" — die eigenen CollectionItems (Phase 5 Part B), inkl. der Create-
+//      Formulare (?neu=1, CollectionItemForm + MarkSetPurchasedForm) — das Inventar ist die
+//      Verfügbarkeitsgrundlage der "Meine Builds"-Ansicht und bleibt deshalb erhalten, auch
+//      wenn der UX-Baum in #139 nur Beyblades/Teile auflistet.
+// Legacy-Tab-Namen bleiben als Aliasse gültig: tab=katalog → Beyblades, tab=mine → Inventar.
+// Per-user surface — force-dynamic per the caching half of the Regression Guard; guests get
+// the explained GuestGate (RC8 #20) with a callbackUrl. Paginated (take/cursor) per the
+// list-endpoint rule; jeder Tab cursort über seinen eigenen Parameter (kcursor/pcursor/cursor).
+import Image from 'next/image'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getRateTable, type FxCurrency } from '@/lib/currency'
 import { getDictionary } from '@/lib/i18n/server'
 import { searchBeyblades } from '@/lib/beybladeSearch'
+import { searchParts, groupPartsByCategory, PART_CATEGORY_ORDER } from '@/lib/buildSearch'
+import { getPartStats } from '@/lib/metaCache'
+import { shapeRatingAggregates } from '@/lib/ratingAggregate'
+import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
-import { BuildCard } from '@/components/beyblade/BuildCard'
+import { BeybladeCard } from '@/components/beyblade/BeybladeCard'
+import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
 import { CollectionItemForm } from '@/components/collection/CollectionItemForm'
 import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
@@ -27,9 +43,21 @@ export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 20
 const KATALOG_PAGE_SIZE = 20
+const PARTS_TAB_PAGE_SIZE = 60
+
+const BEY_TYPES = [
+  { value: 'ATTACK', labelKey: 'typeAttack' },
+  { value: 'DEFENSE', labelKey: 'typeDefense' },
+  { value: 'STAMINA', labelKey: 'typeStamina' },
+  { value: 'BALANCE', labelKey: 'typeBalance' },
+] as const
+
+function str(v: string | string[] | undefined): string {
+  return typeof v === 'string' ? v : ''
+}
 
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
-  const { cursor, kcursor, neu, tab } = await searchParams
+  const { cursor, kcursor, pcursor, neu, tab, q, mf, bt, owned, pq, pc } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
@@ -43,36 +71,248 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       />
     )
   }
+  const viewerId = session.user.id
 
-  const [viewer, fx, catalog] = await Promise.all([
-    prisma.user.findUnique({ where: { id: session.user.id }, select: { country: true } }),
+  // Tab-Auflösung inkl. Legacy-Aliasse (tab=katalog → Beyblades, tab=mine → Inventar).
+  const activeTab: 'beyblades' | 'teile' | 'inventar' =
+    tab === 'teile' ? 'teile' : tab === 'inventar' || tab === 'mine' ? 'inventar' : 'beyblades'
+
+  // Beyblades-Tab: Suche + Filter.
+  const catalogQ = str(q).trim()
+  const catalogMf = str(mf)
+  const catalogBt = str(bt)
+  const ownedOnly = owned === '1'
+  // Teile-Tab: Suche + Kategorie-Filter.
+  const partsQ = str(pq).trim()
+  const partsCategory = str(pc)
+
+  const [viewer, fx, catalog, partRows, inventoryRows] = await Promise.all([
+    prisma.user.findUnique({ where: { id: viewerId }, select: { country: true } }),
     getRateTable(),
-    // Katalog-Tab (#102): alle offiziellen Sets (Beyblades), unabhängig vom Besitz.
     searchBeyblades({
+      q: catalogQ,
       cursor: typeof kcursor === 'string' ? kcursor : null,
       take: KATALOG_PAGE_SIZE,
+      manufacturer: catalogMf || null,
+      type: catalogBt || null,
+      ownedByUserId: ownedOnly ? viewerId : null,
+    }),
+    searchParts({
+      q: partsQ,
+      category: partsCategory || undefined,
+      cursor: typeof pcursor === 'string' ? pcursor : null,
+      take: PARTS_TAB_PAGE_SIZE,
+    }),
+    prisma.collectionItem.findMany({
+      where: { userId: viewerId },
+      orderBy: { id: 'asc' },
+      take: PAGE_SIZE + 1,
+      ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: {
+        id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
+        part: { select: { name: true, category: true, manufacturer: true, imageId: true } },
+      },
     }),
   ])
+
+  // Batch-Aggregate für den Beyblades-Tab (ein groupBy für die ganze Seite, nie N Einzelqueries).
+  const ratingRows = catalog.beyblades.length
+    ? await prisma.rating.groupBy({
+        by: ['targetId'],
+        where: { targetType: 'BEYBLADE', targetId: { in: catalog.beyblades.map((b) => b.id) } },
+        _avg: { stars: true },
+        _count: true,
+      })
+    : []
+  const beybladeRatings = shapeRatingAggregates(ratingRows)
+
+  // Auto-Meta-Winrates für den Teile-Tab (ein Batch-mget, wie auf /search).
+  const partStats = await getPartStats(partRows.parts.map((p) => p.id))
+  const partGroups = groupPartsByCategory(partRows.parts)
 
   // No per-user currency preference exists in the schema — the hint target is inferred from
   // the viewer's country (CH → CHF, else EUR). See components/collection/PriceDisplay.tsx.
   const target: FxCurrency = viewer?.country === 'CH' ? 'CHF' : 'EUR'
 
-  const rows = await prisma.collectionItem.findMany({
-    where: { userId: session.user.id },
-    orderBy: { id: 'asc' },
-    take: PAGE_SIZE + 1,
-    ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: {
-      id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
-      part: { select: { name: true, category: true, manufacturer: true, imageId: true } },
-    },
-  })
-  const hasMore = rows.length > PAGE_SIZE
-  const items = hasMore ? rows.slice(0, PAGE_SIZE) : rows
-  const nextCursor = hasMore ? items[items.length - 1]!.id : null
+  const hasMoreInventory = inventoryRows.length > PAGE_SIZE
+  const items = hasMoreInventory ? inventoryRows.slice(0, PAGE_SIZE) : inventoryRows
+  const nextInventoryCursor = hasMoreInventory ? items[items.length - 1]!.id : null
 
-  const mineContent = (
+  const catalogFilterActive = Boolean(catalogQ || catalogMf || catalogBt || ownedOnly)
+  const catalogParams = new URLSearchParams({ tab: 'beyblades' })
+  if (catalogQ) catalogParams.set('q', catalogQ)
+  if (catalogMf) catalogParams.set('mf', catalogMf)
+  if (catalogBt) catalogParams.set('bt', catalogBt)
+  if (ownedOnly) catalogParams.set('owned', '1')
+  const catalogNextHref = catalog.nextCursor
+    ? `/collection?${(() => { const p = new URLSearchParams(catalogParams); p.set('kcursor', catalog.nextCursor!); return p.toString() })()}`
+    : null
+
+  const beybladesContent = (
+    <div className="space-y-6">
+      {/* GET-Formular: jede Filterkombination bleibt eine teilbare URL (EventsFilterBar-Muster). */}
+      <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto]">
+        <input type="hidden" name="tab" value="beyblades" />
+        <div>
+          <label htmlFor="col-q" className="mb-1 block text-sm">{t.collection.beybladesSearchLabel}</label>
+          <Input id="col-q" name="q" type="search" defaultValue={catalogQ} placeholder={t.collection.beybladesSearchPlaceholder} />
+        </div>
+        <div>
+          <label htmlFor="col-mf" className="mb-1 block text-sm">{t.catalog.manufacturer}</label>
+          <Select id="col-mf" name="mf" defaultValue={catalogMf}>
+            <option value="">{t.catalog.manufacturerAll}</option>
+            <option value="TT">{t.catalog.manufacturerTT}</option>
+            <option value="HASBRO">{t.catalog.manufacturerHasbro}</option>
+          </Select>
+        </div>
+        <div>
+          <label htmlFor="col-bt" className="mb-1 block text-sm">{t.catalog.type}</label>
+          <Select id="col-bt" name="bt" defaultValue={catalogBt}>
+            <option value="">{t.catalog.typeAll}</option>
+            {BEY_TYPES.map(({ value, labelKey }) => (
+              <option key={value} value={value}>{t.catalog[labelKey]}</option>
+            ))}
+          </Select>
+        </div>
+        <label className="flex h-10 items-center gap-2 text-sm">
+          <input type="checkbox" name="owned" value="1" defaultChecked={ownedOnly} className="size-4 accent-x-cyan-text" />
+          {t.catalog.ownedOnly}
+        </label>
+        <div className="flex gap-2">
+          <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
+            {t.common.search}
+          </button>
+          {catalogFilterActive && (
+            <Link href="/collection?tab=beyblades" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
+              {t.catalog.reset}
+            </Link>
+          )}
+        </div>
+      </form>
+
+      {catalog.beyblades.length === 0 ? (
+        <EmptyState
+          title={catalogFilterActive ? t.collection.beybladesEmptyFilteredTitle : t.collection.beybladesEmptyTitle}
+          description={catalogFilterActive ? t.collection.beybladesEmptyFilteredDescription : t.collection.beybladesEmptyDescription}
+          action={catalogFilterActive ? (
+            <Link href="/collection?tab=beyblades" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
+              {t.catalog.reset}
+            </Link>
+          ) : undefined}
+        />
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {catalog.beyblades.map((beyblade) => (
+            <li key={beyblade.id}>
+              <BeybladeCard beyblade={beyblade} rating={beybladeRatings.get(beyblade.id) ?? null} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {catalogNextHref && (
+        <Link href={catalogNextHref} className="inline-block underline underline-offset-2">
+          {t.collection.loadMoreBeyblades}
+        </Link>
+      )}
+    </div>
+  )
+
+  const partsFilterActive = Boolean(partsQ || partsCategory)
+  const partsParams = new URLSearchParams({ tab: 'teile' })
+  if (partsQ) partsParams.set('pq', partsQ)
+  if (partsCategory) partsParams.set('pc', partsCategory)
+  const partsNextHref = partRows.nextCursor
+    ? `/collection?${(() => { const p = new URLSearchParams(partsParams); p.set('pcursor', partRows.nextCursor!); return p.toString() })()}`
+    : null
+
+  const partsContent = (
+    <div className="space-y-6">
+      <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
+        <input type="hidden" name="tab" value="teile" />
+        <div>
+          <label htmlFor="col-pq" className="mb-1 block text-sm">{t.collection.partsSearchLabel}</label>
+          <Input id="col-pq" name="pq" type="search" defaultValue={partsQ} placeholder={t.collection.partsSearchPlaceholder} />
+        </div>
+        <div>
+          <label htmlFor="col-pc" className="mb-1 block text-sm">{t.catalog.category}</label>
+          <Select id="col-pc" name="pc" defaultValue={partsCategory}>
+            <option value="">{t.catalog.categoryAll}</option>
+            {PART_CATEGORY_ORDER.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </Select>
+        </div>
+        <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
+          {t.common.search}
+        </button>
+        {partsFilterActive && (
+          <Link href="/collection?tab=teile" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
+            {t.catalog.reset}
+          </Link>
+        )}
+      </form>
+
+      {partRows.parts.length === 0 ? (
+        <EmptyState
+          title={partsFilterActive ? t.collection.partsEmptyFilteredTitle : t.collection.partsEmptyTitle}
+          description={partsFilterActive ? t.collection.partsEmptyFilteredDescription : t.collection.partsEmptyDescription}
+          action={partsFilterActive ? (
+            <Link href="/collection?tab=teile" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
+              {t.catalog.reset}
+            </Link>
+          ) : undefined}
+        />
+      ) : (
+        <div className="space-y-6">
+          {partGroups.map((group) => (
+            <section key={group.category} aria-label={group.category} className="space-y-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <Badge tone="cyan">{group.category}</Badge>
+                <span className="text-current/50">{group.parts.length}</span>
+              </h3>
+              <ul className="grid gap-3 sm:grid-cols-2">
+                {group.parts.map((part) => (
+                  <li key={part.id}>
+                    <Card className="p-3">
+                      <Link href={`/parts/${part.id}`} className="flex items-center gap-3">
+                        {part.imageId ? (
+                          <Image
+                            src={`/api/media/${part.imageId}`}
+                            alt=""
+                            width={40}
+                            height={40}
+                            sizes="40px"
+                            className="h-10 w-10 rounded object-contain"
+                          />
+                        ) : (
+                          <div aria-hidden="true" className="h-10 w-10 rounded bg-x-cyan/10" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{part.name}</p>
+                          <p className="truncate text-sm text-current/60">
+                            {part.manufacturer === 'TT' ? t.catalog.manufacturerTT : t.catalog.manufacturerHasbro}
+                          </p>
+                        </div>
+                        {part.beyType && <TypeBadge type={part.beyType} />}
+                        <WinRateBadge stats={partStats.get(part.id) ?? null} />
+                      </Link>
+                    </Card>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+      {partsNextHref && (
+        <Link href={partsNextHref} className="inline-block underline underline-offset-2">
+          {t.collection.loadMoreParts}
+        </Link>
+      )}
+    </div>
+  )
+
+  const inventoryContent = (
     <div className="space-y-6">
       {neu === '1' && (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -92,7 +332,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           title={t.collection.emptyTitle}
           description={t.collection.emptyDescription}
           action={
-            <Link href="/collection?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
+            <Link href="/collection?tab=inventar&neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
               {t.collection.addFirst}
             </Link>
           }
@@ -106,59 +346,18 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           ))}
         </ul>
       )}
-      {nextCursor && (
-        <Link href={`/collection?cursor=${nextCursor}`} className="inline-block underline underline-offset-2">
+      {nextInventoryCursor && (
+        <Link href={`/collection?tab=inventar&cursor=${nextInventoryCursor}`} className="inline-block underline underline-offset-2">
           {t.collection.loadMore}
         </Link>
       )}
     </div>
   )
 
-  const catalogContent = (
-    <div className="space-y-6">
-      {catalog.beyblades.length === 0 ? (
-        <EmptyState title={t.collection.katalogEmptyTitle} description={t.collection.katalogEmptyDescription} />
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {catalog.beyblades.map((beyblade) => (
-            <li key={beyblade.id}>
-              <BuildCard
-                build={{
-                  id: beyblade.id,
-                  // type/spinDirection sind keine Spalten — abgeleitet aus dem Blade-Teil
-                  // (bzw. Lock Chip bei Custom Line), Fallback nur für unvollständige Katalogdaten.
-                  type: beyblade.blade?.beyType ?? beyblade.lockChip?.beyType ?? 'BALANCE',
-                  blade: beyblade.blade,
-                  lockChip: beyblade.lockChip,
-                  overBlade: beyblade.overBlade,
-                  metalBlade: beyblade.metalBlade,
-                  assistBlade: beyblade.assistBlade,
-                  ratchet: beyblade.ratchet,
-                  bit: beyblade.bit,
-                  name: beyblade.name,
-                  imageId: beyblade.imageId,
-                  productCode: beyblade.productCode,
-                }}
-                href={`/beyblades/${beyblade.id}`}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-      {catalog.nextCursor && (
-        <Link
-          href={`/collection?tab=katalog&kcursor=${catalog.nextCursor}`}
-          className="inline-block underline underline-offset-2"
-        >
-          {t.common.loadMore}
-        </Link>
-      )}
-    </div>
-  )
-
   const tabs: TabDef[] = [
-    { id: 'mine', label: t.collection.tabMine, content: mineContent },
-    { id: 'katalog', label: t.collection.tabCatalog, content: catalogContent },
+    { id: 'beyblades', label: t.collection.tabBeyblades, content: beybladesContent },
+    { id: 'teile', label: t.collection.tabParts, content: partsContent },
+    { id: 'inventar', label: t.collection.tabInventory, content: inventoryContent },
   ]
 
   return (
@@ -166,13 +365,13 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t.collection.heading}</h1>
         {items.length > 0 && (
-          <Link href="/collection?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
+          <Link href="/collection?tab=inventar&neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
             {t.collection.addPart}
           </Link>
         )}
       </div>
 
-      <Tabs tabs={tabs} defaultTab={tab === 'katalog' ? 'katalog' : 'mine'} />
+      <Tabs tabs={tabs} defaultTab={activeTab} />
     </main>
   )
 }

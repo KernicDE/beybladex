@@ -2,7 +2,9 @@
 // Phase 5 Part A: /api/decks + /api/decks/[id]. Every method is session-required and
 // owner-scoped (401 / 404 negative tests per the standing Global-Constraints rule), and the
 // no-duplicate-parts deck rule is enforced SERVER-SIDE on create and on build-list
-// replacement. CI-only (Postgres/Redis).
+// replacement. MVP4/4 (#144): PATCH akzeptiert zusätzlich visibility (PUBLIC|UNLISTED) —
+// Deck-Sichtbarkeit, niemals geheim (UNLISTED = nicht gelistet, per Link/Turnier sichtbar).
+// CI-only (Postgres/Redis).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { POST } from '@/app/api/decks/route'
 import { PATCH } from '@/app/api/decks/[id]/route'
@@ -116,5 +118,53 @@ describe('deck API', () => {
     expect(swapped.status).toBe(200)
     const replaced = await prisma.deckBuild.findMany({ where: { deckId }, orderBy: { position: 'asc' } })
     expect(replaced.map((r) => [r.position, r.buildId])).toEqual([[1, b.id], [2, a.id]])
+  })
+
+  it('#144: owner toggles visibility PUBLIC ↔ UNLISTED; fremde/anonym bleiben 404/401', async () => {
+    const owner = await makeUser('owner-vis')
+    const stranger = await makeUser('stranger-vis')
+
+    mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
+    const res = await POST(new Request('http://localhost/api/decks', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Vis-Deck' }),
+    }))
+    const { id: deckId } = (await res.json()) as { id: string }
+    ids.decks.push(deckId)
+    // Default (#144): PUBLIC — die bestehende /decks/[username]-Listung bleibt regressionsfrei.
+    expect((await prisma.deck.findUnique({ where: { id: deckId } }))!.visibility).toBe('PUBLIC')
+
+    // Ungültiger Wert: 400, Zeile unverändert.
+    const invalid = await PATCH(new Request(`http://localhost/api/decks/${deckId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibility: 'SECRET' }),
+    }), ctx(deckId))
+    expect(invalid.status).toBe(400)
+
+    // Owner toggelt auf UNLISTED und zurück.
+    const unlisted = await PATCH(new Request(`http://localhost/api/decks/${deckId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibility: 'UNLISTED' }),
+    }), ctx(deckId))
+    expect(unlisted.status).toBe(200)
+    expect((await prisma.deck.findUnique({ where: { id: deckId } }))!.visibility).toBe('UNLISTED')
+    const relisted = await PATCH(new Request(`http://localhost/api/decks/${deckId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibility: 'PUBLIC' }),
+    }), ctx(deckId))
+    expect(relisted.status).toBe(200)
+    expect((await prisma.deck.findUnique({ where: { id: deckId } }))!.visibility).toBe('PUBLIC')
+
+    // Fremder: 404 (Existenz wird nicht geleakt); anonym: 401.
+    mockAuth.mockResolvedValue(asSession({ id: stranger.id, name: stranger.username }))
+    expect((await PATCH(new Request(`http://localhost/api/decks/${deckId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibility: 'UNLISTED' }),
+    }), ctx(deckId))).status).toBe(404)
+    mockAuth.mockResolvedValue(asSession(null))
+    expect((await PATCH(new Request(`http://localhost/api/decks/${deckId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibility: 'UNLISTED' }),
+    }), ctx(deckId))).status).toBe(401)
   })
 })

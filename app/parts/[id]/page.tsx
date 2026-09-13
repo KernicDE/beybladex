@@ -106,7 +106,7 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <Link href="/builds" className="text-sm text-current/60 underline underline-offset-2">← Alle Builds</Link>
+      <Link href="/collection?tab=teile" className="text-sm text-current/60 underline underline-offset-2">← Teile</Link>
 
       <Card>
         <div className="flex flex-wrap items-start gap-4">

@@ -1,12 +1,13 @@
-// app/decks/[username]/page.tsx (Phase 10 item 4)
+// app/decks/[username]/page.tsx (Phase 10 item 4; MVP4/4 #144 — Visibility-Filter + Link)
 // Another user's decks, read-only. Follows the /collection/[username] convention exactly:
 // the subject is projected through resolveVisibleFields BEFORE anything renders, and the
 // page 404s (not 403) when decksVisible is false — existence isn't leaked (standing
-// not-403 privacy policy). Unlike /collection/[username], this page does NOT link through to
-// /decks/item/[id] — that route is still owner-only (see its own header comment: public deck
-// detail sharing via decksVisible is a separate, not-yet-built feature) — so each deck's
-// build summary renders inline here instead of behind a click-through that would 404 anyway.
+// not-403 privacy policy). #144: Die Liste respektiert die Deck-Sichtbarkeit — nur
+// visibility=PUBLIC Decks sind gelistet; UNLISTED Decks sind nicht gelistet, aber niemals
+// geheim (per Direktlink /decks/item/[id] und in Turnieren sichtbar). Seit #144 verlinkt
+// die Karte auf die Detailseite (read-only für Nicht-Besitzer:innen).
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { resolveVisibleFields } from '@/lib/privacy'
@@ -41,7 +42,9 @@ export default async function UserDecksPage({ params }: { params: Promise<{ user
   if (!view.decksVisible) notFound()
 
   const decks = await prisma.deck.findMany({
-    where: { userId: subject.id },
+    // #144 — nur öffentlich geschaltete Decks sind gelistet (UNLISTED = nicht gelistet,
+    // aber per Direktlink/Turnier sichtbar — niemals geheim).
+    where: { userId: subject.id, visibility: 'PUBLIC' },
     orderBy: { id: 'asc' },
     take: PAGE_SIZE,
     include: {
@@ -70,18 +73,21 @@ export default async function UserDecksPage({ params }: { params: Promise<{ user
           {decks.map((deck) => (
             <li key={deck.id}>
               <Card className="space-y-2 p-4">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{deck.title}</p>
-                  <Badge tone="neutral">{deck.builds.length}/3 Builds</Badge>
-                </div>
-                <ul className="text-sm text-current/60">
-                  {deck.builds.map((db) => (
-                    <li key={db.buildId} className="flex items-center gap-2">
-                      <TypeBadge type={db.build.type} />
-                      {buildPartSummary({ id: db.build.id, type: db.build.type, blade: db.build.blade, lockChip: db.build.lockChip, overBlade: db.build.overBlade, metalBlade: db.build.metalBlade, assistBlade: db.build.assistBlade, ratchet: db.build.ratchet, bit: db.build.bit })}
-                    </li>
-                  ))}
-                </ul>
+                {/* #144 — Die Detailseite ist seit #144 für alle sichtbar (read-only). */}
+                <Link href={`/decks/item/${deck.id}`} className="block space-y-2">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{deck.title}</p>
+                    <Badge tone="neutral">{deck.builds.length}/3 Builds</Badge>
+                  </div>
+                  <ul className="text-sm text-current/60">
+                    {deck.builds.map((db) => (
+                      <li key={db.buildId} className="flex items-center gap-2">
+                        <TypeBadge type={db.build.type} />
+                        {buildPartSummary({ id: db.build.id, type: db.build.type, blade: db.build.blade, lockChip: db.build.lockChip, overBlade: db.build.overBlade, metalBlade: db.build.metalBlade, assistBlade: db.build.assistBlade, ratchet: db.build.ratchet, bit: db.build.bit })}
+                      </li>
+                    ))}
+                  </ul>
+                </Link>
               </Card>
             </li>
           ))}

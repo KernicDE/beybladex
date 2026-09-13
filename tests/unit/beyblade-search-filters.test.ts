@@ -1,0 +1,85 @@
+// tests/unit/beyblade-search-filters.test.ts (MVP4/4, #144)
+// Filter- und Such-Logik des Beyblades-Katalog-Tabs: Hersteller-/Typ-Filter, "nur im Besitz"
+// (Purchase-Subquery) und die Teilcode-Suche (Query matcht auch Teilnamen über alle 7 Slots).
+// Seams mocked on '@/' imports (lib/db), same pattern as tests/unit/build-search-mine.test.ts.
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    beyblade: { findMany: vi.fn() },
+  },
+}))
+
+import { prisma } from '@/lib/db'
+import { searchBeyblades } from '@/lib/beybladeSearch'
+
+const findMany = vi.mocked(prisma.beyblade.findMany)
+
+function callWhere() {
+  return (findMany.mock.calls[0][0] as { where: { AND: Record<string, unknown>[] } }).where
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  findMany.mockResolvedValue([] as never)
+})
+
+describe('searchBeyblades filter composition (#144)', () => {
+  it('filters by manufacturer', async () => {
+    await searchBeyblades({ manufacturer: 'TT' })
+    expect(callWhere().AND).toContainEqual({ manufacturer: 'TT' })
+  })
+
+  it('derives the type filter from blade OR lockChip (no type column on Beyblade)', async () => {
+    await searchBeyblades({ type: 'ATTACK' })
+    expect(callWhere().AND).toContainEqual({
+      OR: [{ blade: { beyType: 'ATTACK' } }, { lockChip: { beyType: 'ATTACK' } }],
+    })
+  })
+
+  it('restricts to owned sets via a Purchase subquery when ownedByUserId is set', async () => {
+    await searchBeyblades({ ownedByUserId: 'user-1' })
+    expect(callWhere().AND).toContainEqual({ purchases: { some: { userId: 'user-1' } } })
+  })
+
+  it('adds no filter clauses when no filter is active', async () => {
+    await searchBeyblades({})
+    expect(callWhere().AND).toEqual([])
+  })
+
+  it('keeps the plain list unfiltered for the set picker (GET /api/beyblades)', async () => {
+    await searchBeyblades({ q: 'Dran' })
+    const clauses = callWhere().AND
+    // Nur der Such-Clause, kein Hersteller-/Typ-/Besitz-Filter.
+    expect(clauses).toHaveLength(1)
+  })
+})
+
+describe('searchBeyblades Teilcode-Suche (#144)', () => {
+  it('matches part names across ALL 7 slot relations (e.g. "4-60" finds 4-60 ratchets)', async () => {
+    await searchBeyblades({ q: '4-60' })
+    const or = (callWhere().AND[0] as { OR: Record<string, unknown>[] }).OR
+    const slotClauses = or.slice(2) // erst name, dann productCode
+    const slots = slotClauses.map((clause) => Object.keys(clause)[0]).sort()
+    expect(slots).toEqual(
+      ['assistBlade', 'bit', 'blade', 'lockChip', 'metalBlade', 'overBlade', 'ratchet'].sort(),
+    )
+    for (const clause of slotClauses) {
+      const field = Object.values(clause)[0] as { name: { startsWith: string; mode: string } }
+      expect(field.name.startsWith).toBe('4-60')
+      expect(field.name.mode).toBe('insensitive')
+    }
+  })
+
+  it('matches name and productCode alongside part names', async () => {
+    await searchBeyblades({ q: 'dran' })
+    const or = (callWhere().AND[0] as { OR: Record<string, unknown>[] }).OR
+    expect(Object.keys(or[0])).toEqual(['name'])
+    expect(Object.keys(or[1])).toEqual(['productCode'])
+  })
+
+  it('combines the search clause with all filters', async () => {
+    await searchBeyblades({ q: '4-60', manufacturer: 'HASBRO', type: 'ATTACK', ownedByUserId: 'user-1' })
+    expect(callWhere().AND).toHaveLength(4)
+  })
+})

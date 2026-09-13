@@ -1,6 +1,8 @@
 // app/api/decks/[id]/route.ts
-// PATCH — update one of the caller's OWN decks: rename it and/or replace its build list
-// (positions are the array order). AUTHZ RULE (standing Global-Constraints requirement):
+// PATCH — update one of the caller's OWN decks: rename it, replace its build list
+// (positions are the array order) and/or toggle its visibility (#144: PUBLIC = in
+// öffentlichen Listungen sichtbar, UNLISTED = nicht gelistet aber niemals geheim — per
+// Direktlink/Turnier sichtbar). AUTHZ RULE (standing Global-Constraints requirement):
 // owner-only — 401 unauthenticated, 404 for a deck the caller doesn't own (existence of
 // someone else's deck isn't leaked), negative test in tests/integration/deck-api.test.ts.
 // The no-duplicate-parts deck rule is re-validated server-side on every replacement, and the
@@ -28,12 +30,21 @@ export async function PATCH(req: Request, { params }: Ctx) {
     return Response.json({ error: 'invalid_json' }, { status: 400 })
   }
   if (typeof body !== 'object' || body === null) return Response.json({ error: 'invalid_body' }, { status: 400 })
-  const b = body as { title?: unknown; buildIds?: unknown }
+  const b = body as { title?: unknown; buildIds?: unknown; visibility?: unknown }
 
   let title: string | undefined
   if (b.title !== undefined) {
     if (typeof b.title !== 'string' || b.title.trim().length === 0) return Response.json({ error: 'invalid_title' }, { status: 400 })
     title = b.title.trim().slice(0, TITLE_MAX)
+  }
+
+  // #144 — Sichtbarkeits-Umschalter: nur die beiden Werte des Visibility-Enums sind zulässig.
+  let visibility: 'PUBLIC' | 'UNLISTED' | undefined
+  if (b.visibility !== undefined) {
+    if (b.visibility !== 'PUBLIC' && b.visibility !== 'UNLISTED') {
+      return Response.json({ error: 'invalid_visibility' }, { status: 400 })
+    }
+    visibility = b.visibility
   }
 
   let buildIds: string[] | undefined
@@ -64,6 +75,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       await tx.deckBuild.createMany({ data: buildIds.map((buildId, i) => ({ deckId: id, buildId, position: i + 1 })) })
     }
     if (title) await tx.deck.update({ where: { id }, data: { title } })
+    if (visibility) await tx.deck.update({ where: { id }, data: { visibility } })
   })
   return Response.json({ ok: true }, { status: 200 })
 }

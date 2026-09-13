@@ -1,20 +1,25 @@
 // components/beyblade/BuildCard.tsx
-// Build summary card — used on /builds and wherever a build row renders (deck builder
-// picker results). Part/Set images are MediaAssets served by the generic /api/media/[id]
-// route (Phase 11's pipeline) and go through next/image with explicit sizing
-// ([REVIEW-FIX: performance P12] — never an unoptimized <img> for catalog images).
+// Build summary card — used on /builds (Meine Builds + Öffentliche Builds) and wherever a
+// build row renders (deck builder picker results). Part/Set images are MediaAssets served by
+// the generic /api/media/[id] route (Phase 11's pipeline) and go through next/image with
+// explicit sizing ([REVIEW-FIX: performance P12] — never an unoptimized <img> for catalog
+// images).
 //
 // RC16 (#122) — variable Bauformen: BuildCardData trägt alle 7 Slots; blade/ratchet sind null,
 // wenn die Bauform kein solches Teil hat (Custom Line bzw. Ratchet-Integrated). Die beiden
 // Pure Helpers unten (buildPartSummary/buildDisplayName) zentralisieren die Anzeige-Reihenfolge
 // für alle Oberflächen (Karte, Deck-Listen, Judge-Pad, Meta-Seite).
+// #144 — optionale Erweiterungen für die Öffentliche-Builds-Karte: RatingSummary (Batch-
+// Aggregat vom Listen-Call-Site) und Ersteller:in. Beide rendern nichts, wenn sie fehlen.
 import Image from 'next/image'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge, type WinRateStats } from '@/components/beyblade/WinRateBadge'
+import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { formatBitDisplay } from '@/lib/buildNaming'
+import type { RatingAggregate } from '@/lib/ratingAggregate'
 
 export interface BuildCardPart {
   id: string
@@ -65,7 +70,21 @@ export function buildDisplayName(build: BuildCardData): string {
   return build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name
 }
 
-export function BuildCard({ build, winRate, href }: { build: BuildCardData; winRate?: WinRateStats | null; href?: string }) {
+export function BuildCard({
+  build,
+  winRate,
+  href,
+  rating,
+  creator,
+}: {
+  build: BuildCardData
+  winRate?: WinRateStats | null
+  href?: string
+  /** #144 — User-Bewertungs-Aggregat (Batch vom Listen-Call-Site); fehlt → keine Zeile. */
+  rating?: RatingAggregate | null
+  /** #144 — Ersteller:in (Öffentliche Builds); fehlt/null → keine Zeile. */
+  creator?: string | null
+}) {
   const title = buildDisplayName(build)
   const imageId = build.imageId ?? build.blade?.imageId ?? build.lockChip?.imageId ?? null
   return (
@@ -93,6 +112,14 @@ export function BuildCard({ build, winRate, href }: { build: BuildCardData; winR
           <p className="truncate text-sm text-current/60">
             {buildPartSummary(build)}
           </p>
+          {creator && (
+            <p className="mt-0.5 truncate text-xs text-current/50">von {creator}</p>
+          )}
+          {rating && (
+            <div className="mt-1">
+              <RatingSummary aggregate={rating} />
+            </div>
+          )}
         </div>
         {/* Auto-Meta win-rate badge (Phase 5 Part D) — optional so existing callers keep
             working; list surfaces batch-read the cache and pass it in. */}

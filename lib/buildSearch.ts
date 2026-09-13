@@ -1,14 +1,15 @@
 // lib/buildSearch.ts (Phase 5 Part A; RC16 #122 — variable Slot-Liste; MVP4 #141 — Build-Split:
 // die Scope-Filter officialOnly/personalOnly entfallen — Builds sind seit dem Split ausschließlich
 // persönliche Kombinationen, offizielle Sets leben im Beyblade-Modell und werden über
-// lib/beybladeSearch.ts gesucht)
-// Server-side build search, shared by /builds (nur eigene Kombis), /search's "Teile" section
-// and the deck builder's part-picker (via /builds?q=…). A query matches a build when ANY of
-// its (1–6) parts' names start with the prefix (case-insensitive) — the hard prerequisite for
-// the deck-builder picker per [REVIEW-FIX: ux-product §8]. Cursor-paginated per [REVIEW-FIX: P3].
+// lib/beybladeSearch.ts gesucht; #144 — publicOnly für die Öffentliche-Builds-Ansicht)
+// Server-side build search, shared by /builds (Meine Builds + Öffentliche Builds), /search's
+// "Teile" section and the deck builder's part-picker (via /builds?q=…). A query matches a
+// build when ANY of its (1–6) parts' names start with the prefix (case-insensitive) — the
+// hard prerequisite for the deck-builder picker per [REVIEW-FIX: ux-product §8].
+// Cursor-paginated per [REVIEW-FIX: P3].
 import { prisma } from '@/lib/db'
 import { ASSEMBLY_PART_SLOTS } from '@/lib/assembly'
-import type { PartCategory } from '@prisma/client'
+import type { BeyType, PartCategory } from '@prisma/client'
 
 export const BUILD_PAGE_SIZE = 20
 
@@ -18,7 +19,16 @@ export const BUILD_PAGE_SIZE = 20
 /** @deprecated Alias für ASSEMBLY_PART_SLOTS aus lib/assembly.ts. */
 export const BUILD_PART_SLOTS = ASSEMBLY_PART_SLOTS
 
-export async function searchBuilds(opts: { q?: string; cursor?: string | null; take?: number; onlyMineUserId?: string | null }) {
+export async function searchBuilds(opts: {
+  q?: string
+  cursor?: string | null
+  take?: number
+  onlyMineUserId?: string | null
+  /** #144 — nur visibility=PUBLIC (Öffentliche-Builds-Ansicht). */
+  publicOnly?: boolean
+  /** #144 — Typ-Filter (Build.type ist eine echte Spalte). */
+  type?: string | null
+}) {
   const q = (opts.q ?? '').trim()
   const take = opts.take ?? BUILD_PAGE_SIZE
   const rows = await prisma.build.findMany({
@@ -33,6 +43,8 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
               },
             ]
           : []),
+        ...(opts.publicOnly ? [{ visibility: 'PUBLIC' as const }] : []),
+        ...(opts.type ? [{ type: opts.type as BeyType }] : []),
       ],
     },
     orderBy: { id: 'asc' },
@@ -40,7 +52,9 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
     ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     include: {
       // `include` already pulls in every scalar column on Build itself (id, type, name,
-      // visibility, imageId, …) — only the RELATION fields need naming here.
+      // visibility, creatorId, …) — only the RELATION fields need naming here.
+      // #144 — Ersteller:in für die Öffentliche-Builds-Karte (null bei Vor-MVP4-Rows).
+      creator: { select: { username: true } },
       blade: { select: { id: true, name: true, imageId: true, beyType: true } },
       lockChip: { select: { id: true, name: true } },
       overBlade: { select: { id: true, name: true } },
@@ -116,4 +130,27 @@ export async function searchParts(opts: { q?: string; category?: string; cursor?
   const hasMore = rows.length > take
   const parts = hasMore ? rows.slice(0, take) : rows
   return { parts, nextCursor: hasMore ? parts[parts.length - 1].id : null }
+}
+
+// #144 — Teile-Tab der Sammlung: feste Anzeigereihenfolge der Kategorien (Assembly-Ordnung,
+// ACCESSORY zuletzt) und Gruppierung der Suchergebnisse danach.
+export const PART_CATEGORY_ORDER = ['BLADE', 'LOCK_CHIP', 'OVER_BLADE', 'METAL_BLADE', 'ASSIST_BLADE', 'RATCHET', 'BIT', 'ACCESSORY'] as const
+
+export interface PartGroup<T extends { category: string }> {
+  category: string
+  parts: T[]
+}
+
+/** Gruppiert Teile nach Kategorie in der kanonischen PART_CATEGORY_ORDER (nur belegte Gruppen;
+ *  unbekannte Kategorien — z. B. ein künftiger Enum-Wert — landen anschließend in Map-Reihenfolge). */
+export function groupPartsByCategory<T extends { category: string }>(parts: T[]): PartGroup<T>[] {
+  const groups = new Map<string, T[]>()
+  for (const part of parts) {
+    const list = groups.get(part.category)
+    if (list) list.push(part)
+    else groups.set(part.category, [part])
+  }
+  const ordered = PART_CATEGORY_ORDER.filter((category) => groups.has(category))
+  const leftovers = [...groups.keys()].filter((category) => !(PART_CATEGORY_ORDER as readonly string[]).includes(category))
+  return [...ordered, ...leftovers].map((category) => ({ category, parts: groups.get(category)! }))
 }
