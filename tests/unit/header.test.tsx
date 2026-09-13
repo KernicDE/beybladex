@@ -13,14 +13,19 @@ const locale = 'de' as const
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }))
 
 describe('Header', () => {
-  it('renders the brand name and a theme toggle', () => {
+  it('renders the brand name and an icon theme toggle (#124)', () => {
     render(
       <ThemeProvider>
         <Header session={null} avatarImageId={null} locale={locale} t={t} />
       </ThemeProvider>
     )
     expect(screen.getByText('BeybladeX.de')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument()
+    // Icon-Segment statt Text-Cycler: drei Wahlmöglichkeiten (hell/dunkel/system),
+    // der aktive Zustand per aria-pressed hervorgehoben.
+    const group = screen.getByRole('group', { name: 'Farbschema' })
+    const buttons = within(group).getAllByRole('button')
+    expect(buttons).toHaveLength(3)
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toContain('true')
   })
 })
 
