@@ -7,7 +7,7 @@
 -- 3. Build bekommt die vier CX-Slots als nullable FKs; bladeId und ratchetId werden nullable
 --    (CX-Builds haben kein einzelnes BLADE-Teil; Ratchet-Integrated-Builds kein RATCHET-Teil).
 --    Die Genau-eine-Blade-Form- und Ratchet-Regeln erzwingt lib/buildInput.ts, nicht die DB.
--- 4. Die Phase-20-Unique-Constraint (bladeId, ratchetId, bitId) ersetzt durch den NULL-sicheren
+-- 4. Der Phase-20-Unique-Index (bladeId, ratchetId, bitId) wird ersetzt durch den NULL-sicheren
 --    Expression-Unique-Index "Build_combo_key" über ALLE sieben Slot-Spalten (COALESCE ''), damit
 --    auch 2-Slot- (Ratchet-Integrated) und 6-Slot-Builds (CX) deduplizieren. Bestehende Rows
 --    haben überall belegte Standard-Slots → der Index baut ohne Konflikt. Prisma-Schema trägt
@@ -44,8 +44,9 @@ ALTER TABLE "Build" ADD CONSTRAINT "Build_overBladeId_fkey" FOREIGN KEY ("overBl
 ALTER TABLE "Build" ADD CONSTRAINT "Build_metalBladeId_fkey" FOREIGN KEY ("metalBladeId") REFERENCES "Part"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "Build" ADD CONSTRAINT "Build_assistBladeId_fkey" FOREIGN KEY ("assistBladeId") REFERENCES "Part"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- Phase-20-Unique-Constraint ersetzen durch den NULL-sicheren Expression-Index über alle Slots
-ALTER TABLE "Build" DROP CONSTRAINT "Build_bladeId_ratchetId_bitId_key";
+-- Phase-20-Unique-Index ersetzen durch den NULL-sicheren Expression-Index über alle Slots.
+-- Achtung: Phase 20 legte die Unique als CREATE UNIQUE INDEX an (kein CONSTRAINT) → DROP INDEX.
+DROP INDEX "Build_bladeId_ratchetId_bitId_key";
 CREATE UNIQUE INDEX "Build_combo_key" ON "Build"(
   COALESCE("bladeId", ''),
   COALESCE("lockChipId", ''),
