@@ -13,6 +13,7 @@ import { RatingForm } from '@/components/beyblade/RatingForm'
 import { RatingList } from '@/components/beyblade/RatingList'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
 
@@ -168,6 +169,18 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           }))}
         />
       </section>
+
+      {/* RC16 (#103): offizielle Sets direkt auf der Detailseite als gekauft markieren —
+          dieselbe API wie MarkSetPurchasedForm, aber ohne den Umweg ueber die Set-Suche. */}
+      {build.isOfficialSet && viewerId && (
+        <section aria-labelledby="build-purchase" className="space-y-3">
+          <h2 id="build-purchase" className="text-lg font-semibold">In deiner Sammlung</h2>
+          <Card>
+            <h3 className="mb-3 text-sm font-semibold">Set als gekauft markieren</h3>
+            <MarkSetPurchasedForm build={{ id: build.id, name: build.name }} />
+          </Card>
+        </section>
+      )}
     </main>
   )
 }
