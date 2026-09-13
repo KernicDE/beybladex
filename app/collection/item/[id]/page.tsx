@@ -9,6 +9,7 @@
 // page if the OWNER's collectionVisibility permits it (resolveVisibleFields) — otherwise 404,
 // not 403: the item's existence isn't leaked.
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { resolveVisibleFields } from '@/lib/privacy'
@@ -68,7 +69,12 @@ export default async function CollectionItemPage({ params }: PageProps<'/collect
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold">{item.part.name}</h1>
+        {/* RC16 (#105): der Teile-Name verlinkt auf die oeffentliche Einzelteil-Detailseite. */}
+        <h1 className="text-2xl font-semibold">
+          <Link href={`/parts/${item.part.id}`} className="underline-offset-4 hover:underline">
+            {item.part.name}
+          </Link>
+        </h1>
         <Badge tone="neutral">{item.part.category}</Badge>
         <Badge tone="neutral">{item.part.manufacturer}</Badge>
         {item.part.beyType && <Badge tone="cyan">{item.part.beyType}</Badge>}

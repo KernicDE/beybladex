@@ -110,6 +110,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         <ul className="grid gap-3 sm:grid-cols-3">
           {parts.map(({ label, part }) => (
             <li key={part.id}>
+              {/* RC16 (#105): die Teile-Karte verlinkt auf die neue Einzelteil-Detailseite. */}
+              <Link href={`/parts/${part.id}`} className="block transition-opacity hover:opacity-80">
               <Card className="h-full p-4 text-center">
                 {part.imageId ? (
                   <Image
@@ -137,6 +139,7 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                 </div>
                 {part.weightGrams && <p className="mt-1 text-xs text-current/50">{part.weightGrams} g</p>}
               </Card>
+              </Link>
             </li>
           ))}
         </ul>
