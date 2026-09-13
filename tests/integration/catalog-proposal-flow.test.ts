@@ -1,8 +1,9 @@
 // tests/integration/catalog-proposal-flow.test.ts
-// Phase 11, item 1: the acceptance-critical proof for the catalog-proposal system — any USER
-// can submit a PART or BUILD proposal; TRUSTED/JUDGE/ORGANIZER/ADMIN can approve (a plain USER
-// cannot — negative test); approving a BUILD proposal creates the Part+Build rows
-// transactionally; rejecting notifies the submitter with the review note. CI-only (Postgres/Redis).
+// Phase 11, item 1; MVP4 #141 (Build-Split): the acceptance-critical proof for the catalog-
+// proposal system — any USER can submit a PART or BUILD proposal; TRUSTED/JUDGE/ORGANIZER/
+// ADMIN can approve (a plain USER cannot — negative test); approving a BUILD proposal creates
+// the Part rows PLUS the official Set als Beyblade-Zeile transactionally; rejecting notifies
+// the submitter with the review note. CI-only (Postgres/Redis).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { POST as SUBMIT } from '@/app/api/proposals/route'
 import { GET as LIST, PATCH as REVIEW } from '@/app/api/admin/proposals/route'
@@ -97,7 +98,7 @@ describe('catalog proposal flow', () => {
     await prisma.user.deleteMany({ where: { id: { in: [submitter.id, trusted.id, judge.id, plainUser.id] } } })
   })
 
-  it('approving a BUILD proposal creates the inline Part rows AND the official Build transactionally; rejecting requires and stores a reviewNote, and notifies the submitter', async () => {
+  it('approving a BUILD proposal creates the inline Part rows AND the Beyblade transactionally; rejecting requires and stores a reviewNote, and notifies the submitter', async () => {
     const suffix = Date.now().toString(36)
     const { submitter, trusted } = await seedUsers(suffix)
 
@@ -122,12 +123,13 @@ describe('catalog proposal flow', () => {
       new Request('http://localhost/api/admin/proposals', { method: 'PATCH', body: JSON.stringify({ id: buildProposal.id, status: 'APPROVED' }) }),
     )
     expect(approved.status).toBe(200)
-    const { createdBuildId } = (await approved.json()) as { createdBuildId: string }
-    const build = await prisma.build.findUnique({ where: { id: createdBuildId } })
-    expect(build?.isOfficialSet).toBe(true)
-    expect(build?.name).toBe(`Testset ${suffix}`)
+    const { createdBeybladeId } = (await approved.json()) as { createdBeybladeId: string }
+    const beyblade = await prisma.beyblade.findUnique({ where: { id: createdBeybladeId } })
+    expect(beyblade?.name).toBe(`Testset ${suffix}`)
+    // Hersteller des Sets = Hersteller des Blade-Assembly-Kopfteils (hier: Blade-Inline-Part).
+    expect(beyblade?.manufacturer).toBe('TT')
     const createdParts = await prisma.part.findMany({
-      where: { id: { in: [build!.bladeId, build!.ratchetId, build!.bitId].filter((id): id is string => id !== null) } },
+      where: { id: { in: [beyblade!.bladeId, beyblade!.ratchetId, beyblade!.bitId].filter((id): id is string => id !== null) } },
     })
     expect(createdParts).toHaveLength(3)
 
@@ -150,7 +152,7 @@ describe('catalog proposal flow', () => {
 
     await prisma.notification.deleteMany({ where: { userId: submitter.id } })
     await prisma.catalogProposal.deleteMany({ where: { id: { in: [rejectMe.id] } } })
-    await prisma.build.delete({ where: { id: createdBuildId } })
+    await prisma.beyblade.delete({ where: { id: createdBeybladeId } })
     await prisma.part.deleteMany({ where: { id: { in: createdParts.map((p) => p.id) } } })
     await prisma.user.deleteMany({ where: { id: { in: [submitter.id, trusted.id] } } })
   })

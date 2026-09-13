@@ -1,11 +1,14 @@
 // tests/integration/duplicate-build-combo.test.ts
-// Phase 20: the same three parts can never back two Build rows (@@unique([bladeId,
-// ratchetId, bitId])). POST /api/builds pre-checks the combo and returns the EXISTING build
-// ({ id, existing: true }) on a second personal-combo create — not a duplicate row, not a
-// raw unique-constraint 500; the CatalogProposal BUILD-approval transaction answers 409
-// combo_exists with the existing Build's id instead of blowing past the constraint. New
-// personal combos get the canonical "<Blade> <Ratchet><Bit-short>" name automatically.
-// CI-only (Postgres/Redis). Auth-mocking pattern per build-ratings.test.ts.
+// Phase 20; MVP4 #141 (Build-Split): the same three parts can never back two Build rows
+// (Build_combo_key) — und ebenso nie zwei Beyblade-Zeilen (Beyblade_combo_key). POST
+// /api/builds pre-checks the combo and returns the EXISTING build ({ id, existing: true }) on
+// a second personal-combo create — not a duplicate row, not a raw unique-constraint 500; the
+// CatalogProposal BUILD-approval transaction answers 409 combo_exists with the existing
+// BEYBLADE's id (Sets deduplizieren gegen das Beyblade-Modell — dieselbe Kombination als
+// persönlicher Build zu haben, blockiert NICHT, ein Build mit den Teilen einer Beyblade zu
+// sein ist explizit erlaubt). New personal combos get the canonical
+// "<Blade> <Ratchet><Bit-short>" name automatically. CI-only (Postgres/Redis).
+// Auth-mocking pattern per build-ratings.test.ts.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { POST as CREATE_BUILD } from '@/app/api/builds/route'
 import { PATCH as REVIEW } from '@/app/api/admin/proposals/route'
@@ -20,7 +23,7 @@ function asSession(value: { id: string; name: string } | null) {
   return (value ? { user: value, expires: new Date(Date.now() + 86400_000).toISOString() } : null) as unknown as NonNullable<Awaited<ReturnType<typeof auth>>>
 }
 
-const ids = { users: [] as string[], parts: [] as string[], builds: [] as string[], proposals: [] as string[] }
+const ids = { users: [] as string[], parts: [] as string[], builds: [] as string[], beyblades: [] as string[], proposals: [] as string[] }
 
 async function makeUser(tag: string, role: 'USER' | 'TRUSTED' = 'USER') {
   const suffix = Date.now().toString(36)
@@ -48,7 +51,8 @@ afterEach(() => mockAuth.mockReset())
 afterEach(async () => {
   await prisma.catalogProposal.deleteMany({ where: { id: { in: ids.proposals } } })
   await prisma.notification.deleteMany({ where: { userId: { in: ids.users } } })
-  await prisma.auditLog.deleteMany({ where: { targetId: { in: ids.builds } } })
+  await prisma.auditLog.deleteMany({ where: { targetId: { in: [...ids.builds, ...ids.beyblades] } } })
+  for (const id of ids.beyblades) await prisma.beyblade.delete({ where: { id } }).catch(() => {})
   for (const id of ids.builds) await prisma.build.delete({ where: { id } }).catch(() => {})
   for (const id of ids.parts) await prisma.part.delete({ where: { id } }).catch(() => {})
   for (const id of ids.users) await prisma.user.delete({ where: { id } }).catch(() => {})
@@ -71,10 +75,10 @@ describe('duplicate build combo prevention (Phase 20)', () => {
 
     const first = await CREATE_BUILD(postCombo(parts))
     expect(first.status).toBe(201)
-    const firstBody = (await first.json()) as { id: string; existing: boolean; build: { id: string; name: string; isOfficialSet: boolean } }
+    const firstBody = (await first.json()) as { id: string; existing: boolean; build: { id: string; name: string; visibility: string } }
     expect(firstBody.existing).toBe(false)
     ids.builds.push(firstBody.id)
-    expect(firstBody.build.isOfficialSet).toBe(false)
+    expect(firstBody.build.visibility).toBe('UNLISTED')
     // canonical "<Blade> <Ratchet><Bit-short>" auto-naming (bit short code from "Low Rush" → "LR")
     expect(firstBody.build.name).toBe(
       deriveBuildName({ bladeName: parts.blade.name, ratchetName: parts.ratchet.name, bitName: parts.bit.name }),
@@ -93,17 +97,17 @@ describe('duplicate build combo prevention (Phase 20)', () => {
     expect(rows).toHaveLength(1)
   })
 
-  it('CatalogProposal BUILD approval of an already-existing combo answers 409 combo_exists with the existing Build id', async () => {
+  it('CatalogProposal BUILD approval when a Beyblade with the same combo exists answers 409 combo_exists with the existing Beyblade id', async () => {
     const suffix = Date.now().toString(36)
     const submitter = await makeUser('sub')
     const trusted = await makeUser('trs', 'TRUSTED')
     const parts = await makeParts(suffix)
 
-    // the combo already exists (e.g. seeded or created earlier)
-    const existing = await prisma.build.create({
-      data: { bladeId: parts.blade.id, ratchetId: parts.ratchet.id, bitId: parts.bit.id, name: `Retail Box ${suffix}`, isOfficialSet: true },
+    // the combo already exists as an official Set (e.g. seeded or direct-created)
+    const existing = await prisma.beyblade.create({
+      data: { bladeId: parts.blade.id, ratchetId: parts.ratchet.id, bitId: parts.bit.id, name: `Retail Box ${suffix}`, manufacturer: 'TT' },
     })
-    ids.builds.push(existing.id)
+    ids.beyblades.push(existing.id)
 
     const proposal = await prisma.catalogProposal.create({
       data: {
@@ -131,10 +135,53 @@ describe('duplicate build combo prevention (Phase 20)', () => {
     expect(body.existing).toBe(true)
     expect(body.id).toBe(existing.id)
 
-    // still exactly one Build row, and the proposal stays PENDING for the curator to reject
-    const rows = await prisma.build.findMany({ where: { bladeId: parts.blade.id, ratchetId: parts.ratchet.id, bitId: parts.bit.id } })
+    // still exactly one Beyblade row, and the proposal stays PENDING for the curator to reject
+    const rows = await prisma.beyblade.findMany({ where: { bladeId: parts.blade.id, ratchetId: parts.ratchet.id, bitId: parts.bit.id } })
     expect(rows).toHaveLength(1)
     const row = await prisma.catalogProposal.findUnique({ where: { id: proposal.id } })
     expect(row?.status).toBe('PENDING')
+  })
+
+  it('a personal Build with the same combo does NOT block the approval — Beyblade and Build may share parts', async () => {
+    const suffix = Date.now().toString(36)
+    const submitter = await makeUser('sub2')
+    const trusted = await makeUser('trs2', 'TRUSTED')
+    const parts = await makeParts(suffix)
+
+    // ein User hat dieselbe Kombination als persönlichen Build ("von der Beyblade erstellen")
+    const personal = await prisma.build.create({
+      data: { bladeId: parts.blade.id, ratchetId: parts.ratchet.id, bitId: parts.bit.id, name: `Meine Kombi ${suffix}` },
+    })
+    ids.builds.push(personal.id)
+
+    const proposal = await prisma.catalogProposal.create({
+      data: {
+        kind: 'BUILD',
+        submittedById: submitter.id,
+        payload: {
+          name: `Offizielles Set ${suffix}`,
+          slots: {
+            blade: { partId: parts.blade.id, inline: null },
+            ratchet: { partId: parts.ratchet.id, inline: null },
+            bit: { partId: parts.bit.id, inline: null },
+          },
+        },
+      },
+    })
+    ids.proposals.push(proposal.id)
+
+    mockAuth.mockResolvedValue(asSession({ id: trusted.id, name: trusted.username }))
+    const res = await REVIEW(
+      new Request('http://localhost/api/admin/proposals', { method: 'PATCH', body: JSON.stringify({ id: proposal.id, status: 'APPROVED' }) }),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { createdBeybladeId: string }
+    ids.beyblades.push(body.createdBeybladeId)
+    const beyblade = await prisma.beyblade.findUnique({ where: { id: body.createdBeybladeId } })
+    expect(beyblade?.name).toBe(`Offizielles Set ${suffix}`)
+    expect(beyblade?.manufacturer).toBe('TT')
+
+    // beide Zeilen existieren bewusst parallel
+    expect(await prisma.build.findUnique({ where: { id: personal.id } })).not.toBeNull()
   })
 })

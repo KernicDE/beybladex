@@ -1,8 +1,10 @@
-// tests/integration/mark-set-purchased.test.ts
-// Phase 11, item 6: marking an official Set purchased creates exactly three CollectionItem
-// rows sharing sourceBuildId, each independently editable/deletable afterward (proven by
-// deleting just one and confirming the other two survive). A non-official Build (a personal
-// combo) is rejected. CI-only (Postgres/Redis).
+// tests/integration/mark-set-purchased.test.ts (Phase 11, item 6; RC16 #122; MVP4 #141)
+// "Set als gekauft markieren" nach dem Build-Split: der Body trägt beybladeId (offizielle Sets
+// leben im Beyblade-Modell). Ein erfolgreicher Call schreibt GENAU EINE Purchase-Row (Besitz-
+// Einheit, Basis des Preisverlaufs — unbegrenzt viele pro User+Set, hier 2× hintereinander)
+// plus je belegtem Slot eine CollectionItem-Row mit sourceBeybladeId-Provenienz, die
+// einzeln editier-/löschbar bleibt (proven by deleting just one and confirming the other two
+// survive). Eine unbekannte BeybladeId → 404. CI-only (Postgres/Redis).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { POST as MARK_PURCHASED } from '@/app/api/collection/mark-set-purchased/route'
 import { DELETE as DELETE_ITEM } from '@/app/api/collection/[id]/route'
@@ -20,58 +22,72 @@ function req(body: unknown) {
   return new Request('http://localhost/api/collection/mark-set-purchased', { method: 'POST', body: JSON.stringify(body) })
 }
 
-async function makeSet(suffix: string, official: boolean) {
+async function makeSet(suffix: string) {
   const blade = await prisma.part.create({ data: { name: `msp_blade_${suffix}`, category: 'BLADE', manufacturer: 'TT', spinDirection: 'RIGHT' } })
   const ratchet = await prisma.part.create({ data: { name: `msp_ratchet_${suffix}`, category: 'RATCHET', manufacturer: 'TT', spinDirection: 'RIGHT' } })
   const bit = await prisma.part.create({ data: { name: `msp_bit_${suffix}`, category: 'BIT', manufacturer: 'TT', spinDirection: 'RIGHT' } })
-  const build = await prisma.build.create({
-    data: { bladeId: blade.id, ratchetId: ratchet.id, bitId: bit.id, type: 'ATTACK', isOfficialSet: official, name: official ? `Set ${suffix}` : null },
+  const beyblade = await prisma.beyblade.create({
+    data: {
+      name: `Set ${suffix}`,
+      manufacturer: 'TT',
+      bladeId: blade.id,
+      ratchetId: ratchet.id,
+      bitId: bit.id,
+    },
   })
-  return { blade, ratchet, bit, build }
+  return { blade, ratchet, bit, beyblade }
 }
 
-describe('mark set purchased', () => {
+describe('mark set purchased (MVP4 #141)', () => {
   afterEach(() => {
     mockAuth.mockReset()
   })
 
-  it('creates exactly three linked CollectionItem rows for an official Set; a non-official build is rejected', async () => {
+  it('creates one Purchase plus three linked CollectionItem rows; purchases are unlimited per user+set', async () => {
     const suffix = Date.now().toString(36)
     const user = await prisma.user.create({ data: { username: `msp_usr_${suffix}`, passwordHash: 'x' } })
-    const official = await makeSet(`${suffix}o`, true)
-    const casual = await makeSet(`${suffix}c`, false)
+    const { blade, ratchet, bit, beyblade } = await makeSet(suffix)
 
     mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
 
-    const badRes = await MARK_PURCHASED(req({ buildId: casual.build.id }))
-    expect(badRes.status).toBe(400)
-    expect((await badRes.json()).error).toBe('not_an_official_set')
+    const unknown = await MARK_PURCHASED(req({ beybladeId: 'does-not-exist' }))
+    expect(unknown.status).toBe(404)
 
-    const res = await MARK_PURCHASED(req({ buildId: official.build.id, purchasePrice: 39.99, currency: 'EUR', merchant: 'Testladen' }))
+    const res = await MARK_PURCHASED(req({ beybladeId: beyblade.id, purchasePrice: 39.99, currency: 'EUR', merchant: 'Testladen' }))
     expect(res.status).toBe(201)
-    const { ids } = (await res.json()) as { ids: string[] }
+    const { purchaseId, ids } = (await res.json()) as { purchaseId: string; ids: string[] }
     expect(ids).toHaveLength(3)
+
+    // Wiederholungskäufe sind erlaubt — eine zweite Purchase, drei weitere CollectionItems.
+    const again = await MARK_PURCHASED(req({ beybladeId: beyblade.id }))
+    expect(again.status).toBe(201)
+    const second = (await again.json()) as { purchaseId: string; ids: string[] }
+    expect(second.purchaseId).not.toBe(purchaseId)
+    const purchases = await prisma.purchase.findMany({ where: { userId: user.id, beybladeId: beyblade.id } })
+    expect(purchases).toHaveLength(2)
+    const first = purchases.find((p) => p.id === purchaseId)!
+    expect(first.price).toBe(39.99)
+    expect(first.currency).toBe('EUR')
+    expect(first.merchant).toBe('Testladen')
+    expect(first.boughtAt).toBeNull()
 
     const rows = await prisma.collectionItem.findMany({ where: { id: { in: ids } } })
     expect(rows).toHaveLength(3)
-    expect(rows.every((r) => r.sourceBuildId === official.build.id)).toBe(true)
+    expect(rows.every((r) => r.sourceBeybladeId === beyblade.id)).toBe(true)
     expect(rows.every((r) => r.merchant === 'Testladen')).toBe(true)
     const partIds = rows.map((r) => r.partOrBeyId).sort()
-    expect(partIds).toEqual([official.bit.id, official.blade.id, official.ratchet.id].sort())
+    expect(partIds).toEqual([bit.id, blade.id, ratchet.id].sort())
 
     // Each row stays independently deletable — deleting one leaves the other two intact.
     const delRes = await DELETE_ITEM(new Request(`http://localhost/api/collection/${ids[0]}`, { method: 'DELETE' }), { params: Promise.resolve({ id: ids[0] }) })
-    // [FIX] app/api/collection/[id]/route.ts's DELETE has always returned 200 + { ok: true },
-    // not 204 — a stale test expectation never actually validated against real infra before.
     expect(delRes.status).toBe(200)
     const remaining = await prisma.collectionItem.findMany({ where: { id: { in: ids } } })
     expect(remaining).toHaveLength(2)
 
-    await prisma.collectionItem.deleteMany({ where: { id: { in: ids } } })
-    await prisma.build.deleteMany({ where: { id: { in: [official.build.id, casual.build.id] } } })
-    await prisma.part.deleteMany({
-      where: { id: { in: [official.blade.id, official.ratchet.id, official.bit.id, casual.blade.id, casual.ratchet.id, casual.bit.id] } },
-    })
+    await prisma.collectionItem.deleteMany({ where: { userId: user.id } })
+    await prisma.purchase.deleteMany({ where: { userId: user.id } })
+    await prisma.beyblade.delete({ where: { id: beyblade.id } })
+    await prisma.part.deleteMany({ where: { id: { in: [blade.id, ratchet.id, bit.id] } } })
     await prisma.user.delete({ where: { id: user.id } })
   })
 })

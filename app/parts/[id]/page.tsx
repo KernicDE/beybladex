@@ -1,11 +1,12 @@
-// app/parts/[id]/page.tsx (RC16 #105; #108 Kuratoren-Edit, #106 Bit-Anzeige)
+// app/parts/[id]/page.tsx (RC16 #105; #108 Kuratoren-Edit, #106 Bit-Anzeige; MVP4 #141)
 // Oeffentliche Einzelteil-Detailseite (Blade/Ratchet/Bit/…): Name, Kategorie, Hersteller,
-// Bey-Typ, Gewicht, Bild plus Auto-Meta-Winrate (getPartStats) und dem Rueckverweis, in
-// welchen Builds das Teil vorkommt (OR ueber alle 7 Slot-FKs, RC16 #122). Oeffentliche
-// Katalog-Oberflaeche; seit #108 aber force-dynamic — das Kuratoren-Formular (PartForm,
-// Direct-Authoring-Tier TRUSTED/ADMIN, gleiche Gate-Logik wie app/settings/admin/parts)
-// darf nicht in den Full-Route-Cache fuer Gaeste geraten. Bits rendern als
-// „Kurzcode (Vollname)" (#106).
+// Bey-Typ, Gewicht, Bild plus Auto-Meta-Winrate (getPartStats) und den Rueckverweisen, in
+// welchen Beyblades (offizielle Sets) und Builds (persönliche Kombis) das Teil vorkommt —
+// OR über alle 7 Slot-FKs via lib/assembly.ts partOccurrenceWhere (DIE Occurrence-Stelle,
+// RC16 #122). Oeffentliche Katalog-Oberflaeche; seit #108 aber force-dynamic — das Kuratoren-
+// Formular (PartForm, Direct-Authoring-Tier TRUSTED/ADMIN, gleiche Gate-Logik wie
+// app/settings/admin/parts) darf nicht in den Full-Route-Cache fuer Gaeste geraten. Bits
+// rendern als „Kurzcode (Vollname)" (#106).
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -20,7 +21,7 @@ import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { PartForm } from '@/components/admin/PartForm'
 import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
-import { BUILD_PART_SLOTS } from '@/lib/buildSearch'
+import { partOccurrenceWhere } from '@/lib/assembly'
 import { formatBitDisplay } from '@/lib/buildNaming'
 
 export const dynamic = 'force-dynamic'
@@ -51,14 +52,30 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
     : null
   const canAuthor = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
 
-  const [stats, builds] = await Promise.all([
+  const [stats, builds, beyblades] = await Promise.all([
     getPartStats([id]),
     prisma.build.findMany({
-      // Rueckverweis: ein Teil kann in jedem der 7 Slots stecken (RC16 #122 — je nach Bauform).
-      where: { OR: BUILD_PART_SLOTS.map((slot) => ({ [`${slot}Id`]: id })) },
+      // Rueckverweis (persönliche Builds): ein Teil kann in jedem der 7 Slots stecken
+      // (RC16 #122 — je nach Bauform).
+      where: partOccurrenceWhere(id),
       orderBy: { id: 'asc' },
       take: BUILDS_PER_PAGE,
       include: BUILD_INCLUDE,
+    }),
+    prisma.beyblade.findMany({
+      // Rueckverweis (offizielle Sets) — dasselbe Occurrence-where auf dem Beyblade-Modell.
+      where: partOccurrenceWhere(id),
+      orderBy: { id: 'asc' },
+      take: BUILDS_PER_PAGE,
+      include: {
+        blade: { select: { id: true, name: true, imageId: true, beyType: true } },
+        lockChip: { select: { id: true, name: true, beyType: true } },
+        overBlade: { select: { id: true, name: true } },
+        metalBlade: { select: { id: true, name: true } },
+        assistBlade: { select: { id: true, name: true } },
+        ratchet: { select: { id: true, name: true } },
+        bit: { select: { id: true, name: true } },
+      },
     }),
   ])
   const winRates = await getBuildStats(builds.map((b) => b.id))
@@ -101,6 +118,41 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
         </div>
       </Card>
 
+      <section aria-labelledby="part-beyblades" className="space-y-3">
+        <h2 id="part-beyblades" className="text-lg font-semibold">
+          In {beyblades.length} Beyblade{beyblades.length === 1 ? '' : 's'} (Sets) enthalten
+        </h2>
+        {beyblades.length === 0 ? (
+          <EmptyState
+            title="In keinem Set enthalten"
+            description="Sobald offizielle Sets mit diesem Teil im Katalog sind, erscheinen sie hier."
+          />
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {beyblades.map((beyblade) => (
+              <li key={beyblade.id}>
+                <BuildCard
+                  build={{
+                    id: beyblade.id,
+                    type: beyblade.blade?.beyType ?? beyblade.lockChip?.beyType ?? 'BALANCE',
+                    blade: beyblade.blade,
+                    lockChip: beyblade.lockChip,
+                    overBlade: beyblade.overBlade,
+                    metalBlade: beyblade.metalBlade,
+                    assistBlade: beyblade.assistBlade,
+                    ratchet: beyblade.ratchet,
+                    bit: beyblade.bit,
+                    name: beyblade.name,
+                    imageId: beyblade.imageId,
+                  }}
+                  href={`/beyblades/${beyblade.id}`}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section aria-labelledby="part-builds" className="space-y-3">
         <h2 id="part-builds" className="text-lg font-semibold">In {builds.length} Build{builds.length === 1 ? '' : 's'} enthalten</h2>
         {builds.length === 0 ? (
@@ -124,9 +176,7 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
                     ratchet: build.ratchet,
                     bit: build.bit,
                     name: build.name,
-                    isOfficialSet: build.isOfficialSet,
                     imageId: build.imageId,
-                    productCode: build.productCode,
                   }}
                   winRate={winRates.get(build.id) ?? null}
                 />

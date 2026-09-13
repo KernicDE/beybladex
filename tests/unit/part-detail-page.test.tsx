@@ -9,6 +9,7 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     part: { findUnique: vi.fn() },
     build: { findMany: vi.fn() },
+    beyblade: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
   },
 }))
@@ -24,6 +25,7 @@ import PartDetailPage from '@/app/parts/[id]/page'
 
 const partFindUnique = vi.mocked(prisma.part.findUnique)
 const buildFindMany = vi.mocked(prisma.build.findMany)
+const beybladeFindMany = vi.mocked(prisma.beyblade.findMany)
 
 const PART = {
   id: 'p1',
@@ -44,29 +46,29 @@ const PART = {
 beforeEach(() => {
   vi.clearAllMocks()
   buildFindMany.mockResolvedValue([] as never)
+  beybladeFindMany.mockResolvedValue([] as never)
 })
 
-describe('PartDetailPage (issue #105)', () => {
-  it('sucht Builds OR ueber alle 7 Slot-FKs', async () => {
+describe('PartDetailPage (issue #105; MVP4 #141 — Beyblades UND Builds)', () => {
+  const OCCURRENCE_WHERE = {
+    OR: [
+      { bladeId: 'p1' },
+      { lockChipId: 'p1' },
+      { overBladeId: 'p1' },
+      { metalBladeId: 'p1' },
+      { assistBladeId: 'p1' },
+      { ratchetId: 'p1' },
+      { bitId: 'p1' },
+    ],
+  }
+
+  it('sucht Builds UND Beyblades OR ueber alle 7 Slot-FKs (dasselbe Occurrence-where)', async () => {
     partFindUnique.mockResolvedValue(PART as never)
 
     await PartDetailPage({ params: Promise.resolve({ id: 'p1' }) } as never)
 
-    expect(buildFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          OR: [
-            { bladeId: 'p1' },
-            { lockChipId: 'p1' },
-            { overBladeId: 'p1' },
-            { metalBladeId: 'p1' },
-            { assistBladeId: 'p1' },
-            { ratchetId: 'p1' },
-            { bitId: 'p1' },
-          ],
-        },
-      }),
-    )
+    expect(buildFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: OCCURRENCE_WHERE }))
+    expect(beybladeFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: OCCURRENCE_WHERE }))
   })
 
   it('rendert Bits als „Kurzcode (Vollname)" (#106) und 404t bei unbekanntem Teil', async () => {

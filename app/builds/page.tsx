@@ -1,11 +1,11 @@
 // app/builds/page.tsx
-// RC16 (#104): /builds ist die persönliche Build-Fläche — nur noch die eigenen (nicht-
-// offiziellen) Kombinationen der eingeloggten Person (Login-Gate wie /collection, da eigene
-// Builds privat sind; offizielle Sets leben künftig im Katalog-Tab der Sammlung, #102).
+// RC16 (#104): /builds ist die persönliche Build-Fläche — nur noch die eigenen Kombinationen
+// der eingeloggten Person (Login-Gate wie /collection, da eigene Builds privat sind; offizielle
+// Sets leben seit MVP4 #141 im Beyblade-Modell und im Katalog-Tab der Sammlung, #102).
 // "Nur eigene" nutzt denselben onlyMineUserId-Filter wie GET /api/builds?onlyMine=1 (Builds
-// tragen keinen Owner-FK — Verfügbarkeit = alle Teile in der eigenen Sammlung) plus
-// personalOnly (isOfficialSet: false). Die freie Teile-Kombination (BuildComboForm) ist nur
-// hier möglich, hinter ?neu=1 (gleiche Konvention wie /collection?neu=1).
+// tragen keinen Owner-FK — Verfügbarkeit = alle Teile in der eigenen Sammlung). Die freie
+// Teile-Kombination (BuildComboForm) ist nur hier möglich, hinter ?neu=1 (gleiche Konvention
+// wie /collection?neu=1).
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { searchBuilds, BUILD_PAGE_SIZE } from '@/lib/buildSearch'
@@ -40,7 +40,6 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
     q: query,
     cursor: typeof cursor === 'string' ? cursor : null,
     onlyMineUserId: session.user.id,
-    personalOnly: true,
   })
   // Auto-Meta badges (Phase 5 Part D): ONE batch mget for the whole page, never per-card
   // round trips. Whole-cache-empty falls back to a direct DB computation inside getBuildStats.
@@ -118,13 +117,8 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
                   assistBlade: build.assistBlade,
                   ratchet: build.ratchet,
                   bit: build.bit,
-                  // [Fix while touching this object for productCode] name/isOfficialSet/imageId
-                  // were never passed here, so BuildCard always fell back to the blade name and
-                  // never showed the "Set" badge — even for official Sets like "Sword Dran 3-60F".
                   name: build.name,
-                  isOfficialSet: build.isOfficialSet,
                   imageId: build.imageId,
-                  productCode: build.productCode,
                 }}
                 winRate={winRates.get(build.id) ?? null}
               />

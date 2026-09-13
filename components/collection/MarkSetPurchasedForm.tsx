@@ -1,10 +1,10 @@
-// components/collection/MarkSetPurchasedForm.tsx (Phase 11, item 6; RC16 #103 Direkt-Variante)
-// "Set als gekauft markieren" — an official-Set search picker (isOfficialSet: true only) plus
-// the same shared purchase fields as CollectionItemForm, POSTing to
-// /api/collection/mark-set-purchased. Creates THREE linked CollectionItem rows in one call —
-// see that route's header comment for why (provenance, not a new ownership unit).
-// RC16 (#103): mit `build` als Prop entfaellt die Set-Suche — die Build-Detailseite kennt
-// buildId bereits und rendert nur noch die Kauf-Felder.
+// components/collection/MarkSetPurchasedForm.tsx (Phase 11, item 6; RC16 #103; MVP4 #141)
+// "Set als gekauft markieren" — eine Beyblade-Suche (GET /api/beyblades) plus die gleichen
+// Kauf-Felder wie CollectionItemForm, POSTing zu /api/collection/mark-set-purchased mit
+// beybladeId. Schreibt EINE Purchase-Row (Besitz-Einheit, Basis des Preisverlaufs) plus je
+// belegtem Slot eine CollectionItem-Row als Provenienz — siehe die Route für warum.
+// RC16 (#103): mit `beyblade` als Prop entfaellt die Suche — die Detailseite kennt die id
+// bereits und rendert nur noch die Kauf-Felder.
 'use client'
 
 import { useState } from 'react'
@@ -15,18 +15,18 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { errorMessage } from '@/lib/errorCopy'
 
-interface SetOption {
+interface BeybladeOption {
   id: string
-  name: string | null
+  name: string
 }
 
-export function MarkSetPurchasedForm({ build = null }: { build?: { id: string; name: string | null } | null }) {
+export function MarkSetPurchasedForm({ beyblade = null }: { beyblade?: { id: string; name: string } | null }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SetOption[]>([])
-  // RC16 (#103): steht der Build bereits fest (Detailseite), entfaellt die Set-Suche —
-  // buildId ist bekannt, die Komponente startet direkt mit dem ausgewaehlten Set.
-  const [selected, setSelected] = useState<SetOption | null>(build ? { id: build.id, name: build.name } : null)
+  const [results, setResults] = useState<BeybladeOption[]>([])
+  // RC16 (#103): steht die Beyblade bereits fest (Detailseite), entfaellt die Suche —
+  // beybladeId ist bekannt, die Komponente startet direkt mit dem ausgewaehlten Set.
+  const [selected, setSelected] = useState<BeybladeOption | null>(beyblade)
   const [price, setPrice] = useState('')
   const [currency, setCurrency] = useState('EUR')
   const [merchant, setMerchant] = useState('')
@@ -37,10 +37,10 @@ export function MarkSetPurchasedForm({ build = null }: { build?: { id: string; n
 
   async function search(e: React.FormEvent) {
     e.preventDefault()
-    const res = await fetch(`/api/builds?q=${encodeURIComponent(query.trim())}`)
+    const res = await fetch(`/api/beyblades?q=${encodeURIComponent(query.trim())}`)
     if (!res.ok) return
-    const body = (await res.json()) as { builds: { id: string; name: string | null; isOfficialSet: boolean }[] }
-    setResults(body.builds.filter((b) => b.isOfficialSet).map((b) => ({ id: b.id, name: b.name })))
+    const body = (await res.json()) as { beyblades: BeybladeOption[] }
+    setResults(body.beyblades)
   }
 
   async function submit(e: React.FormEvent) {
@@ -52,7 +52,7 @@ export function MarkSetPurchasedForm({ build = null }: { build?: { id: string; n
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        buildId: selected.id,
+        beybladeId: selected.id,
         purchasePrice: price === '' ? undefined : Number(price),
         currency,
         merchant: merchant === '' ? undefined : merchant,
@@ -71,7 +71,7 @@ export function MarkSetPurchasedForm({ build = null }: { build?: { id: string; n
   if (done) {
     return (
       <p role="status" className="text-sm text-type-balance">
-        Set als gekauft markiert — alle drei Teile sind jetzt in deiner Sammlung.
+        Set als gekauft markiert — es ist jetzt in deinem Besitz und alle Teile in deiner Sammlung.
       </p>
     )
   }
@@ -80,13 +80,13 @@ export function MarkSetPurchasedForm({ build = null }: { build?: { id: string; n
     <div className="space-y-3">
       {!selected ? (
         <form onSubmit={search} className="flex items-center gap-2">
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Set-Name, z. B. Reaper Rhino…" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Set-Name oder Code, z. B. Reaper Rhino…" />
           <Button variant="secondary" onClick={search}>Suchen</Button>
         </form>
       ) : (
         <p className="text-sm">
           Set: <strong>{selected.name}</strong>{' '}
-          {!build && (
+          {!beyblade && (
             <button type="button" onClick={() => setSelected(null)} className="text-x-cyan-text underline">
               ändern
             </button>

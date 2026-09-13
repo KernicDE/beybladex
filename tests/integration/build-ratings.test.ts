@@ -1,8 +1,8 @@
 // tests/integration/build-ratings.test.ts
-// Phase 5 Part A: /api/builds/[id]/ratings. A second rating from the same user UPSERTS rather
-// than duplicates (@@unique([buildId, userId])); a non-owner cannot PATCH/DELETE another
-// user's rating (403/404); a TRUSTED user can moderate-remove any rating and it writes an
-// append-only AuditLog row. CI-only (Postgres/Redis).
+// Phase 5 Part A; MVP4 #141 (polymorphes Rating): /api/builds/[id]/ratings. A second rating
+// from the same user UPSERTS rather than duplicates (@@unique([targetType, targetId, userId]));
+// a non-owner cannot PATCH/DELETE another user's rating (403/404); a TRUSTED user can
+// moderate-remove any rating and it writes an append-only AuditLog row. CI-only (Postgres/Redis).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { GET, POST, PATCH, DELETE } from '@/app/api/builds/[id]/ratings/route'
 import { prisma } from '@/lib/db'
@@ -62,7 +62,7 @@ describe('build ratings', () => {
     expect((await POST(postRating(build.id, 4, null), ctx(build.id))).status).toBe(201)
     expect((await POST(postRating(build.id, 5, 'Spielt sich toll'), ctx(build.id))).status).toBe(201)
 
-    const ratings = await prisma.rating.findMany({ where: { buildId: build.id, userId: user.id } })
+    const ratings = await prisma.rating.findMany({ where: { targetType: 'BUILD', targetId: build.id, userId: user.id } })
     expect(ratings).toHaveLength(1)
     expect(ratings[0].stars).toBe(5)
     expect(ratings[0].comment).toBe('Spielt sich toll')
@@ -78,7 +78,7 @@ describe('build ratings', () => {
     const stranger = await makeUser('r_stranger')
     mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
     await POST(postRating(build.id, 3, 'Meine Meinung'), ctx(build.id))
-    const rating = (await prisma.rating.findFirst({ where: { buildId: build.id } }))!
+    const rating = (await prisma.rating.findFirst({ where: { targetType: 'BUILD', targetId: build.id } }))!
     ids.ratings.push(rating.id)
 
     mockAuth.mockResolvedValue(asSession({ id: stranger.id, name: stranger.username }))
@@ -103,7 +103,7 @@ describe('build ratings', () => {
     const trusted = await makeUser('m_trusted', 'TRUSTED')
     mockAuth.mockResolvedValue(asSession({ id: owner.id, name: owner.username }))
     await POST(postRating(build.id, 2, 'anstößiger Testkommentar'), ctx(build.id))
-    const rating = (await prisma.rating.findFirst({ where: { buildId: build.id } }))!
+    const rating = (await prisma.rating.findFirst({ where: { targetType: 'BUILD', targetId: build.id } }))!
     ids.ratings.push(rating.id)
 
     mockAuth.mockResolvedValue(asSession({ id: trusted.id, name: trusted.username }))
