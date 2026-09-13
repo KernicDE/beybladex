@@ -228,7 +228,7 @@
   },
   "builds": {
     "heading": "Builds",
-    "intro": "Combinations of blade, ratchet and bit. Search for a part name to find builds that use it.",
+    "intro": "Your personal combinations of blade, ratchet and bit — visible only to you. Search for a part name to find your own builds that use it.",
     "searchLabel": "Search builds",
     "searchPlaceholder": "Part name, e.g. DranSword…",
     "search": "Search",
@@ -240,7 +240,13 @@
     "ctaAddParts": "Add parts",
     "ctaDiscoverEvents": "Discover upcoming events",
     "loadMore": "Load more builds",
-    "pageSize": "Page size: {size} builds"
+    "pageSize": "Page size: {size} builds",
+    "gateTitle": "Builds are members-only",
+    "gateDescription": "Create your own combinations from your parts and rate them. Sign in to see your builds.",
+    "newBuild": "New build",
+    "emptyMineTitle": "No own builds yet",
+    "emptyMineDescription": "Combine any parts into your personal build. Official sets live in the collection catalog.",
+    "browseCatalog": "Browse the catalog"
   },
   "collection": {
     "gateTitle": "The collection is members-only",

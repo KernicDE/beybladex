@@ -1,8 +1,9 @@
-// lib/buildSearch.ts (Phase 5 Part A; RC16 #122 — variable Slot-Liste)
-// Server-side build search, shared by /builds, /search's "Teile" section and the deck
-// builder's part-picker (via /builds?q=…). A query matches a build when ANY of its (1–6)
-// parts' names start with the prefix (case-insensitive) — the hard prerequisite for the
-// deck-builder picker per [REVIEW-FIX: ux-product §8]. Cursor-paginated per [REVIEW-FIX: P3].
+// lib/buildSearch.ts (Phase 5 Part A; RC16 #122 — variable Slot-Liste, #102/#104 — Scope-Filter)
+// Server-side build search, shared by /builds (nur eigene Kombis), /collection's Katalog-Tab
+// (offizielle Sets), /search's "Teile" section and the deck builder's part-picker (via
+// /builds?q=…). A query matches a build when ANY of its (1–6) parts' names start with the
+// prefix (case-insensitive) — the hard prerequisite for the deck-builder picker per
+// [REVIEW-FIX: ux-product §8]. Cursor-paginated per [REVIEW-FIX: P3].
 import { prisma } from '@/lib/db'
 import type { PartCategory } from '@prisma/client'
 
@@ -11,17 +12,27 @@ export const BUILD_PAGE_SIZE = 20
 // RC16 (#122) — alle Part-Slots in fester Reihenfolge (Anzeige + Verfügbarkeitslogik).
 export const BUILD_PART_SLOTS = ['blade', 'lockChip', 'overBlade', 'metalBlade', 'assistBlade', 'ratchet', 'bit'] as const
 
-export async function searchBuilds(opts: { q?: string; cursor?: string | null; take?: number; onlyMineUserId?: string | null }) {
+export async function searchBuilds(opts: { q?: string; cursor?: string | null; take?: number; onlyMineUserId?: string | null; officialOnly?: boolean; personalOnly?: boolean }) {
   const q = (opts.q ?? '').trim()
   const take = opts.take ?? BUILD_PAGE_SIZE
   const rows = await prisma.build.findMany({
-    where: q
-      ? {
-          // RC16 (#122) — OR über alle 7 Slot-Relationen: CX-Builds matchen auf Lock Chip /
-          // Over / Metal / Assist Blade, Ratchet-Integrated auf Blade + Bit.
-          OR: BUILD_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' } } })),
-        }
-      : {},
+    where: {
+      AND: [
+        ...(q
+          ? [
+              {
+                // RC16 (#122) — OR über alle 7 Slot-Relationen: CX-Builds matchen auf Lock Chip /
+                // Over / Metal / Assist Blade, Ratchet-Integrated auf Blade + Bit.
+                OR: BUILD_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' } } })),
+              },
+            ]
+          : []),
+        // RC16 (#102/#104) — Rollenverteilung Katalog vs. eigene Builds: /collection?tab=katalog
+        // zeigt nur offizielle Sets, /builds nur persönliche (nicht-offizielle) Kombinationen.
+        ...(opts.officialOnly ? [{ isOfficialSet: true }] : []),
+        ...(opts.personalOnly ? [{ isOfficialSet: false }] : []),
+      ],
+    },
     orderBy: { id: 'asc' },
     take: take + 1,
     ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
