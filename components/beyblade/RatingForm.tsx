@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
-import { Select } from '@/components/ui/Select'
+import { StarRatingInput } from '@/components/beyblade/StarRatingInput'
 import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { RATING_COMMENT_MAX } from '@/lib/markdownFieldCaps'
 
@@ -20,7 +20,7 @@ export function RatingForm({
   existing?: { ratingId: string; stars: number; comment: string | null } | null
 }) {
   const router = useRouter()
-  const [stars, setStars] = useState(existing?.stars.toString() ?? '5')
+  const [stars, setStars] = useState(existing?.stars ?? 5)
   const [comment, setComment] = useState(existing?.comment ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -32,7 +32,7 @@ export function RatingForm({
     const res = await fetch(`/api/builds/${buildId}/ratings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stars: Number(stars), comment: comment.trim() || null }),
+      body: JSON.stringify({ stars, comment: comment.trim() || null }),
     })
     setBusy(false)
     if (!res.ok) {
@@ -46,15 +46,10 @@ export function RatingForm({
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Sterne">
-          <Select value={stars} onChange={(e) => setStars(e.target.value)}>
-            {[5, 4, 3, 2, 1].map((n) => (
-              <option key={n} value={n}>{n} Sterne</option>
-            ))}
-          </Select>
-        </FormField>
-      </div>
+      {/* RC16 (#107): Hover-Sterne statt Dropdown — die Eingabe-UI ändert sich, das POST-Body-Format nicht. */}
+      <FormField label="Sterne">
+        <StarRatingInput value={stars} onChange={setStars} />
+      </FormField>
       <FormField label="Kommentar (optional, Markdown)">
         <MarkdownEditor value={comment} onChange={setComment} rows={3} maxLength={RATING_COMMENT_MAX} placeholder="Wie spielt sich der Build?" />
       </FormField>
