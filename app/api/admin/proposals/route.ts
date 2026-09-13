@@ -259,9 +259,8 @@ export async function PATCH(req: Request): Promise<Response> {
         proposal.kind === 'PART'
           ? `„${(proposal.payload as unknown as InlinePartPayload).name}“ ist jetzt im Katalog.`
           : `Das Set „${(proposal.payload as unknown as BuildProposalPayload).name}“ ist jetzt im Katalog.`,
-      // MVP4 #141: Beyblade-Detailseite kommt mit MVP4/4 (#144) — bis dahin landet der Link
-      // im Katalog-Tab der Sammlung.
-      link: result.createdBeybladeId ? '/collection?tab=katalog' : '/search',
+      // MVP4 #141/#144: genehmigte Sets landen im Beyblades-Tab der Sammlung.
+      link: result.createdBeybladeId ? '/collection?tab=beyblades' : '/search',
     })
     return Response.json({ id, status, ...result }, { status: 200 })
   } catch (err) {
