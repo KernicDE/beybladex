@@ -2,6 +2,9 @@
 // Build detail (Phase 5 Part A): the combo page spec §2.A promises — parts with images,
 // TypeBadge, and the rating/comment area below (list + form). The rating section is
 // per-user/live, so this page is force-dynamic per the caching half of the Regression Guard.
+// MVP4 (#143): Die Bewertungen laufen über die polymorphe Rating-API (targetType BUILD);
+// User-Sterne (RatingSummary) und Auto-Meta-Statistiken (WinRateBadge aus lib/meta) sind
+// bewusst getrennte Zeilen im Header — User-Meinung ≠ Turnier-Statistik.
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -11,12 +14,14 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { RatingForm } from '@/components/beyblade/RatingForm'
 import { RatingList } from '@/components/beyblade/RatingList'
+import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { BuildForm } from '@/components/admin/BuildForm'
 import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
+import { shapeRatingAggregate } from '@/lib/ratingAggregate'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +66,9 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
     viewerUsername = caller?.username ?? null
   }
 
-  const aggregate = await prisma.rating.aggregate({ where: { targetType: 'BUILD', targetId: id }, _avg: { stars: true }, _count: true })
+  const aggregate = shapeRatingAggregate(
+    await prisma.rating.aggregate({ where: { targetType: 'BUILD', targetId: id }, _avg: { stars: true }, _count: true }),
+  )
   const ownRating = viewerUsername ? buildRatings.find((r) => r.user.id === viewerId) : undefined
 
   // Auto-Meta win rates (Phase 5 Part D) — batch cache reads (single-key for the build, one
@@ -100,10 +107,10 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           </div>
           <TypeBadge type={build.type} />
         </div>
-        {aggregate._count > 0 && (
-          <p className="mt-2 text-sm text-current/60">
-            Ø {aggregate._avg.stars!.toFixed(1)} Sterne aus {aggregate._count} Bewertung{aggregate._count === 1 ? '' : 'en'}
-          </p>
+        {aggregate.count > 0 && (
+          <div className="mt-2">
+            <RatingSummary aggregate={aggregate} />
+          </div>
         )}
         <div className="mt-2">
           <WinRateBadge stats={buildStats.get(id) ?? null} />
@@ -155,7 +162,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         {viewerId ? (
           <Card>
             <RatingForm
-              buildId={id}
+              targetType="BUILD"
+              targetId={id}
               existing={ownRating ? { ratingId: ownRating.id, stars: ownRating.stars, comment: ownRating.comment } : null}
             />
           </Card>
@@ -165,7 +173,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           </Card>
         )}
         <RatingList
-          buildId={id}
+          targetType="BUILD"
+          targetId={id}
           canModerate={canModerate}
           ratings={buildRatings.map((r) => ({
             id: r.id,

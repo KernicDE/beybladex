@@ -1,8 +1,9 @@
-// app/beyblades/[id]/page.tsx (MVP4, #139/#141/#142)
+// app/beyblades/[id]/page.tsx (MVP4, #139/#141/#142/#143)
 // Beyblade-Detailseite (offizielles Set) — Minimal-Version zum Build-Split: Teile, abgeleiteter
-// Typ/Spinrichtung, Hersteller, Product Code, Set-Bild. Seit #142 außerdem: Kauf-Flow
-// (Formular + eigene Käufe, logged-in) und der öffentliche Preisverlauf. Bewertung und die
-// restliche IA/UX bauen in den Folge-Issues auf (Rating UI #143, IA/UX #144).
+// Typ/Spinrichtung, Hersteller, Product Code, Set-Bild. Seit #142: Kauf-Flow (Formular +
+// eigene Käufe, logged-in) und der öffentliche Preisverlauf. Seit #143: polymorphe Bewertung
+// (Durchschnitt im Header, Formular + Liste für eigene/alle). Die restliche IA/UX baut in
+// #144 auf („Build daraus erstellen").
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -14,12 +15,18 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { PurchaseForm } from '@/components/beyblade/PurchaseForm'
 import { PurchaseList } from '@/components/beyblade/PurchaseList'
+import { RatingForm } from '@/components/beyblade/RatingForm'
+import { RatingList } from '@/components/beyblade/RatingList'
+import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { PriceSparkline } from '@/components/collection/PriceSparkline'
 import { deriveAssemblyTraits } from '@/lib/assembly'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import { shapePriceHistory } from '@/lib/purchasePriceHistory'
+import { shapeRatingAggregate } from '@/lib/ratingAggregate'
 
 export const dynamic = 'force-dynamic'
+
+const RATING_PAGE_SIZE = 20
 
 export default async function BeybladeDetailPage({ params }: PageProps<'/beyblades/[id]'>) {
   const { id } = await params
@@ -57,6 +64,26 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
   ])
   const priceHistory = shapePriceHistory(priceRows)
 
+  // #143 — polymorphe Bewertung (targetType BEYBLADE): Durchschnitt/Anzahl fürs Header-Highlight
+  // plus die erste Seite der Liste. `own` hängt am Viewer, Moderation an TRUSTED/ADMIN.
+  const viewerId = session?.user?.id ?? null
+  const viewer = viewerId
+    ? await prisma.user.findUnique({ where: { id: viewerId }, select: { role: true } })
+    : null
+  const canModerate = viewer?.role === 'TRUSTED' || viewer?.role === 'ADMIN'
+
+  const [ratingAggRow, beybladeRatings] = await Promise.all([
+    prisma.rating.aggregate({ where: { targetType: 'BEYBLADE', targetId: id }, _avg: { stars: true }, _count: true }),
+    prisma.rating.findMany({
+      where: { targetType: 'BEYBLADE', targetId: id },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: RATING_PAGE_SIZE,
+      include: { user: { select: { id: true, username: true } } },
+    }),
+  ])
+  const ratingAggregate = shapeRatingAggregate(ratingAggRow)
+  const ownRating = viewerId ? beybladeRatings.find((r) => r.user.id === viewerId) : undefined
+
   const traits = deriveAssemblyTraits(beyblade.blade, beyblade.lockChip)
 
   const parts = [
@@ -90,6 +117,11 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
                 <Badge tone="neutral">{traits.spinDirection === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'}</Badge>
               )}
             </div>
+            {ratingAggregate.count > 0 && (
+              <div className="mt-2">
+                <RatingSummary aggregate={ratingAggregate} />
+              </div>
+            )}
           </div>
           {traits?.beyType && <TypeBadge type={traits.beyType} />}
         </div>
@@ -128,6 +160,40 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* #143 — polymorphe Bewertung: Formular (logged-in, editiert via Upsert) + Liste.
+          Eigene Bewertung ist direkt editierbar; Moderation (TRUSTED/ADMIN) entfernt fremde. */}
+      <section aria-labelledby="beyblade-ratings" className="space-y-3">
+        <h2 id="beyblade-ratings" className="text-lg font-semibold">Bewertungen</h2>
+        {viewerId ? (
+          <Card>
+            <RatingForm
+              targetType="BEYBLADE"
+              targetId={id}
+              placeholder="Wie spielt sich dieser Beyblade?"
+              existing={ownRating ? { ratingId: ownRating.id, stars: ownRating.stars, comment: ownRating.comment } : null}
+            />
+          </Card>
+        ) : (
+          <Card className="text-sm text-current/70">
+            <Link href="/login" className="underline underline-offset-2">Melde dich an</Link>, um diesen Beyblade zu bewerten.
+          </Card>
+        )}
+        <RatingList
+          targetType="BEYBLADE"
+          targetId={id}
+          canModerate={canModerate}
+          emptyDescription="Sei die erste Person, die diesen Beyblade bewertet."
+          ratings={beybladeRatings.map((r) => ({
+            id: r.id,
+            stars: r.stars,
+            comment: r.comment,
+            createdAt: r.createdAt.toISOString(),
+            username: r.user.username,
+            own: r.user.id === viewerId,
+          }))}
+        />
       </section>
 
       {/* #142 — Kauf-Flow: jeder angemeldete User kann (auch mehrfach) als gekauft markieren.

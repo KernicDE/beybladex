@@ -1,7 +1,8 @@
 // components/beyblade/RatingForm.tsx
-// Create/edit a rating+comment on a build. One rating per user per build — POST upserts
-// server-side (@@unique([buildId, userId])), so this same form handles "first rating" and
-// "edit mine" (pass `existing`). Client-side companion of the server-side enforcement.
+// Create/edit a rating+comment on a polymorphic target (BEYBLADE | BUILD | PART). One rating
+// per user per target — POST upserts server-side (@@unique([targetType, targetId, userId])),
+// so this same form handles "first rating" and "edit mine" (pass `existing`). Client-side
+// companion of the server-side enforcement.
 'use client'
 
 import { useState } from 'react'
@@ -13,11 +14,16 @@ import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { RATING_COMMENT_MAX } from '@/lib/markdownFieldCaps'
 
 export function RatingForm({
-  buildId,
+  targetType,
+  targetId,
   existing = null,
+  placeholder = 'Wie spielt sich der Build?',
 }: {
-  buildId: string
+  targetType: string
+  targetId: string
   existing?: { ratingId: string; stars: number; comment: string | null } | null
+  /** Eingabe-Hinweis — seitenabhängig (Build/Beyblade/Teil). */
+  placeholder?: string
 }) {
   const router = useRouter()
   const [stars, setStars] = useState(existing?.stars ?? 5)
@@ -29,7 +35,7 @@ export function RatingForm({
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const res = await fetch(`/api/builds/${buildId}/ratings`, {
+    const res = await fetch(`/api/ratings?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stars, comment: comment.trim() || null }),
@@ -51,7 +57,7 @@ export function RatingForm({
         <StarRatingInput value={stars} onChange={setStars} />
       </FormField>
       <FormField label="Kommentar (optional, Markdown)">
-        <MarkdownEditor value={comment} onChange={setComment} rows={3} maxLength={RATING_COMMENT_MAX} placeholder="Wie spielt sich der Build?" />
+        <MarkdownEditor value={comment} onChange={setComment} rows={3} maxLength={RATING_COMMENT_MAX} placeholder={placeholder} />
       </FormField>
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
       <Button type="submit" disabled={busy}>

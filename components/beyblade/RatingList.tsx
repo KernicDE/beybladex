@@ -1,9 +1,9 @@
 // components/beyblade/RatingList.tsx
-// Rating/comment list for a build detail page. Each row: stars, author (username — the
-// platform identity, always visible per lib/privacy.ts), date, comment. The author's own
-// rows get Edit (prefills RatingForm) and Delete; a TRUSTED/ADMIN viewer gets a moderation
-// remove on any row (server writes the AuditLog row — see the ratings route). `own` is
-// computed server-side and passed in — the client never needs the viewer's id.
+// Rating/comment list for a polymorphic target detail page (BEYBLADE | BUILD | PART). Each row:
+// stars, author (username — the platform identity, always visible per lib/privacy.ts), date,
+// comment. The author's own rows get Edit (prefills RatingForm) and Delete; a TRUSTED/ADMIN
+// viewer gets a moderation remove on any row (server writes the AuditLog row — see the ratings
+// route). `own` is computed server-side and passed in — the client never needs the viewer's id.
 'use client'
 
 import { useState } from 'react'
@@ -23,13 +23,18 @@ export interface RatingListItem {
 }
 
 export function RatingList({
-  buildId,
+  targetType,
+  targetId,
   canModerate,
   ratings,
+  emptyDescription = 'Sei die erste Person, die diesen Build bewertet.',
 }: {
-  buildId: string
+  targetType: string
+  targetId: string
   canModerate: boolean
   ratings: RatingListItem[]
+  /** Leerstands-Text — seitenabhängig (diesen Build / diesen Beyblade / dieses Teil). */
+  emptyDescription?: string
 }) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -37,13 +42,16 @@ export function RatingList({
 
   async function remove(ratingId: string) {
     setBusyId(ratingId)
-    await fetch(`/api/builds/${buildId}/ratings?ratingId=${encodeURIComponent(ratingId)}`, { method: 'DELETE' })
+    await fetch(
+      `/api/ratings?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}&ratingId=${encodeURIComponent(ratingId)}`,
+      { method: 'DELETE' },
+    )
     setBusyId(null)
     router.refresh()
   }
 
   if (ratings.length === 0) {
-    return <EmptyState title="Noch keine Bewertungen" description="Sei die erste Person, die diesen Build bewertet." />
+    return <EmptyState title="Noch keine Bewertungen" description={emptyDescription} />
   }
 
   return (
@@ -52,7 +60,7 @@ export function RatingList({
         <li key={rating.id} className="rounded-xl border border-x-cyan/20 p-4">
           {editingId === rating.id ? (
             <div className="space-y-3">
-              <RatingForm buildId={buildId} existing={{ ratingId: rating.id, stars: rating.stars, comment: rating.comment }} />
+              <RatingForm targetType={targetType} targetId={targetId} existing={{ ratingId: rating.id, stars: rating.stars, comment: rating.comment }} />
               <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Abbrechen</Button>
             </div>
           ) : (

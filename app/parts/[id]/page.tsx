@@ -1,6 +1,7 @@
-// app/parts/[id]/page.tsx (RC16 #105; #108 Kuratoren-Edit, #106 Bit-Anzeige; MVP4 #141)
+// app/parts/[id]/page.tsx (RC16 #105; #108 Kuratoren-Edit, #106 Bit-Anzeige; MVP4 #141/#143)
 // Oeffentliche Einzelteil-Detailseite (Blade/Ratchet/Bit/…): Name, Kategorie, Hersteller,
-// Bey-Typ, Gewicht, Bild plus Auto-Meta-Winrate (getPartStats) und den Rueckverweisen, in
+// Bey-Typ, Gewicht, Bild plus Auto-Meta-Winrate (getPartStats), der polymorphen User-Bewertung
+// (#143 — targetType PART, Durchschnitt im Header, Formular + Liste) und den Rueckverweisen, in
 // welchen Beyblades (offizielle Sets) und Builds (persönliche Kombis) das Teil vorkommt —
 // OR über alle 7 Slot-FKs via lib/assembly.ts partOccurrenceWhere (DIE Occurrence-Stelle,
 // RC16 #122). Oeffentliche Katalog-Oberflaeche; seit #108 aber force-dynamic — das Kuratoren-
@@ -18,15 +19,20 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { BuildCard } from '@/components/beyblade/BuildCard'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { RatingForm } from '@/components/beyblade/RatingForm'
+import { RatingList } from '@/components/beyblade/RatingList'
+import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { PartForm } from '@/components/admin/PartForm'
 import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { partOccurrenceWhere } from '@/lib/assembly'
 import { formatBitDisplay } from '@/lib/buildNaming'
+import { shapeRatingAggregate } from '@/lib/ratingAggregate'
 
 export const dynamic = 'force-dynamic'
 
 const BUILDS_PER_PAGE = 50
+const RATING_PAGE_SIZE = 20
 
 const BUILD_INCLUDE = {
   blade: { select: { id: true, name: true, imageId: true, beyType: true } },
@@ -80,6 +86,22 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
   ])
   const winRates = await getBuildStats(builds.map((b) => b.id))
 
+  // #143 — polymorphe Bewertung (targetType PART): Durchschnitt/Anzahl fürs Header-Highlight
+  // plus die erste Seite der Liste. Teil-Ratings sind neu (vorher nur Builds). User-Sterne
+  // (RatingSummary) und Auto-Meta-Winrate (WinRateBadge) bleiben getrennte Angaben.
+  const viewerId = session?.user?.id ?? null
+  const [ratingAggRow, partRatings] = await Promise.all([
+    prisma.rating.aggregate({ where: { targetType: 'PART', targetId: id }, _avg: { stars: true }, _count: true }),
+    prisma.rating.findMany({
+      where: { targetType: 'PART', targetId: id },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: RATING_PAGE_SIZE,
+      include: { user: { select: { id: true, username: true } } },
+    }),
+  ])
+  const ratingAggregate = shapeRatingAggregate(ratingAggRow)
+  const ownRating = viewerId ? partRatings.find((r) => r.user.id === viewerId) : undefined
+
   const displayName = part.category === 'BIT' ? formatBitDisplay(part.name) : part.name
 
   return (
@@ -113,10 +135,49 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
             <div className="mt-2">
               <WinRateBadge stats={stats.get(id) ?? null} />
             </div>
+            {ratingAggregate.count > 0 && (
+              <div className="mt-2">
+                <RatingSummary aggregate={ratingAggregate} />
+              </div>
+            )}
             {part.weightGrams && <p className="mt-1 text-sm text-current/60">{part.weightGrams} g</p>}
           </div>
         </div>
       </Card>
+
+      {/* #143 — polymorphe Bewertung (Teil-Ratings sind neu — vorher nur Builds): Formular
+          (logged-in, editiert via Upsert) + Liste. Moderation = TRUSTED/ADMIN (wie canAuthor). */}
+      <section aria-labelledby="part-ratings" className="space-y-3">
+        <h2 id="part-ratings" className="text-lg font-semibold">Bewertungen</h2>
+        {viewerId ? (
+          <Card>
+            <RatingForm
+              targetType="PART"
+              targetId={id}
+              placeholder="Wie spielt sich dieses Teil?"
+              existing={ownRating ? { ratingId: ownRating.id, stars: ownRating.stars, comment: ownRating.comment } : null}
+            />
+          </Card>
+        ) : (
+          <Card className="text-sm text-current/70">
+            <Link href="/login" className="underline underline-offset-2">Melde dich an</Link>, um dieses Teil zu bewerten.
+          </Card>
+        )}
+        <RatingList
+          targetType="PART"
+          targetId={id}
+          canModerate={canAuthor}
+          emptyDescription="Sei die erste Person, die dieses Teil bewertet."
+          ratings={partRatings.map((r) => ({
+            id: r.id,
+            stars: r.stars,
+            comment: r.comment,
+            createdAt: r.createdAt.toISOString(),
+            username: r.user.username,
+            own: r.user.id === viewerId,
+          }))}
+        />
+      </section>
 
       <section aria-labelledby="part-beyblades" className="space-y-3">
         <h2 id="part-beyblades" className="text-lg font-semibold">
