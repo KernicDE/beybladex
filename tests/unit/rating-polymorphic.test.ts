@@ -266,6 +266,45 @@ describe('PATCH / PUT /api/ratings (#143)', () => {
   })
 })
 
+describe('Legacy-Pfad /api/builds/[id]/ratings (#143 — Delegation auf die polymorphe API)', () => {
+  it('POST reicht Body + targetType=BUILD durch (Upsert, 201)', async () => {
+    buildFindUnique.mockResolvedValue({ id: 'b1' })
+    ratingUpsert.mockResolvedValue({ id: 'r1' })
+
+    const { POST: POST_LEGACY } = await import('@/app/api/builds/[id]/ratings/route')
+    const res = await POST_LEGACY(
+      jsonReq('http://localhost/api/builds/b1/ratings', 'POST', { stars: 4, comment: null }),
+      { params: Promise.resolve({ id: 'b1' }) },
+    )
+
+    expect(res.status).toBe(201)
+    expect(buildFindUnique).toHaveBeenCalledWith({ where: { id: 'b1' }, select: { id: true } })
+    expect(ratingUpsert).toHaveBeenCalledWith({
+      where: { targetType_targetId_userId: { targetType: 'BUILD', targetId: 'b1', userId: 'user-1' } },
+      create: { targetType: 'BUILD', targetId: 'b1', userId: 'user-1', stars: 4, comment: null },
+      update: { stars: 4, comment: null },
+    })
+  })
+
+  it('PATCH/DELETE reichen ratingId durch; fremdes Rating → 403/404 wie polymorphe API', async () => {
+    const { PATCH: PATCH_LEGACY, DELETE: DELETE_LEGACY } = await import('@/app/api/builds/[id]/ratings/route')
+    ratingFindUnique.mockResolvedValue({ id: 'r1', userId: 'user-2', targetType: 'BUILD', targetId: 'b1' })
+
+    const patch = await PATCH_LEGACY(
+      jsonReq('http://localhost/api/builds/b1/ratings?ratingId=r1', 'PATCH', { stars: 1 }),
+      { params: Promise.resolve({ id: 'b1' }) },
+    )
+    expect(patch.status).toBe(403)
+    expect(ratingUpdate).not.toHaveBeenCalled()
+
+    const del = await DELETE_LEGACY(new Request('http://localhost/api/builds/b1/ratings?ratingId=r1', { method: 'DELETE' }), {
+      params: Promise.resolve({ id: 'b1' }),
+    })
+    expect(del.status).toBe(403)
+    expect(txRatingDelete).not.toHaveBeenCalled()
+  })
+})
+
 describe('DELETE /api/ratings (#143)', () => {
   const RATING = { id: 'r1', userId: 'user-1', targetType: 'PART', targetId: 'p1' }
 

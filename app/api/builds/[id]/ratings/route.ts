@@ -12,30 +12,37 @@ import {
 
 type Ctx = { params: Promise<{ id: string }> }
 
-function toGeneric(req: Request, buildId: string): Request {
+async function toGeneric(req: Request, buildId: string): Promise<Request> {
   const url = new URL(req.url)
   const qs = new URLSearchParams({ targetType: 'BUILD', targetId: buildId })
   const ratingId = url.searchParams.get('ratingId')
   if (ratingId) qs.set('ratingId', ratingId)
-  return new Request(new URL(`/api/ratings?${qs.toString()}`, url.origin), req)
+  // Body explizit als Text übernehmen: `new Request(url, req)` übernimmt den Body nicht
+  // zuverlässig über Realm-Grenzen (Vitest-VM) — dann würde req.json() im Ziel invalid_json.
+  const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.text()
+  return new Request(new URL(`/api/ratings?${qs.toString()}`, url.origin), {
+    method: req.method,
+    headers: req.headers,
+    body,
+  })
 }
 
 export async function GET(req: Request, ctx: Ctx) {
   const { id } = await ctx.params
-  return GET_RATINGS(toGeneric(req, id))
+  return GET_RATINGS(await toGeneric(req, id))
 }
 
 export async function POST(req: Request, ctx: Ctx) {
   const { id } = await ctx.params
-  return POST_RATINGS(toGeneric(req, id))
+  return POST_RATINGS(await toGeneric(req, id))
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params
-  return PATCH_RATINGS(toGeneric(req, id))
+  return PATCH_RATINGS(await toGeneric(req, id))
 }
 
 export async function DELETE(req: Request, ctx: Ctx) {
   const { id } = await ctx.params
-  return DELETE_RATINGS(toGeneric(req, id))
+  return DELETE_RATINGS(await toGeneric(req, id))
 }
