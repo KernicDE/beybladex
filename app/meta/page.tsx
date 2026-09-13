@@ -19,6 +19,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
+import { formatBitDisplay } from '@/lib/buildNaming'
 import { metaEmptyAction } from '@/lib/emptyStateActions'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -149,9 +150,10 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
       builds.map((b) => ({
         id: b.id,
         name:
+          // RC16 (#106): Bit-Anzeige als „Kurzcode (Vollname)".
           b.blade !== null
-            ? `${b.blade.name}${b.ratchet !== null ? ` ${b.ratchet.name}` : ''} ${b.bit.name}`
-            : [b.lockChip?.name, b.ratchet?.name, b.bit.name].filter(Boolean).join(' '),
+            ? `${b.blade.name}${b.ratchet !== null ? ` ${b.ratchet.name}` : ''} ${formatBitDisplay(b.bit.name)}`
+            : [b.lockChip?.name, b.ratchet?.name, formatBitDisplay(b.bit.name)].filter(Boolean).join(' '),
         type: b.type,
         manufacturer: (b.blade ?? b.lockChip)?.manufacturer ?? 'TT',
         appearances: stats.get(b.id)?.appearances ?? 0,

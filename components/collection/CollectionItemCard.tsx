@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { PriceDisplay } from '@/components/collection/PriceDisplay'
+import { formatBitDisplay } from '@/lib/buildNaming'
 import type { FxCurrency } from '@/lib/currency'
 
 export interface CollectionItemCardData {
@@ -32,7 +33,8 @@ export function CollectionItemCard({
     <Card className="p-4">
       <Link href={`/collection/item/${item.id}`} className="block space-y-1">
         <div className="flex items-center gap-2">
-          <p className="font-medium">{item.part.name}</p>
+          {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
+          <p className="font-medium">{item.part.category === 'BIT' ? formatBitDisplay(item.part.name) : item.part.name}</p>
           <Badge tone="neutral">{item.part.category}</Badge>
           <Badge tone="neutral">{item.part.manufacturer}</Badge>
         </div>

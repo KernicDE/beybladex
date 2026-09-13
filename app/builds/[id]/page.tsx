@@ -14,6 +14,7 @@ import { RatingList } from '@/components/beyblade/RatingList'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
+import { formatBitDisplay } from '@/lib/buildNaming'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,7 +88,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
               {build.productCode && <span className="ml-2 text-base font-normal text-current/50">{build.productCode}</span>}
             </h1>
             <p className="text-current/60">
-              {parts.map((p) => p.part.name).join(' · ')}
+              {/* RC16 (#106): Bit als „Kurzcode (Vollname)". */}
+              {parts.map((p) => (p.part.category === 'BIT' ? formatBitDisplay(p.part.name) : p.part.name)).join(' · ')}
             </p>
           </div>
           <TypeBadge type={build.type} />
@@ -120,7 +122,10 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                 ) : (
                   <div aria-hidden="true" className="mx-auto h-24 w-24 rounded-lg bg-x-cyan/10" />
                 )}
-                <p className="mt-2 font-medium">{part.name}</p>
+                <p className="mt-2 font-medium">
+                  {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
+                  {part.category === 'BIT' ? formatBitDisplay(part.name) : part.name}
+                </p>
                 <p className="text-sm text-current/60">{label}</p>
                 <div className="mt-1 flex justify-center gap-1">
                   <Badge tone="cyan">{part.category}</Badge>

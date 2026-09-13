@@ -24,6 +24,14 @@ export function bitShortCode(bitName: string): string {
     .join('')
 }
 
+// RC16 (#106) — einheitliche Bit-Anzeige "Kurzcode (Vollname)", z. B. "F (Flat)": der volle
+// Name bleibt der gespeicherte Part.name (sonst bräche bitShortCode/deriveBuildName), nur die
+// Darstellung setzt Kurzcode und Vollname zusammen.
+export function formatBitDisplay(bitName: string): string {
+  const name = bitName.trim().split(/\s+/).join(' ')
+  return `${bitShortCode(name)} (${name})`
+}
+
 // RC16 (#122) — variable Bauformen. Der abgeleitete Name trägt immer die Blade-Assembly voran
 // (Standard/Ratchet-Integrated: das BLADE-Teil; Custom Line: der Lock Chip — das einzelne
 // Namensträger-Teil des CX-Stacks), dann optional das Ratchet, direkt gefolgt vom Bit-Shortcode.
