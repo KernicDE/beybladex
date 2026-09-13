@@ -715,7 +715,6 @@ model Build {
   deckBuilds DeckBuild[]
   matchesP1  Match[]     @relation("Player1Build")
   matchesP2  Match[]     @relation("Player2Build")
-  ratings    Rating[]
 
   // RC16 (#122) — dieselbe Teile-Kombination (über alle 7 Slots, NULL-sicher) kann nie zwei
   // Build-Rows stützen. Prisma kann keinen Unique-Index mit COALESCE-Ausdrücken ausdrücken;
@@ -1107,8 +1106,6 @@ model Rating {
   comment    String?
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
-  build      Build?           @relation(fields: [buildId], references: [id])
-  buildId    String?
 
   @@unique([targetType, targetId, userId])
   @@index([targetType, targetId, createdAt])
