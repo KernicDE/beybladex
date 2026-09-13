@@ -13,7 +13,11 @@ import { RatingForm } from '@/components/beyblade/RatingForm'
 import { RatingList } from '@/components/beyblade/RatingList'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
+import { BuildForm } from '@/components/admin/BuildForm'
+import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
+import { formatBitDisplay } from '@/lib/buildNaming'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,10 +48,13 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   if (!build) notFound()
 
   let canModerate = false
+  let canAuthor = false
   let viewerUsername: string | null = null
   if (viewerId) {
     const caller = await prisma.user.findUnique({ where: { id: viewerId }, select: { role: true, username: true } })
     canModerate = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
+    // RC16 (#108): Direct-Authoring-Tier sieht den Bearbeiten-Modus (Name/Typ/Bild).
+    canAuthor = canModerate
     viewerUsername = caller?.username ?? null
   }
 
@@ -87,7 +94,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
               {build.productCode && <span className="ml-2 text-base font-normal text-current/50">{build.productCode}</span>}
             </h1>
             <p className="text-current/60">
-              {parts.map((p) => p.part.name).join(' · ')}
+              {/* RC16 (#106): Bit als „Kurzcode (Vollname)". */}
+              {parts.map((p) => (p.part.category === 'BIT' ? formatBitDisplay(p.part.name) : p.part.name)).join(' · ')}
             </p>
           </div>
           <TypeBadge type={build.type} />
@@ -107,6 +115,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         <ul className="grid gap-3 sm:grid-cols-3">
           {parts.map(({ label, part }) => (
             <li key={part.id}>
+              {/* RC16 (#105): die Teile-Karte verlinkt auf die neue Einzelteil-Detailseite. */}
+              <Link href={`/parts/${part.id}`} className="block transition-opacity hover:opacity-80">
               <Card className="h-full p-4 text-center">
                 {part.imageId ? (
                   <Image
@@ -120,7 +130,10 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                 ) : (
                   <div aria-hidden="true" className="mx-auto h-24 w-24 rounded-lg bg-x-cyan/10" />
                 )}
-                <p className="mt-2 font-medium">{part.name}</p>
+                <p className="mt-2 font-medium">
+                  {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
+                  {part.category === 'BIT' ? formatBitDisplay(part.name) : part.name}
+                </p>
                 <p className="text-sm text-current/60">{label}</p>
                 <div className="mt-1 flex justify-center gap-1">
                   <Badge tone="cyan">{part.category}</Badge>
@@ -131,6 +144,7 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                 </div>
                 {part.weightGrams && <p className="mt-1 text-xs text-current/50">{part.weightGrams} g</p>}
               </Card>
+              </Link>
             </li>
           ))}
         </ul>
@@ -163,6 +177,31 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
           }))}
         />
       </section>
+
+      {/* RC16 (#103): offizielle Sets direkt auf der Detailseite als gekauft markieren —
+          dieselbe API wie MarkSetPurchasedForm, aber ohne den Umweg ueber die Set-Suche. */}
+      {build.isOfficialSet && viewerId && (
+        <section aria-labelledby="build-purchase" className="space-y-3">
+          <h2 id="build-purchase" className="text-lg font-semibold">In deiner Sammlung</h2>
+          <Card>
+            <h3 className="mb-3 text-sm font-semibold">Set als gekauft markieren</h3>
+            <MarkSetPurchasedForm build={{ id: build.id, name: build.name }} />
+          </Card>
+        </section>
+      )}
+
+      {/* RC16 (#108): Kuratoren bearbeiten Name/Typ/Bild direkt auf der Detailseite
+          (PATCH /api/admin/builds/[id] + ./image — Server-Gate: requireCurator). */}
+      {canAuthor && (
+        <section aria-labelledby="build-edit" className="space-y-3">
+          <h2 id="build-edit" className="text-lg font-semibold">Kuratieren</h2>
+          <Card>
+            <EditToggle label="Build bearbeiten">
+              <BuildForm initial={{ id: build.id, name: build.name ?? '', type: build.type, imageId: build.imageId }} />
+            </EditToggle>
+          </Card>
+        </section>
+      )}
     </main>
   )
 }

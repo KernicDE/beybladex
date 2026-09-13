@@ -1,44 +1,66 @@
 // app/builds/page.tsx
-// Build browse/search (Phase 5 Part A): cursor-paginated grid of BuildCards with a server-side
-// part-name prefix search (?q=). Public and anonymous-readable (catalog surface) — explicitly
-// revalidated rather than force-dynamic, per the Cross-Phase Regression Guard's caching rule.
-// RC10 #28: the empty catalog explains the WHY and offers a role-dependent next step
-// (admins: parts admin; visitors: living public surface) via lib/emptyStateActions.
+// RC16 (#104): /builds ist die persönliche Build-Fläche — nur noch die eigenen (nicht-
+// offiziellen) Kombinationen der eingeloggten Person (Login-Gate wie /collection, da eigene
+// Builds privat sind; offizielle Sets leben künftig im Katalog-Tab der Sammlung, #102).
+// "Nur eigene" nutzt denselben onlyMineUserId-Filter wie GET /api/builds?onlyMine=1 (Builds
+// tragen keinen Owner-FK — Verfügbarkeit = alle Teile in der eigenen Sammlung) plus
+// personalOnly (isOfficialSet: false). Die freie Teile-Kombination (BuildComboForm) ist nur
+// hier möglich, hinter ?neu=1 (gleiche Konvention wie /collection?neu=1).
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
 import { searchBuilds, BUILD_PAGE_SIZE } from '@/lib/buildSearch'
 import { getBuildStats } from '@/lib/metaCache'
-import { catalogEmptyAction } from '@/lib/emptyStateActions'
 import { getDictionary } from '@/lib/i18n/server'
 import { BuildCard } from '@/components/beyblade/BuildCard'
+import { BuildComboPanel } from '@/components/beyblade/BuildComboPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
+import { GuestGate } from '@/components/auth/GuestGate'
 
-export const revalidate = 60
+export const dynamic = 'force-dynamic'
 
 export default async function BuildsPage({ searchParams }: PageProps<'/builds'>) {
-  const { q, cursor } = await searchParams
+  const { q, cursor, neu } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
+  const session = await auth()
+  if (!session?.user?.id) {
+    return (
+      <GuestGate
+        title={t.builds.gateTitle}
+        description={t.builds.gateDescription}
+        callbackUrl="/builds"
+        labels={t.guestGate}
+      />
+    )
+  }
+
   const query = typeof q === 'string' ? q.trim() : ''
-  const { builds, nextCursor } = await searchBuilds({ q: query, cursor: typeof cursor === 'string' ? cursor : null })
+  const { builds, nextCursor } = await searchBuilds({
+    q: query,
+    cursor: typeof cursor === 'string' ? cursor : null,
+    onlyMineUserId: session.user.id,
+    personalOnly: true,
+  })
   // Auto-Meta badges (Phase 5 Part D): ONE batch mget for the whole page, never per-card
   // round trips. Whole-cache-empty falls back to a direct DB computation inside getBuildStats.
   const winRates = await getBuildStats(builds.map((b) => b.id))
-  // #28: role decides the empty-catalog CTA — admins can fix the emptiness, visitors can't.
-  const session = await auth()
-  const role = session?.user?.id
-    ? (await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } }))?.role ?? null
-    : null
-  const cta = catalogEmptyAction(role, { addParts: t.builds.ctaAddParts, discoverEvents: t.builds.ctaDiscoverEvents })
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <h1 className="text-2xl font-semibold">{t.builds.heading}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">{t.builds.heading}</h1>
+        {builds.length > 0 && (
+          <Link href="/builds?neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
+            {t.builds.newBuild}
+          </Link>
+        )}
+      </div>
       <p className="text-current/70">
         {t.builds.intro}
       </p>
+
+      {neu === '1' && <BuildComboPanel />}
 
       <form role="search" action="/builds" className="flex items-center gap-2">
         <label htmlFor="builds-q" className="sr-only">{t.builds.searchLabel}</label>
@@ -61,15 +83,23 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
           />
         ) : (
           <EmptyState
-            title={t.builds.emptyCatalogTitle}
-            description={t.builds.emptyCatalogDescription}
+            title={t.builds.emptyMineTitle}
+            description={t.builds.emptyMineDescription}
             action={
-              <Link
-                href={cta.href}
-                className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
-              >
-                {cta.label}
-              </Link>
+              <div className="flex flex-wrap justify-center gap-3">
+                <Link
+                  href="/builds?neu=1"
+                  className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85"
+                >
+                  {t.builds.newBuild}
+                </Link>
+                <Link
+                  href="/collection?tab=katalog"
+                  className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
+                >
+                  {t.builds.browseCatalog}
+                </Link>
+              </div>
             }
           />
         )

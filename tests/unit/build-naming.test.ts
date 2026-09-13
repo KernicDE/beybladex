@@ -4,7 +4,7 @@
 // Also covers the bit short-code derivation (initials of the bit's name words, matching both
 // the seeded single-word Bits and multi-word retail bits like "Gear Flat" → "GF").
 import { describe, it, expect } from 'vitest'
-import { canonicalBuildName, bitShortCode, deriveBuildName } from '@/lib/buildNaming'
+import { canonicalBuildName, bitShortCode, deriveBuildName, formatBitDisplay } from '@/lib/buildNaming'
 
 describe('canonicalBuildName — the confirmed grammar', () => {
   it('the plan\'s worked example: "Circle Ghost" + "4-60" + "LR" → "Circle Ghost 4-60LR"', () => {
@@ -55,6 +55,26 @@ describe('bitShortCode — initials of the bit name words', () => {
 
   it('normalizes surrounding/extra whitespace and case', () => {
     expect(bitShortCode('  gear   flat ')).toBe('GF')
+  })
+})
+
+describe('formatBitDisplay — RC16 #106 „Kurzcode (Vollname)"', () => {
+  it('rendert single-word Bits als „F (Flat)"-Form', () => {
+    expect(formatBitDisplay('Flat')).toBe('F (Flat)')
+    expect(formatBitDisplay('Rush')).toBe('R (Rush)')
+    expect(formatBitDisplay('Gear Flat')).toBe('GF (Gear Flat)')
+    expect(formatBitDisplay('Low Rush')).toBe('LR (Low Rush)')
+  })
+
+  it('normalisiert Whitespace wie bitShortCode', () => {
+    expect(formatBitDisplay('  low   flat ')).toBe('LF (low flat)')
+  })
+
+  it('verändert den Vollnamen nicht — bitShortCode/deriveBuildName bleiben gültig', () => {
+    const name = formatBitDisplay('Flat')
+    expect(bitShortCode(name)).not.toBe('F')
+    expect(bitShortCode('Flat')).toBe('F')
+    expect(deriveBuildName({ bladeName: 'DranSword', ratchetName: '3-60', bitName: 'Flat' })).toBe('DranSword 3-60F')
   })
 })
 

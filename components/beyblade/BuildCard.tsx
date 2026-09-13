@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge, type WinRateStats } from '@/components/beyblade/WinRateBadge'
+import { formatBitDisplay } from '@/lib/buildNaming'
 
 export interface BuildCardPart {
   id: string
@@ -47,9 +48,16 @@ export interface BuildCardData {
 // Anzeigereihenfolge der belegten Slots (RC16 #122).
 const SUMMARY_ORDER = ['lockChip', 'blade', 'overBlade', 'metalBlade', 'assistBlade', 'ratchet', 'bit'] as const
 
-/** „Teil · Teil · Teil" über alle belegten Slots — der Standard-Subtitle für Build-Zeilen. */
+/** „Teil · Teil · Teil" über alle belegten Slots — der Standard-Subtitle für Build-Zeilen.
+ *  RC16 (#106): das Bit rendert als „Kurzcode (Vollname)" — „F (Flat)" statt „Flat". */
 export function buildPartSummary(build: BuildCardData): string {
-  return SUMMARY_ORDER.map((slot) => build[slot]).filter((p): p is BuildCardPart => Boolean(p)).map((p) => p.name).join(' · ')
+  return SUMMARY_ORDER.map((slot) => {
+    const p = build[slot]
+    if (!p) return null
+    return slot === 'bit' ? formatBitDisplay(p.name) : p.name
+  })
+    .filter((p): p is string => p !== null)
+    .join(' · ')
 }
 
 /** Titel-Fallback-Kette: kuratierter Set-Name → Blade → Lock Chip (nie leer: Bit existiert immer). */

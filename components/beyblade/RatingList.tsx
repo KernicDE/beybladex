@@ -58,8 +58,9 @@ export function RatingList({
           ) : (
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
+                {/* RC16 (#107): gleiche Sterne-Optik wie die Eingabe — gefüllt gold, leer grau. */}
                 <p className="font-medium" aria-label={`${rating.stars} von 5 Sternen`}>
-                  {'★'.repeat(rating.stars)}
+                  <span className="text-type-stamina">{'★'.repeat(rating.stars)}</span>
                   <span className="text-current/30">{'★'.repeat(5 - rating.stars)}</span>{' '}
                   <span className="text-sm font-normal text-current/60">@{rating.username}</span>
                 </p>

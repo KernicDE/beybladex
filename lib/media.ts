@@ -31,6 +31,10 @@ export interface MediaTarget {
 // constants those call sites document against.
 /** Part/Set catalog images: fixed square crop for the collection/builds grids. */
 export const PART_IMAGE_TARGET: MediaTarget = { width: 512, height: 512, fit: 'cover' }
+/** Build/Set detail images (RC16 #108): Set-Box/Product-Shot auf der Build-Detailseite —
+ *  gleiche quadratische Katalog-Crop-Größe wie Parts, damit Karten und Detailseite dasselbe
+ *  Asset teilen. */
+export const BUILD_IMAGE_TARGET: MediaTarget = { width: 512, height: 512, fit: 'cover' }
 /** Event header images: fixed wide aspect-ratio crop for the detail-page banner. The list
  *  thumbnail on /events renders a cropped excerpt of the SAME stored asset at display size
  *  (object-fit) — one MediaAsset per upload, no second stored variant. */

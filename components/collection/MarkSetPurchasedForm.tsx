@@ -1,8 +1,10 @@
-// components/collection/MarkSetPurchasedForm.tsx (Phase 11, item 6)
+// components/collection/MarkSetPurchasedForm.tsx (Phase 11, item 6; RC16 #103 Direkt-Variante)
 // "Set als gekauft markieren" — an official-Set search picker (isOfficialSet: true only) plus
 // the same shared purchase fields as CollectionItemForm, POSTing to
 // /api/collection/mark-set-purchased. Creates THREE linked CollectionItem rows in one call —
 // see that route's header comment for why (provenance, not a new ownership unit).
+// RC16 (#103): mit `build` als Prop entfaellt die Set-Suche — die Build-Detailseite kennt
+// buildId bereits und rendert nur noch die Kauf-Felder.
 'use client'
 
 import { useState } from 'react'
@@ -18,11 +20,13 @@ interface SetOption {
   name: string | null
 }
 
-export function MarkSetPurchasedForm() {
+export function MarkSetPurchasedForm({ build = null }: { build?: { id: string; name: string | null } | null }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SetOption[]>([])
-  const [selected, setSelected] = useState<SetOption | null>(null)
+  // RC16 (#103): steht der Build bereits fest (Detailseite), entfaellt die Set-Suche —
+  // buildId ist bekannt, die Komponente startet direkt mit dem ausgewaehlten Set.
+  const [selected, setSelected] = useState<SetOption | null>(build ? { id: build.id, name: build.name } : null)
   const [price, setPrice] = useState('')
   const [currency, setCurrency] = useState('EUR')
   const [merchant, setMerchant] = useState('')
@@ -82,9 +86,11 @@ export function MarkSetPurchasedForm() {
       ) : (
         <p className="text-sm">
           Set: <strong>{selected.name}</strong>{' '}
-          <button type="button" onClick={() => setSelected(null)} className="text-x-cyan-text underline">
-            ändern
-          </button>
+          {!build && (
+            <button type="button" onClick={() => setSelected(null)} className="text-x-cyan-text underline">
+              ändern
+            </button>
+          )}
         </p>
       )}
       {!selected && results.length > 0 && (

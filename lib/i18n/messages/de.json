@@ -228,7 +228,7 @@
   },
   "builds": {
     "heading": "Builds",
-    "intro": "Kombinationen aus Blade, Ratchet und Bit. Suche nach einem Teilnamen, um Builds zu finden, die ihn verwenden.",
+    "intro": "Deine persönlichen Kombinationen aus Blade, Ratchet und Bit — nur für dich sichtbar. Suche nach einem Teilnamen, um eigene Builds zu finden, die ihn verwenden.",
     "searchLabel": "Builds suchen",
     "searchPlaceholder": "Teilname, z. B. DranSword…",
     "search": "Suchen",
@@ -240,7 +240,13 @@
     "ctaAddParts": "Teile hinzufügen",
     "ctaDiscoverEvents": "Kommende Events entdecken",
     "loadMore": "Weitere Builds laden",
-    "pageSize": "Seitengröße: {size} Builds"
+    "pageSize": "Seitengröße: {size} Builds",
+    "gateTitle": "Builds sind nur für Mitglieder",
+    "gateDescription": "Lege eigene Kombinationen aus deinen Teilen an und bewerte sie. Melde dich an, um deine Builds zu sehen.",
+    "newBuild": "Neuer Build",
+    "emptyMineTitle": "Noch keine eigenen Builds",
+    "emptyMineDescription": "Kombiniere beliebige Teile zu deinem persönlichen Build. Offizielle Sets findest du im Katalog der Sammlung.",
+    "browseCatalog": "Zum Katalog"
   },
   "collection": {
     "gateTitle": "Die Sammlung ist nur für Mitglieder",
@@ -252,7 +258,11 @@
     "emptyTitle": "Noch keine Teile in deiner Sammlung",
     "emptyDescription": "Trage ein, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum.",
     "addFirst": "Füge dein erstes Teil hinzu",
-    "loadMore": "Weitere Teile laden"
+    "loadMore": "Weitere Teile laden",
+    "tabCatalog": "Katalog",
+    "tabMine": "Meine Sammlung",
+    "katalogEmptyTitle": "Noch keine offiziellen Sets im Katalog",
+    "katalogEmptyDescription": "Sobald offizielle Sets im Katalog sind, erscheinen sie hier zum Durchstöbern."
   },
   "clubs": {
     "heading": "Clubs",
