@@ -2,9 +2,11 @@
 // Build detail (Phase 5 Part A): the combo page spec §2.A promises — parts with images,
 // TypeBadge, and the rating/comment area below (list + form). The rating section is
 // per-user/live, so this page is force-dynamic per the caching half of the Regression Guard.
-// MVP4 (#143): Die Bewertungen laufen über die polymorphe Rating-API (targetType BUILD);
-// User-Sterne (RatingSummary) und Auto-Meta-Statistiken (WinRateBadge aus lib/meta) sind
-// bewusst getrennte Zeilen im Header — User-Meinung ≠ Turnier-Statistik.
+// MVP4 (#143): Die Bewertungen laufen über die polymorphe Rating-API (targetType BUILD).
+// MVP4/4 (#144): User-Bewertungen (RatingSummary + Bewertungs-Section) und Turnier-
+// Statistiken (Auto-Meta, WinRateBadge aus lib/meta) sind als getrennte, beschriftete
+// Bereiche sichtbar — User-Meinung ≠ Turnier-Statistik. Ersteller:in sieht den
+// Öffentlich/Ungelistet-Umschalter (BuildVisibilityToggle → PATCH /api/builds/[id]).
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -17,6 +19,7 @@ import { RatingList } from '@/components/beyblade/RatingList'
 import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { BuildVisibilityToggle } from '@/components/beyblade/BuildVisibilityToggle'
 import { BuildForm } from '@/components/admin/BuildForm'
 import { EditToggle } from '@/components/admin/EditToggle'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
@@ -35,6 +38,8 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   const build = await prisma.build.findUnique({
     where: { id },
     include: {
+      // #144 — Ersteller:in für die Zeile im Header (null bei Vor-MVP4-Rows).
+      creator: { select: { username: true } },
       blade: true,
       lockChip: true,
       overBlade: true,
@@ -112,9 +117,21 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
             <RatingSummary aggregate={aggregate} />
           </div>
         )}
-        <div className="mt-2">
-          <WinRateBadge stats={buildStats.get(id) ?? null} />
-        </div>
+        {/* #144 — Ersteller:in (Öffentliche-Builds-Karten zeigen denselben Wert). */}
+        {build.creator && (
+          <p className="mt-1 text-sm text-current/50">
+            Erstellt von{' '}
+            <Link href={`/profile/${encodeURIComponent(build.creator.username)}`} className="underline underline-offset-2">
+              {build.creator.username}
+            </Link>
+          </p>
+        )}
+        {/* #144 — Sichtbarkeits-Umschalter, nur für die Erstellerin bzw. den Ersteller. */}
+        {viewerId && build.creatorId === viewerId && (
+          <div className="mt-3">
+            <BuildVisibilityToggle buildId={build.id} initial={build.visibility} />
+          </div>
+        )}
       </Card>
 
       <section aria-labelledby="build-parts" className="space-y-3">
@@ -155,6 +172,19 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* #144 — Turnier-Statistiken (Auto-Meta): eigener, beschrifteter Bereich, getrennt
+          von den User-Bewertungen unten. Quelle sind ausschließlich gewertete Turnier-Matches
+          (lib/meta), nie User-Eingaben. */}
+      <section aria-labelledby="build-stats" className="space-y-3">
+        <h2 id="build-stats" className="text-lg font-semibold">Turnier-Statistiken</h2>
+        <Card className="flex flex-wrap items-center gap-3 p-4">
+          <WinRateBadge stats={buildStats.get(id) ?? null} />
+          <p className="text-xs text-current/50">
+            Automatisch aus gewerteten Turnier-Matches — unabhängig von den User-Bewertungen.
+          </p>
+        </Card>
       </section>
 
       <section aria-labelledby="build-ratings" className="space-y-3">
