@@ -17,14 +17,22 @@ import { searchBuilds } from '@/lib/buildSearch'
 const buildFindMany = vi.mocked(prisma.build.findMany)
 const collectionFindMany = vi.mocked(prisma.collectionItem.findMany)
 
-function fakeBuild(id: string, bladeId: string, ratchetId: string, bitId: string) {
+function fakeBuild(id: string, bladeId: string | null, ratchetId: string | null, bitId: string, extra: Partial<{ lockChipId: string; overBladeId: string; metalBladeId: string; assistBladeId: string }> = {}) {
   return {
     id,
     bladeId,
     ratchetId,
     bitId,
-    blade: { id: bladeId, name: `Blade ${bladeId}`, imageId: null, beyType: 'ATTACK' },
-    ratchet: { id: ratchetId, name: `Ratchet ${ratchetId}` },
+    lockChipId: extra.lockChipId ?? null,
+    overBladeId: extra.overBladeId ?? null,
+    metalBladeId: extra.metalBladeId ?? null,
+    assistBladeId: extra.assistBladeId ?? null,
+    blade: bladeId !== null ? { id: bladeId, name: `Blade ${bladeId}`, imageId: null, beyType: 'ATTACK' } : null,
+    lockChip: extra.lockChipId ? { id: extra.lockChipId, name: `LockChip ${extra.lockChipId}` } : null,
+    overBlade: extra.overBladeId ? { id: extra.overBladeId, name: `OverBlade ${extra.overBladeId}` } : null,
+    metalBlade: extra.metalBladeId ? { id: extra.metalBladeId, name: `MetalBlade ${extra.metalBladeId}` } : null,
+    assistBlade: extra.assistBladeId ? { id: extra.assistBladeId, name: `AssistBlade ${extra.assistBladeId}` } : null,
+    ratchet: ratchetId !== null ? { id: ratchetId, name: `Ratchet ${ratchetId}` } : null,
     bit: { id: bitId, name: `Bit ${bitId}` },
   }
 }
@@ -69,6 +77,26 @@ describe('searchBuilds onlyMineUserId (issue #58)', () => {
     const { builds } = await searchBuilds({ onlyMineUserId: 'user-1' })
 
     expect(builds.map((b) => b.id)).toEqual(['all-owned'])
+  })
+
+  it('RC16 (#122): Custom-Line-Builds brauchen alle SECHS Teile; Ratchet-Integrated nur Blade + Bit', async () => {
+    buildFindMany.mockResolvedValue([
+      // CX vollständig besitzt (p1–p6)
+      fakeBuild('cx-owned', null, 'p5', 'p6', { lockChipId: 'p1', overBladeId: 'p2', metalBladeId: 'p3', assistBladeId: 'p4' }),
+      // CX mit fehlendem Metal Blade
+      fakeBuild('cx-missing', null, 'p5', 'p6', { lockChipId: 'p1', overBladeId: 'p2', metalBladeId: 'p9', assistBladeId: 'p4' }),
+      // Ratchet-Integrated: kein Ratchet-Teil nötig
+      fakeBuild('integrated-owned', 'p7', null, 'p8'),
+      // Ratchet-Integrated ohne das Bit
+      fakeBuild('integrated-missing', 'p7', null, 'p9'),
+    ] as never)
+    collectionFindMany.mockResolvedValue(
+      ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'].map((partOrBeyId) => ({ partOrBeyId })) as never,
+    )
+
+    const { builds } = await searchBuilds({ onlyMineUserId: 'user-1' })
+
+    expect(builds.map((b) => b.id)).toEqual(['cx-owned', 'integrated-owned'])
   })
 
   it('skips the collection query entirely when onlyMine is off', async () => {

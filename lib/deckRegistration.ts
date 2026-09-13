@@ -24,8 +24,11 @@ export async function validateDeckAgainstTournamentFormat(
         include: {
           build: {
             select: {
-              id: true, bladeId: true, ratchetId: true, bitId: true,
-              blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
+              id: true, bladeId: true, lockChipId: true, overBladeId: true, metalBladeId: true, assistBladeId: true,
+              ratchetId: true, bitId: true,
+              blade: { select: { name: true } }, lockChip: { select: { name: true } },
+              overBlade: { select: { name: true } }, metalBlade: { select: { name: true } },
+              assistBlade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
             },
           },
         },

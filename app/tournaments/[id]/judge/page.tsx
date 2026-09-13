@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { JudgeScorePad, type PadPlayer } from '@/components/judge/JudgeScorePad'
+import { buildPartSummary } from '@/components/beyblade/BuildCard'
 import { eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
 import { stageWinnersRounds } from '@/lib/bracket'
 import { pointValuesFor } from '@/lib/scoring'
@@ -52,7 +53,7 @@ export default async function JudgePage({
       participants: {
         include: {
           user: { select: { username: true, displayName: true } },
-          deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, ratchet: true, bit: true } } } } } },
+          deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, lockChip: true, overBlade: true, metalBlade: true, assistBlade: true, ratchet: true, bit: true } } } } } },
         },
       },
       // RC15 #12 — team mode: sub-game players (deck + build snapshot) resolve via slots.
@@ -64,7 +65,7 @@ export default async function JudgePage({
             orderBy: { position: 'asc' },
             include: {
               user: { select: { username: true, displayName: true } },
-              deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, ratchet: true, bit: true } } } } } },
+              deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, lockChip: true, overBlade: true, metalBlade: true, assistBlade: true, ratchet: true, bit: true } } } } } },
             },
           },
         },
@@ -84,7 +85,7 @@ export default async function JudgePage({
     ]),
   ]
   const lockedBuilds = lockedBuildIds.length
-    ? await prisma.build.findMany({ where: { id: { in: lockedBuildIds } }, include: { blade: true, ratchet: true, bit: true } })
+    ? await prisma.build.findMany({ where: { id: { in: lockedBuildIds } }, include: { blade: true, lockChip: true, overBlade: true, metalBlade: true, assistBlade: true, ratchet: true, bit: true } })
     : []
   const lockedBuildById = new Map(lockedBuilds.map((b) => [b.id, b]))
 
@@ -145,11 +146,29 @@ export default async function JudgePage({
         ? `Swiss-Runde ${match.swissRound ?? '?'}`
         : eliminationRoundLabel(match.round, wbRounds)
   // Phase 16 items 1-2 — a build's dual-spin status and suggested mode: true/suggested if ANY
-  // of its three parts is dualSpin (priority blade → ratchet → bit for the suggestion, an
-  // arbitrary but deterministic tie-break when more than one part is dual-spin).
-  function dualSpinInfo(build: { blade: { dualSpin: boolean; spinDirection: 'RIGHT' | 'LEFT' }; ratchet: { dualSpin: boolean; spinDirection: 'RIGHT' | 'LEFT' }; bit: { dualSpin: boolean; spinDirection: 'RIGHT' | 'LEFT' } }) {
-    const dualPart = [build.blade, build.ratchet, build.bit].find((p) => p.dualSpin)
-    return { dualSpin: dualPart !== undefined, suggestedSpinMode: dualPart?.spinDirection ?? build.blade.spinDirection }
+  // of its parts is dualSpin (priority blade → lock chip → CX blades → ratchet → bit, an
+  // arbitrary but deterministic tie-break when more than one part is dual-spin; RC16 #122
+  // erweitert die Slot-Liste über das alte Trio hinaus).
+  interface DualSpinPartInfo {
+    dualSpin: boolean
+    spinDirection: 'RIGHT' | 'LEFT'
+  }
+  // RC16 (#122): die CX-/Ratchet-Slots stehen auf `?.` — ältere Include-Stellen laden nicht
+  // alle Relationen; belegte Slots sind in der Praxis aber immer mitgeladen (siehe includes
+  // unten: blade/ratchet/bit + alle vier CX-Relationen).
+  function dualSpinInfo(build: {
+    blade: DualSpinPartInfo | null
+    lockChip?: DualSpinPartInfo | null
+    overBlade?: DualSpinPartInfo | null
+    metalBlade?: DualSpinPartInfo | null
+    assistBlade?: DualSpinPartInfo | null
+    ratchet: DualSpinPartInfo | null
+    bit: DualSpinPartInfo
+  }) {
+    const ordered = [build.blade, build.lockChip, build.overBlade, build.metalBlade, build.assistBlade, build.ratchet, build.bit]
+    const dualPart = ordered.find((p): p is DualSpinPartInfo => p !== null && p !== undefined && p.dualSpin)
+    const fallback = build.blade ?? build.lockChip ?? build.bit
+    return { dualSpin: dualPart !== undefined, suggestedSpinMode: dualPart?.spinDirection ?? fallback.spinDirection }
   }
 
   const padPlayer = (userId: string | null): PadPlayer | null => {
@@ -172,7 +191,7 @@ export default async function JudgePage({
       name: row.user.displayName ?? row.user.username,
       builds: buildRows.map((build) => ({
         id: build.id,
-        label: `${build.blade.name} · ${build.ratchet.name} · ${build.bit.name}`,
+        label: buildPartSummary(build),
         ...dualSpinInfo(build),
       })),
     }

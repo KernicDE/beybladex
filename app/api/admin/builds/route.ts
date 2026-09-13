@@ -4,8 +4,8 @@
 // ORGANIZER/ADMIN only (same widened reviewer tier as CatalogProposal review — 401 anonymous,
 // 403 plain USER). POST creates the Build with isOfficialSet=true; the curator-entered retail
 // box name is used verbatim when provided and NEVER overridden by the canonical name — the
-// canonical "<Blade> <Ratchet><Bit-short>" name is derived only when no name was given.
-// Duplicate combo (same bladeId+ratchetId+bitId) returns the existing Build's id gracefully
+// canonical name (Bauform-abhängig, RC16 #122) is derived only when no name was given.
+// Duplicate combo (exakte 7-Slot-Teilekombination) returns the existing Build's id gracefully
 // ({ id, existing: true }) instead of a raw unique-constraint 500. Every successful create
 // writes an append-only AuditLog row; rate-limited per curator.
 // PATCH — narrow follow-up edit of a single existing official Set's `productCode` (the
@@ -16,8 +16,8 @@ import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseBody, type BodySchema } from '@/lib/parseBody'
-import { parseBuildInput, verifyBuildParts } from '@/lib/buildInput'
-import { deriveBuildName } from '@/lib/buildNaming'
+import { parseBuildInput, verifyBuildParts, comboWhere } from '@/lib/buildInput'
+import { deriveBuildNameFromParts } from '@/lib/buildNaming'
 
 const PATCH_SCHEMA: BodySchema = {
   id: { type: 'string', minLength: 1, required: true, token: 'invalid_id' },
@@ -42,21 +42,16 @@ export async function POST(req: Request): Promise<Response> {
   const verified = await verifyBuildParts(prisma, data!)
   if ('error' in verified) return Response.json({ error: verified.error }, { status: 400 })
 
-  // Phase 20 duplicate-combo pre-check — even for official Sets the same three parts must not
-  // back two Build rows; point the curator at the existing build instead.
-  const combo = { bladeId: data!.bladeId, ratchetId: data!.ratchetId, bitId: data!.bitId }
-  const existing = await prisma.build.findUnique({ where: { bladeId_ratchetId_bitId: combo }, select: { id: true } })
+  // Phase 20 duplicate-combo pre-check (RC16 #122: exakte 7-Slot-Kombination, NULL-sicher) —
+  // even for official Sets the same parts must not back two Build rows; point the curator at
+  // the existing build instead.
+  const combo = comboWhere(data!)
+  const existing = await prisma.build.findFirst({ where: combo, select: { id: true } })
   if (existing) return Response.json({ id: existing.id, existing: true }, { status: 200 })
 
   // Retail box name wins when the curator entered one; only a nameless create gets the
-  // canonical "<Blade> <Ratchet><Bit-short>" derivation.
-  const name =
-    data!.name ??
-    deriveBuildName(
-      verified.parts.get(data!.bladeId)!.name,
-      verified.parts.get(data!.ratchetId)!.name,
-      verified.parts.get(data!.bitId)!.name,
-    )
+  // canonical Bauform-abhängige Ableitung (RC16 #122).
+  const name = data!.name ?? deriveBuildNameFromParts(verified.parts, data!)
   const build = await prisma.$transaction(async (tx) => {
     const created = await tx.build.create({
       data: { ...combo, name, type: data!.type ?? undefined, isOfficialSet: true, productCode: data!.productCode },

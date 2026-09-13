@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { buildPartSummary } from '@/components/beyblade/BuildCard'
 import { DeckCreateForm } from '@/components/beyblade/DeckCreateForm'
 import { GuestGate } from '@/components/auth/GuestGate'
 
@@ -45,7 +46,7 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
         orderBy: { position: 'asc' },
         include: {
           build: {
-            select: { id: true, type: true, blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } } },
+            select: { id: true, type: true, blade: { select: { id: true, name: true } }, lockChip: { select: { id: true, name: true } }, overBlade: { select: { id: true, name: true } }, metalBlade: { select: { id: true, name: true } }, assistBlade: { select: { id: true, name: true } }, ratchet: { select: { id: true, name: true } }, bit: { select: { id: true, name: true } } },
           },
         },
       },
@@ -96,7 +97,7 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
                     {deck.builds.map((db) => (
                       <li key={db.buildId} className="flex items-center gap-2">
                         <TypeBadge type={db.build.type} />
-                        {db.build.blade.name} · {db.build.ratchet.name} · {db.build.bit.name}
+                        {buildPartSummary({ id: db.build.id, type: db.build.type, blade: db.build.blade, lockChip: db.build.lockChip, overBlade: db.build.overBlade, metalBlade: db.build.metalBlade, assistBlade: db.build.assistBlade, ratchet: db.build.ratchet, bit: db.build.bit })}
                       </li>
                     ))}
                   </ul>

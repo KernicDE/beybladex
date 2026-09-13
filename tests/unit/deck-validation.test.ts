@@ -6,8 +6,20 @@ import { validateNoDuplicateParts } from '@/lib/deckValidation'
 
 const P = { b1: 'blade-1', b2: 'blade-2', b3: 'blade-3', r1: 'ratchet-1', r2: 'ratchet-2', r3: 'ratchet-3', t1: 'bit-1', t2: 'bit-2', t3: 'bit-3' }
 
-function build(id: string, bladeId: string, ratchetId: string, bitId: string) {
-  return { id, bladeId, ratchetId, bitId, blade: { name: bladeId }, ratchet: { name: ratchetId }, bit: { name: bitId } }
+function build(id: string, bladeId: string | null, ratchetId: string | null, bitId: string) {
+  return {
+    id,
+    bladeId,
+    lockChipId: null,
+    overBladeId: null,
+    metalBladeId: null,
+    assistBladeId: null,
+    ratchetId,
+    bitId,
+    blade: bladeId !== null ? { name: bladeId } : null,
+    ratchet: ratchetId !== null ? { name: ratchetId } : null,
+    bit: { name: bitId },
+  }
 }
 
 describe('validateNoDuplicateParts', () => {
@@ -44,5 +56,37 @@ describe('validateNoDuplicateParts', () => {
     ])
     expect(valid).toBe(true)
     expect(conflicts).toEqual([])
+  })
+
+  it('RC16 (#122): leere Slots (Ratchet-Integrated ratchetId null) sind KEIN Konflikt', () => {
+    const { valid, conflicts } = validateNoDuplicateParts([
+      build('integrated-1', 'valor-bison-fb', null, P.t1),
+      build('integrated-2', 'rocket-griffon-h', null, P.t2),
+    ])
+    expect(valid).toBe(true)
+    expect(conflicts).toEqual([])
+  })
+
+  it('RC16 (#122): geteilte Custom-Line-Teile werden wie Standard-Teile als Konflikt geflaggt', () => {
+    const cx = (id: string, bitId: string) => ({
+      id,
+      bladeId: null,
+      lockChipId: 'lock-chip-1',
+      overBladeId: 'over-blade-1',
+      metalBladeId: 'metal-blade-1',
+      assistBladeId: 'assist-blade-1',
+      ratchetId: P.r1,
+      bitId,
+      lockChip: { name: 'Lock Chip 1' },
+      overBlade: { name: 'Over Blade 1' },
+      metalBlade: { name: 'Metal Blade 1' },
+      assistBlade: { name: 'Assist Blade 1' },
+      ratchet: { name: P.r1 },
+      bit: { name: bitId },
+    })
+    const { valid, conflicts } = validateNoDuplicateParts([cx('cx-1', P.t1), cx('cx-2', P.t2)])
+    expect(valid).toBe(false)
+    expect(conflicts.some((c) => c.startsWith('Lock Chip'))).toBe(true)
+    expect(conflicts.some((c) => c.startsWith('Ratchet'))).toBe(true)
   })
 })

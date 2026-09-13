@@ -64,6 +64,12 @@ enum PartCategory {
   RATCHET
   BIT
   ACCESSORY
+  // RC16 (#122) — Hasbro Custom Line (CX): statt eines einzelnen BLADE-Teils besteht der
+  // „Blade" aus vier eigenen Teilen (Lock Chip + Over Blade + Metal Blade + Assist Blade).
+  LOCK_CHIP
+  OVER_BLADE
+  METAL_BLADE
+  ASSIST_BLADE
 }
 
 enum SpinDirection {
@@ -597,6 +603,10 @@ model Part {
   // the SUGGESTED/default mode — the actual in-match mode is chosen per match (Match.player1SpinMode
   // / player2SpinMode) and locked at build confirmation, per the real WBO rulebook procedure.
   dualSpin      Boolean       @default(false)
+  // RC16 (#122) — Ratchet-Integrated Blades (z. B. Hasbro „Valor Bison FB"): das Blade-Teil
+  // enthält physisch das Ratchet; ein Build damit hat KEIN eigenes RATCHET-Teil (Build.ratchetId
+  // bleibt null). Nur auf BLADE-Teilen sinnvoll, das erzwingt lib/partValidation.ts.
+  isRatchetIntegrated Boolean @default(false)
   weightGrams   Float?
   imageId       String?
   image         MediaAsset?   @relation("PartImage", fields: [imageId], references: [id], onDelete: SetNull)
@@ -605,6 +615,10 @@ model Part {
   updatedAt     DateTime      @updatedAt
 
   buildsBlade     Build[]          @relation("BuildBlade")
+  buildsLockChip  Build[]          @relation("BuildLockChip")
+  buildsOverBlade Build[]          @relation("BuildOverBlade")
+  buildsMetalBlade Build[]         @relation("BuildMetalBlade")
+  buildsAssistBlade Build[]        @relation("BuildAssistBlade")
   buildsRatchet   Build[]          @relation("BuildRatchet")
   buildsBit       Build[]          @relation("BuildBit")
   collectionItems CollectionItem[]
@@ -636,10 +650,23 @@ model CatalogProposal {
 
 model Build {
   id        String  @id @default(uuid())
-  bladeId   String
-  blade     Part    @relation("BuildBlade", fields: [bladeId], references: [id], onDelete: Restrict)
-  ratchetId String
-  ratchet   Part    @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
+  // RC16 (#122) — die Blade-Assembly existiert in zwei sich ausschließenden Formen: EIN BLADE-Teil
+  // (Standard- und Ratchet-Integrated-Builds) ODER der vierteilige Custom-Line-Stack (lockChip +
+  // overBlade + metalBlade + assistBlade). Genau-eine-Form erzwingt lib/buildInput.ts
+  // (verifyBuildParts), nicht deklarativ die DB — daher sind bladeId und alle vier CX-Spalten
+  // nullable. ratchetId ist nur null, wenn das Blade das Ratchet integriert (Part.isRatchetIntegrated).
+  bladeId       String?
+  blade         Part?   @relation("BuildBlade", fields: [bladeId], references: [id], onDelete: Restrict)
+  lockChipId    String?
+  lockChip      Part?   @relation("BuildLockChip", fields: [lockChipId], references: [id], onDelete: Restrict)
+  overBladeId   String?
+  overBlade     Part?   @relation("BuildOverBlade", fields: [overBladeId], references: [id], onDelete: Restrict)
+  metalBladeId  String?
+  metalBlade    Part?   @relation("BuildMetalBlade", fields: [metalBladeId], references: [id], onDelete: Restrict)
+  assistBladeId String?
+  assistBlade   Part?   @relation("BuildAssistBlade", fields: [assistBladeId], references: [id], onDelete: Restrict)
+  ratchetId String?
+  ratchet   Part?   @relation("BuildRatchet", fields: [ratchetId], references: [id], onDelete: Restrict)
   bitId     String
   bit       Part    @relation("BuildBit", fields: [bitId], references: [id], onDelete: Restrict)
   type      BeyType @default(ATTACK)
@@ -667,10 +694,17 @@ model Build {
   // Phase 11 — provenance for collection rows created by "Set als gekauft markieren".
   sourcedCollectionItems CollectionItem[] @relation("CollectionItemSourceBuild")
 
-  // Phase 20 — the same three parts can never back two Build rows; every creation path
-  // pre-checks the combo and returns the existing Build's id gracefully.
-  @@unique([bladeId, ratchetId, bitId])
+  // RC16 (#122) — dieselbe Teile-Kombination (über alle 7 Slots, NULL-sicher) kann nie zwei
+  // Build-Rows stützen. Prisma kann keinen Unique-Index mit COALESCE-Ausdrücken ausdrücken;
+  // der Index "Build_combo_key" wird deshalb handschriftlich in der Migration
+  // 20260911140000_catalog_custom_line_ratchet_integrated gepflegt (COALESCE pro Slot-Spalte,
+  // damit Builds mit leeren Slots — Ratchet-Integrated, Custom Line — korrekt deduplizieren).
+  // Jeder Creation-Path pre-checkt die Kombination per findFirst (lib/buildInput.ts comboWhere).
   @@index([bladeId])
+  @@index([lockChipId])
+  @@index([overBladeId])
+  @@index([metalBladeId])
+  @@index([assistBladeId])
   @@index([ratchetId])
   @@index([bitId])
 }

@@ -3,6 +3,10 @@
 // POST /api/builds (any logged-in user; the server forces isOfficialSet=false). Offered in
 // the deck builder's empty-search path next to the official-Set proposal CTA: a combo needs
 // no review because it doesn't assert "this is a real retail product".
+// RC16 (#122): Das Formular exponiert bewusst nur die Standard-Bauform (Blade + Ratchet + Bit)
+// — die ~16 betroffenen CX-/Ratchet-Integrated-Sets sind offizielle Retail-Produkte und werden
+// über die Kuratoren-Pfade (POST /api/admin/builds, CatalogProposal) erfasst. Der Server
+// akzeptiert seit #122 alle Bauformen; CreatedBuild spiegelt die nullable Slots.
 'use client'
 
 import { useState } from 'react'
@@ -22,8 +26,12 @@ interface CreatedBuild {
   type: 'ATTACK' | 'DEFENSE' | 'STAMINA' | 'BALANCE'
   name: string | null
   isOfficialSet: boolean
-  blade: { id: string; name: string; imageId: string | null }
-  ratchet: { id: string; name: string }
+  blade: { id: string; name: string; imageId: string | null } | null
+  lockChip: { id: string; name: string } | null
+  overBlade: { id: string; name: string } | null
+  metalBlade: { id: string; name: string } | null
+  assistBlade: { id: string; name: string } | null
+  ratchet: { id: string; name: string } | null
   bit: { id: string; name: string }
 }
 

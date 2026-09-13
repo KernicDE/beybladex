@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/Input'
 import { PartForm } from '@/components/admin/PartForm'
 import { ProposalQueue, type ProposalEntry } from '@/components/admin/ProposalQueue'
 import { isCurator } from '@/lib/roles'
+import type { PartCategory } from '@prisma/client'
 
 export const dynamic = 'force-dynamic' // privileged, per-user surface — never cached
 
@@ -38,7 +39,7 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
     ? await prisma.part.findMany({
         where: {
           ...(query ? { name: { contains: query, mode: 'insensitive' } } : {}),
-          ...(categoryFilter ? { category: categoryFilter as 'BLADE' | 'RATCHET' | 'BIT' | 'ACCESSORY' } : {}),
+          ...(categoryFilter ? { category: categoryFilter as PartCategory } : {}),
         },
         orderBy: { name: 'asc' },
         take: PAGE_SIZE + 1,
@@ -73,6 +74,7 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
     spinDirection: part.spinDirection,
     weightGrams: part.weightGrams?.toString() ?? '',
     imageId: part.imageId,
+    isRatchetIntegrated: part.isRatchetIntegrated,
   })
 
   return (
@@ -95,6 +97,11 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
             <option value="RATCHET">Ratchets</option>
             <option value="BIT">Bits</option>
             <option value="ACCESSORY">Zubehör</option>
+            {/* RC16 (#122) — Custom Line (CX) */}
+            <option value="LOCK_CHIP">Lock Chips (CX)</option>
+            <option value="OVER_BLADE">Over Blades (CX)</option>
+            <option value="METAL_BLADE">Metal Blades (CX)</option>
+            <option value="ASSIST_BLADE">Assist Blades (CX)</option>
           </select>
           <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
             Filtern

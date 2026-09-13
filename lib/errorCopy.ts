@@ -100,11 +100,23 @@ const COPY: Record<string, string> = {
   // builds (Phase 20 — POST /api/builds, POST /api/admin/builds)
   combo_exists: 'Diese Kombination existiert bereits im Katalog.',
   unknown_bladeId: 'Das gewählte Blade existiert nicht.',
+  unknown_lockChipId: 'Der gewählte Lock Chip existiert nicht.',
+  unknown_overBladeId: 'Das gewählte Over Blade existiert nicht.',
+  unknown_metalBladeId: 'Das gewählte Metal Blade existiert nicht.',
+  unknown_assistBladeId: 'Das gewählte Assist Blade existiert nicht.',
   unknown_ratchetId: 'Das gewählte Ratchet existiert nicht.',
   unknown_bitId: 'Das gewählte Bit existiert nicht.',
   invalid_bladeId: 'Das gewählte Teil ist kein Blade.',
+  invalid_lockChipId: 'Das gewählte Teil ist kein Lock Chip.',
+  invalid_overBladeId: 'Das gewählte Teil ist kein Over Blade.',
+  invalid_metalBladeId: 'Das gewählte Teil ist kein Metal Blade.',
+  invalid_assistBladeId: 'Das gewählte Teil ist kein Assist Blade.',
   invalid_ratchetId: 'Das gewählte Teil ist kein Ratchet.',
   invalid_bitId: 'Das gewählte Teil ist kein Bit.',
+  // RC16 (#122) — variable Bauformen: Ratchet fehlt bzw. ist bei integriertem Ratchet überflüssig.
+  ratchet_required: 'Diesem Blade fehlt das Ratchet — bitte wähle je ein Blade, Ratchet und Bit.',
+  ratchet_not_allowed: 'Dieses Blade enthält das Ratchet bereits — wähle kein eigenes Ratchet.',
+  invalid_isRatchetIntegrated: '„Ratchet integriert" ist nur bei Blades möglich.',
   invalid_type: 'Der angegebene Bey-Typ ist ungültig.',
 }
 

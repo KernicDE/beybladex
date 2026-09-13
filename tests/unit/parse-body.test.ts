@@ -89,10 +89,15 @@ describe('parsePartInput (malformed → exact tokens)', () => {
     beyType: 'ATTACK', spinDirection: 'RIGHT', weightGrams: 32.5, metadata: null,
   }
 
-  it('POST accepts the full shape', () => {
+  it('POST accepts the full shape (isRatchetIntegrated defaultet auf false, RC16 #122)', () => {
     const { data, errors } = parsePartInput(VALID, false)
     expect(errors).toBeUndefined()
-    expect(data).toEqual(VALID)
+    expect(data).toEqual({ ...VALID, isRatchetIntegrated: false })
+    // Explizites true nur bei Kategorie BLADE; CX-Kategorien sind erlaubt.
+    expect(parsePartInput({ ...VALID, isRatchetIntegrated: true }, false).data!.isRatchetIntegrated).toBe(true)
+    expect(parsePartInput({ ...VALID, isRatchetIntegrated: 'yes' }, false).errors).toEqual(['invalid_isRatchetIntegrated'])
+    expect(parsePartInput({ ...VALID, category: 'LOCK_CHIP', isRatchetIntegrated: true }, false).errors).toEqual(['invalid_isRatchetIntegrated'])
+    expect(parsePartInput({ ...VALID, category: 'ASSIST_BLADE' }, false).errors).toBeUndefined()
   })
 
   it('POST rejects absence of every field (historical full-shape POST)', () => {
@@ -122,10 +127,37 @@ describe('parsePartInput (malformed → exact tokens)', () => {
 })
 
 describe('parseBuildInput', () => {
-  it('requires the three slots; type/name tolerate absence as null', () => {
-    expect(parseBuildInput({}, { official: false }).errors).toEqual(['invalid_bladeId', 'invalid_ratchetId', 'invalid_bitId'])
+  it('bitId bleibt der einzige universell Pflicht-Slot; Blade-Assembly strukturell validiert (RC16 #122)', () => {
+    // Weder Blade noch CX-Stack → invalid_bladeId; ratchetId fehlt parse-seitig legal
+    // (Ratchet-Entscheidung fällt in verifyBuildParts gegen das DB-Teil).
+    expect(parseBuildInput({}, { official: false }).errors).toEqual(['invalid_bitId', 'invalid_bladeId'])
     const { data } = parseBuildInput({ bladeId: 'b', ratchetId: 'r', bitId: 't' }, { official: false })
-    expect(data).toEqual({ bladeId: 'b', ratchetId: 'r', bitId: 't', type: null, name: null, productCode: null })
+    expect(data).toEqual({
+      bladeId: 'b',
+      lockChipId: null,
+      overBladeId: null,
+      metalBladeId: null,
+      assistBladeId: null,
+      ratchetId: 'r',
+      bitId: 't',
+      type: null,
+      name: null,
+      productCode: null,
+    })
+  })
+
+  it('Custom Line: alle vier CX-Slots akzeptiert; Teil-Stack und Blade+CX abgelehnt', () => {
+    const cx = { lockChipId: 'lc', overBladeId: 'ob', metalBladeId: 'mb', assistBladeId: 'ab', ratchetId: 'r', bitId: 't' }
+    const full = parseBuildInput(cx, { official: false })
+    expect(full.errors).toBeUndefined()
+    expect(full.data!.bladeId).toBeNull()
+    expect(full.data!.lockChipId).toBe('lc')
+
+    const partial = parseBuildInput({ lockChipId: 'lc', overBladeId: 'ob', ratchetId: 'r', bitId: 't' }, { official: false })
+    expect(partial.errors).toEqual(['invalid_metalBladeId', 'invalid_assistBladeId'])
+
+    const both = parseBuildInput({ ...cx, bladeId: 'b' }, { official: false })
+    expect(both.errors).toEqual(['invalid_bladeId'])
   })
 
   it('user combos never carry a name/productCode even when sent; official sets validate them', () => {

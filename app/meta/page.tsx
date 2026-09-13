@@ -127,14 +127,18 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
     const builds = await prisma.build.findMany({
       where: {
         ...(type ? { type } : {}),
-        // A build's parts come from one manufacturer in practice; the blade's manufacturer
-        // stands in for the combo (ratchet/bit carry the same brand on real products).
-        ...(manufacturer ? { blade: { is: { manufacturer } } } : {}),
+        // A build's parts come from one manufacturer in practice; the blade-assembly part's
+        // manufacturer stands in for the combo (RC16 #122: BLADE-Teil, bei Custom Line der
+        // Lock Chip — beide angezogen, damit der Filter beide Bauformen trifft).
+        ...(manufacturer ? { OR: [{ blade: { is: { manufacturer } } }, { lockChip: { is: { manufacturer } } }] } : {}),
       },
+      // RC16 (#122) — Hersteller/Name aus der belegten Blade-Assembly: Standard und
+      // Ratchet-Integrated tragen das BLADE-Teil, Custom Line den Lock Chip.
       select: {
         id: true,
         type: true,
         blade: { select: { id: true, name: true, beyType: true, manufacturer: true } },
+        lockChip: { select: { id: true, name: true, manufacturer: true } },
         ratchet: { select: { name: true } },
         bit: { select: { name: true } },
       },
@@ -144,9 +148,12 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
     const rows = sortRows(
       builds.map((b) => ({
         id: b.id,
-        name: `${b.blade.name} ${b.ratchet.name} ${b.bit.name}`,
+        name:
+          b.blade !== null
+            ? `${b.blade.name}${b.ratchet !== null ? ` ${b.ratchet.name}` : ''} ${b.bit.name}`
+            : [b.lockChip?.name, b.ratchet?.name, b.bit.name].filter(Boolean).join(' '),
         type: b.type,
-        manufacturer: b.blade.manufacturer,
+        manufacturer: (b.blade ?? b.lockChip)?.manufacturer ?? 'TT',
         appearances: stats.get(b.id)?.appearances ?? 0,
         winRate: stats.get(b.id)?.winRate ?? null,
       })),

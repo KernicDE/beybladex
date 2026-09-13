@@ -1,11 +1,15 @@
-// lib/buildSearch.ts (Phase 5 Part A)
+// lib/buildSearch.ts (Phase 5 Part A; RC16 #122 — variable Slot-Liste)
 // Server-side build search, shared by /builds, /search's "Teile" section and the deck
-// builder's part-picker (via /builds?q=…). A query matches a build when ANY of its three
+// builder's part-picker (via /builds?q=…). A query matches a build when ANY of its (1–6)
 // parts' names start with the prefix (case-insensitive) — the hard prerequisite for the
 // deck-builder picker per [REVIEW-FIX: ux-product §8]. Cursor-paginated per [REVIEW-FIX: P3].
 import { prisma } from '@/lib/db'
+import type { PartCategory } from '@prisma/client'
 
 export const BUILD_PAGE_SIZE = 20
+
+// RC16 (#122) — alle Part-Slots in fester Reihenfolge (Anzeige + Verfügbarkeitslogik).
+export const BUILD_PART_SLOTS = ['blade', 'lockChip', 'overBlade', 'metalBlade', 'assistBlade', 'ratchet', 'bit'] as const
 
 export async function searchBuilds(opts: { q?: string; cursor?: string | null; take?: number; onlyMineUserId?: string | null }) {
   const q = (opts.q ?? '').trim()
@@ -13,11 +17,9 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
   const rows = await prisma.build.findMany({
     where: q
       ? {
-          OR: [
-            { blade: { name: { startsWith: q, mode: 'insensitive' } } },
-            { ratchet: { name: { startsWith: q, mode: 'insensitive' } } },
-            { bit: { name: { startsWith: q, mode: 'insensitive' } } },
-          ],
+          // RC16 (#122) — OR über alle 7 Slot-Relationen: CX-Builds matchen auf Lock Chip /
+          // Over / Metal / Assist Blade, Ratchet-Integrated auf Blade + Bit.
+          OR: BUILD_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' } } })),
         }
       : {},
     orderBy: { id: 'asc' },
@@ -25,8 +27,12 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
     ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     include: {
       // `include` already pulls in every scalar column on Build itself (id, type, name,
-      // isOfficialSet, imageId, …) — only the three RELATION fields need naming here.
+      // isOfficialSet, imageId, …) — only the RELATION fields need naming here.
       blade: { select: { id: true, name: true, imageId: true, beyType: true } },
+      lockChip: { select: { id: true, name: true } },
+      overBlade: { select: { id: true, name: true } },
+      metalBlade: { select: { id: true, name: true } },
+      assistBlade: { select: { id: true, name: true } },
       ratchet: { select: { id: true, name: true } },
       bit: { select: { id: true, name: true } },
     },
@@ -38,8 +44,9 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
   if (!opts.onlyMineUserId) return { builds: page, nextCursor }
 
   // Phase 11 (item 6): "nur meine Teile" — a build is available when the caller owns (via
-  // CollectionItem, any sourceBuildId or none) ALL THREE of its constituent parts. One query
-  // for the owned-part-id set, then a pure in-memory filter/annotate over this page's builds.
+  // CollectionItem, any sourceBuildId or none) EVERY ONE of its constituent parts (RC16 #122:
+  // je nach Bauform 2–6, leere Slots zählen nicht). One query for the owned-part-id set, then
+  // a pure in-memory filter/annotate over this page's builds.
   // [RC5 #58] Only the id column, DISTINCT: a large collection (many rows per part from
   // repeated purchases/set provenance) previously shipped every duplicate row across the wire.
   // Known tradeoff: filtering happens AFTER cursor pagination, so a page can return fewer than
@@ -53,7 +60,10 @@ export async function searchBuilds(opts: { q?: string; cursor?: string | null; t
   const ownedIds = new Set(owned.map((o) => o.partOrBeyId))
   const withAvailability = page.map((b) => ({
     ...b,
-    available: ownedIds.has(b.bladeId) && ownedIds.has(b.ratchetId) && ownedIds.has(b.bitId),
+    available: BUILD_PART_SLOTS.every((slot) => {
+      const id = b[`${slot}Id`]
+      return id === null || ownedIds.has(id)
+    }),
   }))
   const builds = withAvailability.filter((b) => b.available)
   return { builds, nextCursor }
@@ -79,7 +89,7 @@ export async function searchParts(opts: { q?: string; category?: string; cursor?
     where: {
       AND: [
         ...(q ? [{ name: { startsWith: q, mode: 'insensitive' as const } }] : []),
-        ...(opts.category ? [{ category: opts.category as 'BLADE' | 'RATCHET' | 'BIT' | 'ACCESSORY' }] : []),
+        ...(opts.category ? [{ category: opts.category as PartCategory }] : []),
         ...(cursorRow
           ? [{ OR: [{ name: { gt: cursorRow.name } }, { name: cursorRow.name, id: { gt: cursorRow.id } }] }]
           : []),

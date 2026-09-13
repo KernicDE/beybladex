@@ -6,10 +6,11 @@
 //   tests/integration/catalog-proposal-flow.test.ts).
 //   APPROVE → kind=PART creates the Part row from the validated payload; kind=BUILD creates
 //   any inline-new Part rows plus the official Build (isOfficialSet=true, Set name) in ONE
-//   transaction — unless the combo (bladeId+ratchetId+bitId) already exists, in which case the
-//   transaction answers 409 combo_exists with the EXISTING Build's id (Phase 20 graceful
-//   pre-check, never a raw unique-constraint 500). Either kind links the proposal's uploaded
-//   MediaAsset (Part.imageId / Build.imageId) and writes an append-only AuditLog row.
+//   transaction — unless the combo (exakte 7-Slot-Teilekombination, RC16 #122) already exists,
+//   in which case the transaction answers 409 combo_exists with the EXISTING Build's id
+//   (Phase 20 graceful pre-check, never a raw unique-constraint 500). Ratchet-Pflicht bzw.
+//   -Verbot entscheidet sich am Blade-Teil (Part.isRatchetIntegrated). Either kind links the
+//   proposal's uploaded MediaAsset (Part.imageId / Build.imageId) and writes an audit row.
 //   REJECT → requires a reviewNote (returned to the submitter); sets status + note.
 //   Either outcome notifies the submitter via lib/notify.ts's notifyUser.
 //   CONCURRENT REVIEWS ([RC2 #53]): the status flip is a CONDITIONAL updateMany
@@ -20,7 +21,12 @@ import { requireCurator } from '@/lib/guards'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { notifyUser } from '@/lib/notify'
-import { PROPOSAL_SLOT_CATEGORIES, type BuildProposalPayload, type InlinePartPayload } from '@/lib/proposalValidation'
+import {
+  PROPOSAL_CUSTOM_LINE_SLOTS,
+  PROPOSAL_SLOT_CATEGORIES,
+  type BuildProposalPayload,
+  type InlinePartPayload,
+} from '@/lib/proposalValidation'
 import type { Manufacturer, PartCategory, BeyType, SpinDirection } from '@prisma/client'
 
 const STATUSES = ['APPROVED', 'REJECTED'] as const
@@ -172,28 +178,50 @@ export async function PATCH(req: Request): Promise<Response> {
         createdPartId = part.id
       } else {
         const payload = proposal.payload as unknown as BuildProposalPayload
-        const slotPartIds: Record<string, string> = {}
+        const slotPartIds: Partial<Record<keyof typeof PROPOSAL_SLOT_CATEGORIES, string>> = {}
         for (const [slot, category] of Object.entries(PROPOSAL_SLOT_CATEGORIES)) {
           const s = payload.slots[slot as keyof BuildProposalPayload['slots']]
-          if (!s) throw new Error(`invalid_slot_${slot}`)
+          // RC16 (#122) — CX-Slots sind optional (blade XOR CX-Stack); der Payload-Parser
+          // garantiert Vollständigkeit des Stacks, fehlende CX-Slots sind also legal.
+          if (!s) {
+            if ((PROPOSAL_CUSTOM_LINE_SLOTS as readonly string[]).includes(slot)) continue
+            throw new Error(`invalid_slot_${slot}`)
+          }
           if (s.partId) {
             // Re-verify at approval time (the catalog may have changed since submission).
             const part = await tx.part.findUnique({ where: { id: s.partId }, select: { id: true, category: true } })
             if (!part || part.category !== category) throw new Error(`invalid_slot_${slot}`)
-            slotPartIds[slot] = part.id
+            slotPartIds[slot as keyof typeof slotPartIds] = part.id
           } else if (s.inline) {
             const part = await tx.part.create({ data: { ...inlinePartData(s.inline, category), imageId: null } })
-            slotPartIds[slot] = part.id
+            slotPartIds[slot as keyof typeof slotPartIds] = part.id
           } else {
             throw new Error(`invalid_slot_${slot}`)
           }
         }
-        // Phase 20 duplicate-combo pre-check: the same three parts must never back two Build
-        // rows. The Set name is curator-entered retail data (required by the payload parser)
-        // and is therefore kept verbatim — never overridden by a canonical derivation.
-        const combo = { bladeId: slotPartIds.blade!, ratchetId: slotPartIds.ratchet!, bitId: slotPartIds.bit! }
-        const existingCombo = await tx.build.findUnique({
-          where: { bladeId_ratchetId_bitId: combo },
+        // RC16 (#122) — Ratchet-Regel gegen die DB: Pflicht außer das Blade-Teil integriert das
+        // Ratchet (dann verboten). Für CX-Builds (kein blade-Slot) ist das Ratchet Pflicht.
+        const bladePart = slotPartIds.blade
+          ? await tx.part.findUnique({ where: { id: slotPartIds.blade }, select: { isRatchetIntegrated: true } })
+          : null
+        if (bladePart?.isRatchetIntegrated ? Boolean(slotPartIds.ratchet) : !slotPartIds.ratchet) {
+          throw new Error(bladePart?.isRatchetIntegrated ? 'ratchet_not_allowed' : 'ratchet_required')
+        }
+        // Phase 20 duplicate-combo pre-check (RC16 #122: exakte 7-Slot-Kombination, NULL-sicher):
+        // the same parts must never back two Build rows. The Set name is curator-entered retail
+        // data (required by the payload parser) and is therefore kept verbatim — never
+        // overridden by a canonical derivation.
+        const combo = {
+          bladeId: slotPartIds.blade ?? null,
+          lockChipId: slotPartIds.lockChip ?? null,
+          overBladeId: slotPartIds.overBlade ?? null,
+          metalBladeId: slotPartIds.metalBlade ?? null,
+          assistBladeId: slotPartIds.assistBlade ?? null,
+          ratchetId: slotPartIds.ratchet ?? null,
+          bitId: slotPartIds.bit!,
+        }
+        const existingCombo = await tx.build.findFirst({
+          where: combo,
           select: { id: true },
         })
         if (existingCombo) throw new ComboExistsError(existingCombo.id)
@@ -240,6 +268,9 @@ export async function PATCH(req: Request): Promise<Response> {
       return Response.json({ error: 'combo_exists', id: err.buildId, existing: true }, { status: 409 })
     }
     if (err instanceof Error && err.message.startsWith('invalid_slot_')) {
+      return Response.json({ error: err.message }, { status: 400 })
+    }
+    if (err instanceof Error && (err.message === 'ratchet_required' || err.message === 'ratchet_not_allowed')) {
       return Response.json({ error: err.message }, { status: 400 })
     }
     throw err

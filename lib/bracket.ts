@@ -119,7 +119,7 @@ export async function loadTournamentBracket(tournamentId: string) {
             orderBy: { position: 'asc' },
             include: {
               user: { select: { id: true, username: true, displayName: true } },
-              deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, ratchet: true, bit: true } } } } } },
+              deck: { include: { builds: { orderBy: { position: 'asc' }, include: { build: { include: { blade: true, lockChip: true, overBlade: true, metalBlade: true, assistBlade: true, ratchet: true, bit: true } } } } } },
             },
           },
         },
@@ -131,8 +131,8 @@ export async function loadTournamentBracket(tournamentId: string) {
             orderBy: [{ round: 'asc' }, { bracketOrder: 'asc' }],
             include: {
               judge: { select: { id: true, username: true, displayName: true } },
-              player1Build: { include: { blade: true, ratchet: true, bit: true } },
-              player2Build: { include: { blade: true, ratchet: true, bit: true } },
+              player1Build: { include: { blade: true, lockChip: true, overBlade: true, metalBlade: true, assistBlade: true, ratchet: true, bit: true } },
+              player2Build: { include: { blade: true, lockChip: true, overBlade: true, metalBlade: true, assistBlade: true, ratchet: true, bit: true } },
             },
           },
           teamMatches: {

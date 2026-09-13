@@ -40,7 +40,11 @@ function parseDeckBody(body: unknown): { title?: string; buildIds?: string[]; er
 async function validateDeckBuilds(buildIds: string[]) {
   const builds = await prisma.build.findMany({
     where: { id: { in: buildIds } },
-    include: { blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } } },
+    include: {
+      blade: { select: { name: true } }, lockChip: { select: { name: true } },
+      overBlade: { select: { name: true } }, metalBlade: { select: { name: true } },
+      assistBlade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } },
+    },
   })
   if (builds.length !== buildIds.length) return { error: 'unknown_build' as const }
   const { valid, conflicts } = validateNoDuplicateParts(builds)
@@ -58,7 +62,7 @@ export async function GET(req: Request) {
     orderBy: { id: 'asc' },
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    include: { builds: { include: { build: { select: { id: true, type: true, blade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } } } } } } },
+    include: { builds: { include: { build: { select: { id: true, type: true, blade: { select: { name: true } }, lockChip: { select: { name: true } }, overBlade: { select: { name: true } }, metalBlade: { select: { name: true } }, assistBlade: { select: { name: true } }, ratchet: { select: { name: true } }, bit: { select: { name: true } } } } } } },
   })
   const hasMore = rows.length > PAGE_SIZE
   const decks = hasMore ? rows.slice(0, PAGE_SIZE) : rows

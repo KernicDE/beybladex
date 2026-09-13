@@ -4,20 +4,21 @@
 // carries its Auto-Meta win-rate stats (Phase 5 Part D) from the Redis cache — one batch read
 // for the whole page, with direct-compute fallback when the cache is empty.
 // Phase 11 (item 6): ?onlyMine=1 requires a session (self-only — no other user's collection is
-// exposed by this filter) and restricts results to builds the caller owns all three parts of.
+// exposed by this filter) and restricts results to builds the caller owns all parts of
+// (RC16 #122: 2–6 je nach Bauform).
 // POST — any logged-in user registers a one-off personal combo (the deck builder's
 // BuildComboForm posts here). AUTHZ RULE (standing Global-Constraints requirement): a session
 // is required (401 anonymous — negative test in tests/integration/duplicate-build-combo.test.ts);
 // the server forces isOfficialSet=false and derives the canonical name from the parts when the
-// creator gave none (Phase 20). Duplicate combo (same bladeId+ratchetId+bitId) returns the
-// EXISTING build ({ id, existing: true, build }) instead of a raw unique-constraint 500.
+// creator gave none (Phase 20). Duplicate combo (same parts across all 7 slots, RC16 #122)
+// returns the EXISTING build ({ id, existing: true, build }) instead of a raw unique-constraint 500.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { searchBuilds } from '@/lib/buildSearch'
 import { getBuildStats } from '@/lib/metaCache'
 import { rateLimit } from '@/lib/rateLimit'
-import { parseBuildInput, verifyBuildParts } from '@/lib/buildInput'
-import { deriveBuildName } from '@/lib/buildNaming'
+import { parseBuildInput, verifyBuildParts, comboWhere } from '@/lib/buildInput'
+import { deriveBuildNameFromParts } from '@/lib/buildNaming'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -42,6 +43,10 @@ export async function GET(req: Request) {
         name: b.name,
         isOfficialSet: b.isOfficialSet,
         blade: b.blade,
+        lockChip: b.lockChip,
+        overBlade: b.overBlade,
+        metalBlade: b.metalBlade,
+        assistBlade: b.assistBlade,
         ratchet: b.ratchet,
         bit: b.bit,
         winRate: winRates.get(b.id) ?? null,
@@ -55,10 +60,15 @@ export async function GET(req: Request) {
 
 const BUILD_INCLUDE = {
   blade: { select: { id: true, name: true, imageId: true } },
+  lockChip: { select: { id: true, name: true } },
+  overBlade: { select: { id: true, name: true } },
+  metalBlade: { select: { id: true, name: true } },
+  assistBlade: { select: { id: true, name: true } },
   ratchet: { select: { id: true, name: true } },
   bit: { select: { id: true, name: true } },
 } as const
 
+// RC16 (#122) — kanonischer Name je nach Bauform, aufgelöst über die verifizierten Teile.
 export async function POST(req: Request): Promise<Response> {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
@@ -77,23 +87,19 @@ export async function POST(req: Request): Promise<Response> {
   const verified = await verifyBuildParts(prisma, data!)
   if ('error' in verified) return Response.json({ error: verified.error }, { status: 400 })
 
-  // Phase 20 duplicate-combo pre-check: the same three parts must never produce a second
-  // Build row — return the existing build gracefully (the unique index is the last-resort
-  // backstop, not the user-facing path).
-  const combo = { bladeId: data!.bladeId, ratchetId: data!.ratchetId, bitId: data!.bitId }
-  const existing = await prisma.build.findUnique({
-    where: { bladeId_ratchetId_bitId: combo },
+  // Phase 20 duplicate-combo pre-check (RC16 #122: exakte 7-Slot-Kombination, NULL-sicher):
+  // the same parts must never produce a second Build row — return the existing build
+  // gracefully (the unique expression index is the last-resort backstop, not the user path).
+  const combo = comboWhere(data!)
+  const existing = await prisma.build.findFirst({
+    where: combo,
     include: BUILD_INCLUDE,
   })
   if (existing) return Response.json({ id: existing.id, existing: true, build: existing }, { status: 200 })
 
   // No explicit name on the personal-combo path (parseBuildInput forces name=null for
-  // non-official creates) — derive the canonical "<Blade> <Ratchet><Bit-short>" name.
-  const name = deriveBuildName(
-    verified.parts.get(data!.bladeId)!.name,
-    verified.parts.get(data!.ratchetId)!.name,
-    verified.parts.get(data!.bitId)!.name,
-  )
+  // non-official creates) — derive the canonical name for the build's Bauform.
+  const name = deriveBuildNameFromParts(verified.parts, data!)
   const build = await prisma.build.create({
     data: { ...combo, name, type: data!.type ?? undefined },
     include: BUILD_INCLUDE,
