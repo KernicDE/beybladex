@@ -258,7 +258,11 @@
     "emptyTitle": "No parts in your collection yet",
     "emptyDescription": "Enter which parts you own — with purchase price, merchant and date.",
     "addFirst": "Add your first part",
-    "loadMore": "Load more parts"
+    "loadMore": "Load more parts",
+    "tabCatalog": "Catalog",
+    "tabMine": "My collection",
+    "katalogEmptyTitle": "No official sets in the catalog yet",
+    "katalogEmptyDescription": "Once official sets are in the catalog, they appear here for browsing."
   },
   "clubs": {
     "heading": "Clubs",

@@ -258,7 +258,11 @@
     "emptyTitle": "Noch keine Teile in deiner Sammlung",
     "emptyDescription": "Trage ein, welche Teile du besitzt — mit Kaufpreis, Händler und Kaufdatum.",
     "addFirst": "Füge dein erstes Teil hinzu",
-    "loadMore": "Weitere Teile laden"
+    "loadMore": "Weitere Teile laden",
+    "tabCatalog": "Katalog",
+    "tabMine": "Meine Sammlung",
+    "katalogEmptyTitle": "Noch keine offiziellen Sets im Katalog",
+    "katalogEmptyDescription": "Sobald offizielle Sets im Katalog sind, erscheinen sie hier zum Durchstöbern."
   },
   "clubs": {
     "heading": "Clubs",

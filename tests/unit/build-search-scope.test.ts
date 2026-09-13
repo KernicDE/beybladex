@@ -21,6 +21,24 @@ beforeEach(() => {
   buildFindMany.mockResolvedValue([] as never)
 })
 
+describe('searchBuilds officialOnly (#102)', () => {
+  it('officialOnly filtert auf isOfficialSet: true (Katalog-Tab)', async () => {
+    await searchBuilds({ officialOnly: true })
+
+    const call = buildFindMany.mock.calls[0][0] as { where: { AND: Record<string, unknown>[] } }
+    expect(call.where.AND).toContainEqual({ isOfficialSet: true })
+  })
+
+  it('kombiniert die q-Prefix-Suche über alle 7 Slots mit dem Katalog-Scope', async () => {
+    await searchBuilds({ q: 'Dran', officialOnly: true })
+
+    const call = buildFindMany.mock.calls[0][0] as { where: { AND: Array<{ OR?: unknown[]; isOfficialSet?: boolean }> } }
+    const orClause = call.where.AND.find((c) => Array.isArray(c.OR))
+    expect(orClause?.OR).toHaveLength(BUILD_PART_SLOTS.length)
+    expect(call.where.AND).toContainEqual({ isOfficialSet: true })
+  })
+})
+
 describe('searchBuilds Scope-Filter (#104)', () => {
   it('personalOnly filtert auf isOfficialSet: false (nur eigene Kombis auf /builds)', async () => {
     await searchBuilds({ personalOnly: true })
