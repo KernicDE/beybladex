@@ -1,17 +1,23 @@
-// app/beyblades/[id]/page.tsx (MVP4, #139/#141)
+// app/beyblades/[id]/page.tsx (MVP4, #139/#141/#142)
 // Beyblade-Detailseite (offizielles Set) — Minimal-Version zum Build-Split: Teile, abgeleiteter
-// Typ/Spinrichtung, Hersteller, Product Code, Set-Bild. Bewertung, Preisverlauf, Kauf-Formular
-// und "Build daraus erstellen" bauen in den Folge-Issues auf (Rating UI #143, IA/UX #144,
-// Kauf-Flow #142) — die polymorphen Schema- und Lib-Grundlagen dafür sind mit #141 gelegt.
+// Typ/Spinrichtung, Hersteller, Product Code, Set-Bild. Seit #142 außerdem: Kauf-Flow
+// (Formular + eigene Käufe, logged-in) und der öffentliche Preisverlauf. Bewertung und die
+// restliche IA/UX bauen in den Folge-Issues auf (Rating UI #143, IA/UX #144).
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
+import { PurchaseForm } from '@/components/beyblade/PurchaseForm'
+import { PurchaseList } from '@/components/beyblade/PurchaseList'
+import { PriceSparkline } from '@/components/collection/PriceSparkline'
 import { deriveAssemblyTraits } from '@/lib/assembly'
 import { formatBitDisplay } from '@/lib/buildNaming'
+import { shapePriceHistory } from '@/lib/purchasePriceHistory'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +37,25 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
     },
   })
   if (!beyblade) notFound()
+
+  const session = await auth()
+
+  // #142 — eigene Käufe (Edit/Delete-Liste) und der öffentliche Preisverlauf.
+  const [ownPurchases, priceRows] = await Promise.all([
+    session?.user?.id
+      ? prisma.purchase.findMany({
+          where: { userId: session.user.id, beybladeId: id },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, merchant: true, boughtAt: true, price: true, currency: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+    prisma.purchase.findMany({
+      where: { beybladeId: id, price: { not: null } },
+      select: { price: true, currency: true, boughtAt: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+  ])
+  const priceHistory = shapePriceHistory(priceRows)
 
   const traits = deriveAssemblyTraits(beyblade.blade, beyblade.lockChip)
 
@@ -103,6 +128,50 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* #142 — Kauf-Flow: jeder angemeldete User kann (auch mehrfach) als gekauft markieren.
+          Gäste sehen den Bereich nicht — markieren ist ein Account-Feature (#139). */}
+      {session?.user?.id && (
+        <section aria-labelledby="beyblade-purchase" className="space-y-3">
+          <h2 id="beyblade-purchase" className="text-lg font-semibold">Kauf</h2>
+          <Card className="p-4">
+            <h3 className="mb-3 text-sm font-semibold">Als gekauft markieren</h3>
+            <PurchaseForm beybladeId={beyblade.id} />
+          </Card>
+          {ownPurchases.length > 0 && (
+            <PurchaseList
+              purchases={ownPurchases.map((p) => ({
+                ...p,
+                boughtAt: p.boughtAt ? p.boughtAt.toISOString() : null,
+                createdAt: p.createdAt.toISOString(),
+              }))}
+            />
+          )}
+        </section>
+      )}
+
+      {/* #142 — Preisverlauf: öffentlich, alle gemeldeten Kaufpreise gruppiert nach Währung. */}
+      <section aria-labelledby="beyblade-price-history" className="space-y-3">
+        <h2 id="beyblade-price-history" className="text-lg font-semibold">Preisverlauf</h2>
+        {Object.keys(priceHistory).length === 0 ? (
+          <EmptyState title="Noch keine Preisdaten" description="Sobald Käufe mit Preisangabe gemeldet werden, erscheint hier der Verlauf." />
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {Object.entries(priceHistory).map(([currency, points]) => (
+              <li key={currency}>
+                <Card className="p-4">
+                  <p className="mb-2 text-sm font-semibold">
+                    {currency} · {points.length} {points.length === 1 ? 'Datenpunkt' : 'Datenpunkte'}
+                  </p>
+                  <PriceSparkline
+                    points={points.map((p) => ({ price: p.price, recordedAt: p.date }))}
+                  />
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   )
