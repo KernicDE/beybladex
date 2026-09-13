@@ -1,8 +1,8 @@
 // tests/unit/guest-landing.test.tsx (RC13 issue #88)
 // The guest home page is a full marketing page, not just a hero: every section promised by
 // the issue must render — hero with prominent register/login CTAs, the six real feature
-// cards deep-linking into the app, the screenshot gallery (currently decorative mockup
-// frames, each visibly marked as a preview), the DACH-community section, and the closing
+// cards deep-linking into the app, the screenshot gallery with real production screenshots
+// in browser frames, the DACH-community section, and the closing
 // register CTA. GuestLanding is presentational; the teaser's own data states are covered in
 // landing-event-teaser.test.tsx.
 import { render, screen } from '@testing-library/react'
@@ -54,14 +54,18 @@ describe('GuestLanding — feature overview (#88)', () => {
 })
 
 describe('GuestLanding — screenshot gallery (#88)', () => {
-  it('renders the gallery with three mockup frames, each marked as a preview', () => {
+  it('renders the gallery with three real screenshots in browser frames', () => {
     render(<GuestLanding upcomingEvents={[]} t={t} />)
     expect(screen.getByRole('heading', { name: 'Ein Blick in die App' })).toBeInTheDocument()
-    expect(screen.getByRole('figure', { name: 'Vorschau: beybladex.de/events' })).toBeInTheDocument()
-    expect(screen.getByRole('figure', { name: 'Vorschau: beybladex.de/clubs' })).toBeInTheDocument()
-    expect(screen.getByRole('figure', { name: 'Vorschau: beybladex.de/decks' })).toBeInTheDocument()
-    // Each frame visibly flags that the final screenshot asset is still pending.
-    expect(screen.getAllByText(/Screenshot folgt/)).toHaveLength(3)
+    expect(screen.getByRole('figure', { name: 'Event-Kalender mit DACH-Karte' })).toBeInTheDocument()
+    expect(screen.getByRole('figure', { name: 'Clubs & Community' })).toBeInTheDocument()
+    expect(screen.getByRole('figure', { name: 'Rangliste & Elo' })).toBeInTheDocument()
+    // Each frame shows a real production screenshot with a meaningful alt text.
+    expect(screen.getByRole('img', { name: /beybladex\.de\/events/ })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /beybladex\.de\/clubs/ })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /beybladex\.de\/rangliste/ })).toBeInTheDocument()
+    // The old "preview pending" placeholder copy must be gone.
+    expect(screen.queryByText(/Screenshot folgt/)).not.toBeInTheDocument()
   })
 })
 

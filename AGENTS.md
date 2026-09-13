@@ -37,11 +37,16 @@ Supportfälle referenzieren die Version aus dem Footer oder `https://beybladex.d
 
 # Release-Workflow: Milestone für Milestone
 
-- Offene Arbeit ist in GitHub-Milestones organisiert: **RC0 → RC15**, jeweils ein
-  thematisches Paket (~5 Issues) für einen Agenten. Übersicht:
-  `gh api repos/KernicDE/beybladex/milestones`
+**Stand 13.09.2026:** Die bisherige Milestone-Staffel (RC0 → RC16, Catalog,
+Hotfix-Milestone) ist vollständig abgeschlossen und live — alle Milestones sind
+geschlossen. Der Workflow bleibt als verbindliches Regelwerk für künftige
+Milestones bestehen.
+
+- Arbeit ist in GitHub-Milestones organisiert: jeweils ein thematisches Paket
+  (~5 Issues) für einen Agenten. Übersicht (auch historische, geschlossene):
+  `gh api repos/KernicDE/beybladex/milestones?state=all`
 - **Die Reihenfolge ist bindend:** ein Milestone nach dem anderen, beginnend mit
-  dem niedrigsten noch offenen RC. Nicht parallel in mehreren Milestones arbeiten.
+  dem niedrigsten noch offenen. Nicht parallel in mehreren Milestones arbeiten.
 - **Neuer Build / GoLive findet erst statt, wenn ein Milestone vollständig
   abgeschlossen ist** (alle seine Issues geschlossen und auf `main` gemerged).
   Dazwischen keine Releases und keine GoLives.
@@ -51,6 +56,8 @@ Supportfälle referenzieren die Version aus dem Footer oder `https://beybladex.d
   Kommentar-UUID ist nicht nötig.
 - Vor dem Anlegen neuer Issues prüfen, ob ein offenes Issue das Thema bereits
   abdeckt — Duplikate vermeiden.
+- **Vor jedem GoLive** die Server-`compose.yml` gegen das Repo diffen
+  (Compose-Drift-Regel oben).
 - Es wird niemals lokal Docker gestartet. Workflow: entwickeln → Typecheck/Tests
   lokal → PR → CI grün → mergen. **GoLive manuell auf dem Server**: in
   `/opt/docker/beybladex/app-beybladex` → `docker compose pull app && docker
