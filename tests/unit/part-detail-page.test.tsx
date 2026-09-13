@@ -11,6 +11,7 @@ vi.mock('@/lib/db', () => ({
     build: { findMany: vi.fn() },
     beyblade: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
+    rating: { findMany: vi.fn(), aggregate: vi.fn() },
   },
 }))
 vi.mock('@/lib/auth', () => ({ auth: vi.fn(async () => null) }))
@@ -18,7 +19,11 @@ vi.mock('@/lib/metaCache', () => ({
   getPartStats: vi.fn(async () => new Map([['p1', { appearances: 1, wins: 1, winRate: 1, decisiveMatches: 1 }]])),
   getBuildStats: vi.fn(async () => new Map()),
 }))
-vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NEXT_NOT_FOUND') } }))
+vi.mock('next/navigation', () => ({
+  notFound: () => { throw new Error('NEXT_NOT_FOUND') },
+  // MVP4 #143: die Seite rendert RatingList/RatingForm ('use client' — useRouter).
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+}))
 
 import { prisma } from '@/lib/db'
 import PartDetailPage from '@/app/parts/[id]/page'
@@ -47,6 +52,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   buildFindMany.mockResolvedValue([] as never)
   beybladeFindMany.mockResolvedValue([] as never)
+  // MVP4 #143: polymorphe Teil-Bewertung (findMany = Liste, aggregate = Header-Durchschnitt).
+  vi.mocked(prisma.rating.findMany).mockResolvedValue([] as never)
+  vi.mocked(prisma.rating.aggregate).mockResolvedValue({ _avg: { stars: null }, _count: 0 } as never)
 })
 
 describe('PartDetailPage (issue #105; MVP4 #141 — Beyblades UND Builds)', () => {
