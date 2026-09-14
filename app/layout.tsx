@@ -3,6 +3,7 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { Header } from "@/components/layout/Header";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { Footer } from "@/components/layout/Footer";
 import { auth } from "@/lib/auth";
@@ -57,12 +58,17 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex">
         <ThemeProvider>
-          <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} locale={locale} t={t} />
-          <main className="flex-1 pb-12 md:pb-0">{children}</main>
+          {/* #157 — Sidebar (Desktop-Nav, ab `lg`) + rechte Spalte (Header <lg, Inhalt, Footer)
+              nebeneinander; Header selbst blendet sich ab `lg` aus (siehe dessen Kommentar). */}
+          <Sidebar session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} locale={locale} t={t} />
+          <div className="flex min-h-full min-w-0 flex-1 flex-col">
+            <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} locale={locale} t={t} />
+            <main className="flex-1 pb-12 md:pb-0">{children}</main>
+            <Footer t={t} />
+          </div>
         </ThemeProvider>
-        <Footer t={t} />
         <MobileNav session={session} t={t} />
         <RegisterServiceWorker />
         <InstallPrompt />

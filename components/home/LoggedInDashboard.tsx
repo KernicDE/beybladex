@@ -103,9 +103,11 @@ export function LoggedInDashboard({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
+        {/* #157 — Karten-Hover jetzt Anheben+farbige Kante (Card interactive) statt
+            Aufhellen/Abdunkeln der ganzen Fläche. */}
         {PRIMARY_LINKS.map(({ href, title, description }) => (
-          <Link key={href} href={href} className="block transition-opacity hover:opacity-80">
-            <Card>
+          <Link key={href} href={href} className="block">
+            <Card interactive>
               <h2 className="font-semibold text-x-cyan-text dark:text-x-cyan">{title}</h2>
               <p className="mt-1 text-sm text-current/60">{description}</p>
             </Card>

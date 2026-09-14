@@ -93,8 +93,10 @@ export function BuildCard({
 }) {
   const title = buildDisplayName(build)
   const imageId = build.imageId ?? build.blade?.imageId ?? build.lockChip?.imageId ?? null
+  // #157 — Karte trägt Typ-/WinRate-/Verfügbarkeits-Badges (mehrfarbig): Hover hebt an + färbt
+  // die Kante statt die Fläche zu invertieren/aufzuhellen (würde mit den Badge-Farben kollidieren).
   return (
-    <Card className="p-4">
+    <Card className="p-4" interactive>
       {/* MVP4 #141: Beyblades (Katalog) leben unter /beyblades/[id], Builds unter /builds/[id] —
           href-Override für den Aggregat-wechselnden Call-Site. */}
       <Link href={href ?? `/builds/${build.id}`} className="flex items-center gap-4">

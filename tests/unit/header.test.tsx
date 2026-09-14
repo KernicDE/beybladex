@@ -1,52 +1,63 @@
 // tests/unit/header.test.tsx
+// #157 — die Desktop-Hauptnavigation zog aus Header.tsx in Sidebar.tsx (Nutzer-Feedback
+// "Verschiebung des Menüs auf die Seite"); Header ist jetzt nur noch die <lg-Utility-Leiste
+// (Marke, Suche, Glocke, Sprache, Theme, Nutzermenü) — kein eigener Nav-Link mehr.
 import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { Header } from '@/components/layout/Header'
+import { Sidebar } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 import deMessages from '@/lib/i18n/messages/de.json'
 
-// RC14 #17 — Header/MobileNav render from a request dictionary; the tests pin German chrome.
+// RC14 #17 — Header/Sidebar/MobileNav render from a request dictionary; the tests pin German
+// chrome.
 const t = deMessages
 const locale = 'de' as const
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }))
 
-describe('Header', () => {
-  it('renders the brand name and an icon theme toggle (#124)', () => {
+describe('Header (<lg-Utility-Leiste)', () => {
+  it('renders the brand name and the theme-toggle trigger (#124, an Sidebar-Header angeglichen in #157)', () => {
     render(
       <ThemeProvider>
         <Header session={null} avatarImageId={null} locale={locale} t={t} />
       </ThemeProvider>
     )
     expect(screen.getByText('BeybladeX.de')).toBeInTheDocument()
-    // Icon-Segment statt Text-Cycler: drei Wahlmöglichkeiten (hell/dunkel/system),
-    // der aktive Zustand per aria-pressed hervorgehoben.
-    const group = screen.getByRole('group', { name: 'Farbschema' })
-    const buttons = within(group).getAllByRole('button')
-    expect(buttons).toHaveLength(3)
-    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toContain('true')
+    // #157 — ein Icon-Trigger statt einer immer sichtbaren 3er-Reihe; Details in
+    // tests/unit/theme-toggle.test.tsx.
+    expect(screen.getByRole('button', { name: /^Farbschema:/ })).toBeInTheDocument()
+  })
+
+  it('trägt keine eigene Seitennavigation mehr (lebt in Sidebar.tsx)', () => {
+    render(
+      <ThemeProvider>
+        <Header session={null} avatarImageId={null} locale={locale} t={t} />
+      </ThemeProvider>
+    )
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
 })
 
-// RC10 #29: one route, one name. The header's desktop nav and the mobile bottom nav
-// must not diverge on the label for the same route ("Turniere & Events" vs "Events"
-// was the reported inconsistency) — the public IA term is "Events" (matches /events).
-describe('nav label consistency (#29)', () => {
-  it('header and MobileNav use the same label for /events', () => {
-    const headerView = render(
+// RC10 #29 (übertragen auf #157): one route, one name. Sidebar (Desktop-Nav seit #157) und
+// MobileNav (Bottom-Tabs) dürfen beim Label für dieselbe Route nicht auseinanderlaufen
+// ("Turniere & Events" vs "Events" war der ursprünglich gemeldete Fall).
+describe('nav label consistency (#29, #157)', () => {
+  it('Sidebar und MobileNav verwenden dasselbe Label für /events', () => {
+    const sidebarView = render(
       <ThemeProvider>
-        <Header session={null} avatarImageId={null} locale={locale} t={t} />
+        <Sidebar session={null} avatarImageId={null} unreadNotifications={0} locale={locale} t={t} />
       </ThemeProvider>,
     )
-    const headerLink = within(headerView.container).getByRole('link', { name: 'Events' })
-    expect(headerLink).toHaveAttribute('href', '/events')
+    const sidebarLink = within(sidebarView.container).getByRole('link', { name: 'Events' })
+    expect(sidebarLink).toHaveAttribute('href', '/events')
 
     const mobileView = render(<MobileNav session={null} t={t} />)
     const tab = within(mobileView.container).getByRole('link', { name: /events/i })
     expect(tab).toHaveAttribute('href', '/events')
-    // Same accessible name (modulo the lock icon slot, unused for /events) — the tab's
-    // visible label must equal the header's label, not a longer variant.
-    expect(tab.textContent).toBe(headerLink.textContent)
+    // Gleicher sichtbarer Text (Icon+Label in Sidebar vs. Icon+Label in MobileNav) — die
+    // TEXT-Inhalte müssen übereinstimmen, nicht nur "enthält events".
+    expect(tab.textContent?.trim()).toBe(sidebarLink.textContent?.trim())
   })
 })
