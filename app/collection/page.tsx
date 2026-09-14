@@ -365,6 +365,11 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
                 {group.parts.map((part) => (
                   <li key={part.id}>
                     <Card className="p-3">
+                      {/* #164-Nachtrag — die Badges standen bisher NEBEN dem Namen in derselben
+                          Zeile und drückten die Textspalte auf einer schmalen Karte bis auf
+                          wenige Pixel zusammen; break-words (für den vollen Namen, #137) brach
+                          dann buchstabenweise um. Jetzt wie BeybladeCard: Badges in einer
+                          eigenen Zeile UNTER dem Namen, Bild/Textspalte shrink-0/min-w-0. */}
                       <Link href={`/parts/${part.id}`} className="flex items-center gap-3">
                         {part.imageId ? (
                           <Image
@@ -373,10 +378,10 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
                             width={40}
                             height={40}
                             sizes="40px"
-                            className="h-10 w-10 rounded object-contain"
+                            className="h-10 w-10 shrink-0 rounded object-contain"
                           />
                         ) : (
-                          <div aria-hidden="true" className="h-10 w-10 rounded bg-x-cyan/10" />
+                          <div aria-hidden="true" className="h-10 w-10 shrink-0 rounded bg-x-cyan/10" />
                         )}
                         <div className="min-w-0 flex-1">
                           {/* #137 — voller Teilename statt abgeschnitten; bricht bei Bedarf um. */}
@@ -384,10 +389,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
                           <p className="truncate text-sm text-current/60">
                             {part.manufacturer === 'TT' ? t.catalog.manufacturerTT : t.catalog.manufacturerHasbro}
                           </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            {part.beyType && <TypeBadge type={part.beyType} />}
+                            {ownedPartIds.has(part.id) && <Badge tone="green">✓ Im Besitz</Badge>}
+                            <WinRateBadge stats={partStats.get(part.id) ?? null} />
+                          </div>
                         </div>
-                        {part.beyType && <TypeBadge type={part.beyType} />}
-                        {ownedPartIds.has(part.id) && <Badge tone="green">✓ Im Besitz</Badge>}
-                        <WinRateBadge stats={partStats.get(part.id) ?? null} />
                       </Link>
                     </Card>
                   </li>
