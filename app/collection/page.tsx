@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
 import { BeybladeCard } from '@/components/beyblade/BeybladeCard'
+import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
@@ -191,15 +192,22 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       </form>
 
       {catalog.beyblades.length === 0 ? (
-        <EmptyState
-          title={catalogFilterActive ? t.collection.beybladesEmptyFilteredTitle : t.collection.beybladesEmptyTitle}
-          description={catalogFilterActive ? t.collection.beybladesEmptyFilteredDescription : t.collection.beybladesEmptyDescription}
-          action={catalogFilterActive ? (
-            <Link href="/collection?tab=beyblades" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
-              {t.catalog.reset}
-            </Link>
-          ) : undefined}
-        />
+        <div className="space-y-3">
+          <EmptyState
+            title={catalogFilterActive ? t.collection.beybladesEmptyFilteredTitle : t.collection.beybladesEmptyTitle}
+            description={catalogFilterActive ? t.collection.beybladesEmptyFilteredDescription : t.collection.beybladesEmptyDescription}
+            action={catalogFilterActive ? (
+              <Link href="/collection?tab=beyblades" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
+                {t.catalog.reset}
+              </Link>
+            ) : undefined}
+          />
+          {/* #145 — Suchlücke im offiziellen Katalog: Anlegen bleibt Curator-Sache, aber jede:r
+              Angemeldete darf ein fehlendes Set vorschlagen (kind=BUILD → erzeugt beim
+              Approval eine Beyblade-Zeile). Die Seite ist login-gegated, die CTA darf
+              also immer interaktiv sein. */}
+          {catalogQ !== '' && <CatalogProposalCTA defaultKind="BUILD" />}
+        </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {catalog.beyblades.map((beyblade) => (
