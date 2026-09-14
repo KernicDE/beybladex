@@ -4,7 +4,11 @@ import { prisma } from '@/lib/db'
 import { mediaFilePath } from '@/lib/media'
 import { invalidateTokenVersionCache } from '@/lib/tokenVersion'
 
-export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
+// `actorId` defaults to the erased user themselves (self-service deletion, the only caller
+// until issue #185) — an ADMIN-triggered deletion (app/api/admin/users/[id]/route.ts) passes
+// the ADMIN's own id instead, so the AuditLog row correctly attributes who acted, not who was
+// acted upon (mirrors the role-assignment route's actorId/targetId split).
+export async function eraseOrAnonymizeUser(userId: string, actorId: string = userId): Promise<void> {
   // Phase 21: ids of the on-volume avatar files to unlink AFTER the transaction commits
   // (below). lib/media.ts has no delete-file helper — the write path is
   // writeFile(mediaFilePath(assetId), buffer), so the matching removal is this unlink.
@@ -142,11 +146,13 @@ export async function eraseOrAnonymizeUser(userId: string): Promise<void> {
     // (anonymized-in-place, never deleted) user row.
     await tx.auditLog.create({
       data: {
-        actorId: userId,
+        actorId,
         action: 'account.delete',
         targetType: 'user',
         targetId: userId,
-        summary: `Konto @${originalUsername} gelöscht und anonymisiert`,
+        summary: actorId === userId
+          ? `Konto @${originalUsername} gelöscht und anonymisiert`
+          : `Konto @${originalUsername} von einem Admin gelöscht und anonymisiert`,
       },
     })
   })
