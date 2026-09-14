@@ -90,4 +90,45 @@ describe('mark set purchased (MVP4 #141)', () => {
     await prisma.part.deleteMany({ where: { id: { in: [blade.id, ratchet.id, bit.id] } } })
     await prisma.user.delete({ where: { id: user.id } })
   })
+
+  // #137/#153-Nachtrag — Live-Report: "Beyblade MIT Kaufdatum markiert, Mein Inventar zeigt
+  // trotzdem 'noch keine Teile'". Die bestehenden Tests oben schicken nie boughtAt mit — reine
+  // Absicherung, dass das Datumsfeld den Round-Trip (Route → DB → dieselbe Query wie
+  // app/collection/page.tsx) nicht kaputt macht.
+  it('boughtAt (Kaufdatum) übersteht den Round-Trip; die Inventar-Query (wie /collection) findet die Zeilen danach', async () => {
+    const suffix = Date.now().toString(36)
+    const user = await prisma.user.create({ data: { username: `msp_date_${suffix}`, passwordHash: 'x' } })
+    const { blade, ratchet, bit, beyblade } = await makeSet(suffix)
+    mockAuth.mockResolvedValue(asSession({ id: user.id, name: user.username }))
+
+    const res = await MARK_PURCHASED(
+      req({ beybladeId: beyblade.id, purchasePrice: 19.99, currency: 'EUR', merchant: 'Testladen', boughtAt: '2026-09-14' }),
+    )
+    expect(res.status).toBe(201)
+    const { ids } = (await res.json()) as { ids: string[] }
+    expect(ids).toHaveLength(3)
+
+    const rows = await prisma.collectionItem.findMany({ where: { id: { in: ids } } })
+    expect(rows.every((r) => r.boughtAt?.toISOString().slice(0, 10) === '2026-09-14')).toBe(true)
+
+    // Exakt dieselbe Query-Form wie app/collection/page.tsx "Mein Inventar" (orderBy id asc,
+    // select part: {...}, where userId) — muss dieselben drei Zeilen liefern.
+    const inventory = await prisma.collectionItem.findMany({
+      where: { userId: user.id },
+      orderBy: { id: 'asc' },
+      take: 21,
+      select: {
+        id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
+        part: { select: { name: true, category: true, manufacturer: true, imageId: true } },
+      },
+    })
+    expect(inventory).toHaveLength(3)
+    expect(inventory.map((r) => r.part.name).sort()).toEqual([blade.name, ratchet.name, bit.name].sort())
+
+    await prisma.collectionItem.deleteMany({ where: { userId: user.id } })
+    await prisma.purchase.deleteMany({ where: { userId: user.id } })
+    await prisma.beyblade.delete({ where: { id: beyblade.id } })
+    await prisma.part.deleteMany({ where: { id: { in: [blade.id, ratchet.id, bit.id] } } })
+    await prisma.user.delete({ where: { id: user.id } })
+  })
 })
