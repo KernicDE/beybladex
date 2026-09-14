@@ -2,24 +2,25 @@
 // #157 (Nutzer-Feedback "Verschiebung des Menüs auf die Seite"): die Desktop-Hauptnavigation
 // lebt jetzt in components/layout/Sidebar.tsx (sichtbar ab `lg`, siehe deren Kopf-Kommentar).
 // Dieser Header bleibt NUR noch für Viewports UNTER `lg` sichtbar (`lg:hidden` unten) — dort
-// übernimmt weiterhin er Marke + Utility-Reihe (Suche/Glocke/Sprache/Theme/Nutzermenü); die
-// eigentliche Seitennavigation kommt für diese Breiten von MobileNav.tsx' Bottom-Tabs, genau wie
-// vorher (die alte <nav>-Leiste hier war ohnehin schon nur ab `lg` sichtbar, für <lg also kein
+// übernimmt weiterhin er Marke + Utility-Reihe (Suche/Glocke/Nutzermenü); die eigentliche
+// Seitennavigation kommt für diese Breiten von MobileNav.tsx' Bottom-Tabs, genau wie vorher (die
+// alte <nav>-Leiste hier war ohnehin schon nur ab `lg` sichtbar, für <lg also kein
 // Verhaltensunterschied).
+// Live-Nachtrag ("Entferne Sprache und Farbschema, das ist entweder vom System oder im
+// Nutzermenü"): beide Controls sind komplett aus dem Chrome raus (waren hier wie in
+// Sidebar.tsx). Farbschema kommt nur noch aus prefers-color-scheme; Sprache eingeloggt über
+// /settings/profile (per UserMenu erreichbar), Gäste über die Browser-Sprache (Accept-Language).
 import Link from 'next/link'
 import { Search } from 'lucide-react'
 import type { Session } from 'next-auth'
-import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { NotificationBell } from '@/components/layout/NotificationBell'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { GuestLegalMenu } from '@/components/layout/GuestLegalMenu'
 import { BrandMark } from '@/components/brand/BrandMark'
-import { LanguageSwitcher } from '@/components/layout/LanguageSwitcher'
 import type { Messages } from '@/lib/i18n/server'
-import type { Locale } from '@/lib/i18n/locales'
 
-export function Header({ session, avatarImageId, unreadNotifications, locale, t }: { session: Session | null; avatarImageId: string | null; unreadNotifications?: number; locale: Locale; t: Messages }) {
+export function Header({ session, avatarImageId, unreadNotifications, t }: { session: Session | null; avatarImageId: string | null; unreadNotifications?: number; t: Messages }) {
   const username = session?.user?.name
   return (
     <header className="sticky top-0 z-40 flex items-center gap-4 border-b border-x-cyan/20 bg-base-light/90 px-4 py-3 backdrop-blur dark:bg-base-dark/90 md:px-8 lg:hidden">
@@ -46,8 +47,6 @@ export function Header({ session, avatarImageId, unreadNotifications, locale, t 
           submitLabel={t.common.search}
         />
         {session && <NotificationBell unreadCount={unreadNotifications ?? 0} />}
-        <LanguageSwitcher current={locale} authed={Boolean(session)} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} />
-        <ThemeToggle />
         {session ? (
           <UserMenu username={username ?? ''} avatarImageId={avatarImageId} />
         ) : (
