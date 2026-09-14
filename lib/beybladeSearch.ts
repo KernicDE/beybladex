@@ -28,9 +28,14 @@ const BEYBLADE_INCLUDE = {
 
 export type BeybladeSearchRow = Awaited<ReturnType<typeof searchBeyblades>>['beyblades'][number]
 
-export async function searchBeyblades(opts: {
+export interface SearchBeybladesOpts {
   q?: string
+  /** @deprecated Issue #155 — die UI-Listen (Sammlung) nutzen jetzt `page` (echte Seitenzahlen);
+   *  Cursor bleibt für Nicht-UI-Konsumenten der JSON-API (GET /api/beyblades) erhalten. */
   cursor?: string | null
+  /** Issue #155 — 1-indexierte Seite. Gesetzt → skip/take-Pagination + COUNT-Query statt Cursor;
+   *  liefert zusätzlich `totalCount`/`totalPages`. */
+  page?: number
   take?: number
   /** Hersteller-Filter (Manufacturer-Code: TT|HASBRO). */
   manufacturer?: string | null
@@ -38,36 +43,62 @@ export async function searchBeyblades(opts: {
   type?: string | null
   /** "Nur im Besitz" — nur Sets, für die der Viewer mindestens einen Purchase hat. */
   ownedByUserId?: string | null
-}) {
+}
+
+function beybladeWhere(opts: SearchBeybladesOpts, q: string) {
+  return {
+    AND: [
+      ...(q
+        ? [
+            {
+              // Name-Präfix ODER Hersteller-Artikelnummer-Präfix (z. B. "G0290") ODER
+              // Teilname-Präfix über alle 7 Slots (Teilcode-Suche, #144).
+              OR: [
+                { name: { startsWith: q, mode: 'insensitive' as const } },
+                { productCode: { startsWith: q, mode: 'insensitive' as const } },
+                ...ASSEMBLY_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' as const } } })),
+              ],
+            },
+          ]
+        : []),
+      ...(opts.manufacturer ? [{ manufacturer: opts.manufacturer as Manufacturer }] : []),
+      ...(opts.type
+        ? [
+            // Abgeleiteter Typ: Standard/Ratchet-Integrated trägt ihn am BLADE-Teil,
+            // Custom Line am Lock Chip (deriveAssemblyTraits in lib/assembly.ts).
+            { OR: [{ blade: { beyType: opts.type as BeyType } }, { lockChip: { beyType: opts.type as BeyType } }] },
+          ]
+        : []),
+      ...(opts.ownedByUserId ? [{ purchases: { some: { userId: opts.ownedByUserId } } }] : []),
+    ],
+  }
+}
+
+export async function searchBeyblades(opts: SearchBeybladesOpts) {
   const q = (opts.q ?? '').trim()
   const take = opts.take ?? BEYBLADE_PAGE_SIZE
+  const where = beybladeWhere(opts, q)
+
+  // #155 — Seitenzahlen brauchen eine Gesamtzahl; skip/take statt Cursor. Bekannter Tradeoff
+  // (skip wird bei großem Offset langsamer) ist bei dieser Katalog-Größe akzeptabel — dasselbe
+  // Abwägen wie beim in-memory-Filter in searchBuilds' onlyMineUserId.
+  if (opts.page !== undefined) {
+    const page = Math.max(1, opts.page)
+    const [rows, totalCount] = await Promise.all([
+      prisma.beyblade.findMany({
+        where,
+        orderBy: { id: 'asc' },
+        take,
+        skip: (page - 1) * take,
+        include: BEYBLADE_INCLUDE,
+      }),
+      prisma.beyblade.count({ where }),
+    ])
+    return { beyblades: rows, nextCursor: null, page, totalPages: Math.max(1, Math.ceil(totalCount / take)), totalCount }
+  }
+
   const rows = await prisma.beyblade.findMany({
-    where: {
-      AND: [
-        ...(q
-          ? [
-              {
-                // Name-Präfix ODER Hersteller-Artikelnummer-Präfix (z. B. "G0290") ODER
-                // Teilname-Präfix über alle 7 Slots (Teilcode-Suche, #144).
-                OR: [
-                  { name: { startsWith: q, mode: 'insensitive' as const } },
-                  { productCode: { startsWith: q, mode: 'insensitive' as const } },
-                  ...ASSEMBLY_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' as const } } })),
-                ],
-              },
-            ]
-          : []),
-        ...(opts.manufacturer ? [{ manufacturer: opts.manufacturer as Manufacturer }] : []),
-        ...(opts.type
-          ? [
-              // Abgeleiteter Typ: Standard/Ratchet-Integrated trägt ihn am BLADE-Teil,
-              // Custom Line am Lock Chip (deriveAssemblyTraits in lib/assembly.ts).
-              { OR: [{ blade: { beyType: opts.type as BeyType } }, { lockChip: { beyType: opts.type as BeyType } }] },
-            ]
-          : []),
-        ...(opts.ownedByUserId ? [{ purchases: { some: { userId: opts.ownedByUserId } } }] : []),
-      ],
-    },
+    where,
     orderBy: { id: 'asc' },
     take: take + 1,
     ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
@@ -76,5 +107,5 @@ export async function searchBeyblades(opts: {
   const hasMore = rows.length > take
   const beyblades = hasMore ? rows.slice(0, take) : rows
   const nextCursor = hasMore ? beyblades[beyblades.length - 1]!.id : null
-  return { beyblades, nextCursor }
+  return { beyblades, nextCursor, page: null, totalPages: null, totalCount: null }
 }

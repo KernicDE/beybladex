@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
   prisma: {
-    build: { findMany: vi.fn() },
+    build: { findMany: vi.fn(), count: vi.fn() },
     collectionItem: { findMany: vi.fn() },
   },
 }))
@@ -16,11 +16,13 @@ import { prisma } from '@/lib/db'
 import { searchBuilds, groupPartsByCategory, PART_CATEGORY_ORDER } from '@/lib/buildSearch'
 
 const buildFindMany = vi.mocked(prisma.build.findMany)
+const buildCount = vi.mocked(prisma.build.count)
 const collectionFindMany = vi.mocked(prisma.collectionItem.findMany)
 
 beforeEach(() => {
   vi.clearAllMocks()
   buildFindMany.mockResolvedValue([] as never)
+  buildCount.mockResolvedValue(0 as never)
   collectionFindMany.mockResolvedValue([] as never)
 })
 
@@ -97,5 +99,27 @@ describe('groupPartsByCategory (#144)', () => {
     for (const c of ['BLADE', 'RATCHET', 'BIT', 'ACCESSORY', 'LOCK_CHIP', 'OVER_BLADE', 'METAL_BLADE', 'ASSIST_BLADE']) {
       expect(uniq.has(c as (typeof PART_CATEGORY_ORDER)[number])).toBe(true)
     }
+  })
+})
+
+describe('searchBuilds page (#155 — echte Seitenzahlen)', () => {
+  it('nutzt skip/take + COUNT statt Cursor, kombiniert mit creatorId/publicOnly/type', async () => {
+    buildCount.mockResolvedValueOnce(41 as never)
+    const result = await searchBuilds({ page: 3, take: 20, publicOnly: true, type: 'STAMINA' })
+
+    const call = buildFindMany.mock.calls[0][0] as { skip: number; take: number; cursor?: unknown }
+    expect(call.skip).toBe(40)
+    expect(call.take).toBe(20)
+    expect(call.cursor).toBeUndefined()
+    expect(buildCount).toHaveBeenCalledWith({ where: (buildFindMany.mock.calls[0][0] as { where: unknown }).where })
+    expect(result.page).toBe(3)
+    expect(result.totalPages).toBe(3) // ceil(41/20)
+    expect(collectionFindMany).not.toHaveBeenCalled()
+  })
+
+  it('page wird IGNORIERT, wenn onlyMineUserId gesetzt ist (in-memory-Filter kann keine korrekte Gesamtzahl liefern)', async () => {
+    const result = await searchBuilds({ page: 2, onlyMineUserId: 'user-1' })
+    expect(buildCount).not.toHaveBeenCalled()
+    expect(result.page).toBeNull()
   })
 })

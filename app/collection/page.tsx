@@ -13,8 +13,10 @@
 //      wenn der UX-Baum in #139 nur Beyblades/Teile auflistet.
 // Legacy-Tab-Namen bleiben als Aliasse gültig: tab=katalog → Beyblades, tab=mine → Inventar.
 // Per-user surface — force-dynamic per the caching half of the Regression Guard; guests get
-// the explained GuestGate (RC8 #20) with a callbackUrl. Paginated (take/cursor) per the
-// list-endpoint rule; jeder Tab cursort über seinen eigenen Parameter (kcursor/pcursor/cursor).
+// the explained GuestGate (RC8 #20) with a callbackUrl. Beyblades-/Teile-Tab paginieren mit
+// echten Seitenzahlen (#155, kpage/ppage — components/ui/Pagination.tsx); "Mein Inventar"
+// bleibt vorerst cursor-basiert ("Weitere laden", eigenes Issue #155 nennt es explizit als
+// Scope-Grenze).
 import Image from 'next/image'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
@@ -31,6 +33,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
+import { Pagination } from '@/components/ui/Pagination'
 import { BeybladeCard } from '@/components/beyblade/BeybladeCard'
 import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
@@ -57,8 +60,14 @@ function str(v: string | string[] | undefined): string {
   return typeof v === 'string' ? v : ''
 }
 
+// #155 — 1-indexiert, nicht-numerisch/negativ fällt auf Seite 1 zurück statt zu crashen.
+function pageNum(v: string | string[] | undefined): number {
+  const n = typeof v === 'string' ? parseInt(v, 10) : NaN
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
+
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
-  const { cursor, kcursor, pcursor, neu, tab, q, mf, bt, owned, pq, pc, pt, psd, powned } = await searchParams
+  const { cursor, kpage, ppage, neu, tab, q, mf, bt, owned, pq, pc, pt, psd, powned } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
@@ -83,19 +92,21 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const catalogMf = str(mf)
   const catalogBt = str(bt)
   const ownedOnly = owned === '1'
+  const catalogPage = pageNum(kpage)
   // Teile-Tab: Suche + Kategorie-/Typ-/Drehrichtungs-/Besitz-Filter (#137).
   const partsQ = str(pq).trim()
   const partsCategory = str(pc)
   const partsType = str(pt)
   const partsSpin = str(psd)
   const partsOwnedOnly = powned === '1'
+  const partsPage = pageNum(ppage)
 
   const [viewer, fx, catalog, partRows, inventoryRows] = await Promise.all([
     prisma.user.findUnique({ where: { id: viewerId }, select: { country: true } }),
     getRateTable(),
     searchBeyblades({
       q: catalogQ,
-      cursor: typeof kcursor === 'string' ? kcursor : null,
+      page: catalogPage,
       take: KATALOG_PAGE_SIZE,
       manufacturer: catalogMf || null,
       type: catalogBt || null,
@@ -104,7 +115,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
     searchParts({
       q: partsQ,
       category: partsCategory || undefined,
-      cursor: typeof pcursor === 'string' ? pcursor : null,
+      page: partsPage,
       take: PARTS_TAB_PAGE_SIZE,
       type: partsType || null,
       spinDirection: partsSpin || null,
@@ -171,14 +182,17 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const nextInventoryCursor = hasMoreInventory ? items[items.length - 1]!.id : null
 
   const catalogFilterActive = Boolean(catalogQ || catalogMf || catalogBt || ownedOnly)
+  // #155 — Basis-Params ohne Seite; buildCatalogHref hängt die Zielseite pro Link an.
   const catalogParams = new URLSearchParams({ tab: 'beyblades' })
   if (catalogQ) catalogParams.set('q', catalogQ)
   if (catalogMf) catalogParams.set('mf', catalogMf)
   if (catalogBt) catalogParams.set('bt', catalogBt)
   if (ownedOnly) catalogParams.set('owned', '1')
-  const catalogNextHref = catalog.nextCursor
-    ? `/collection?${(() => { const p = new URLSearchParams(catalogParams); p.set('kcursor', catalog.nextCursor!); return p.toString() })()}`
-    : null
+  const buildCatalogHref = (page: number) => {
+    const p = new URLSearchParams(catalogParams)
+    p.set('kpage', String(page))
+    return `/collection?${p.toString()}`
+  }
 
   const beybladesContent = (
     <div className="space-y-6">
@@ -248,10 +262,9 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           ))}
         </ul>
       )}
-      {catalogNextHref && (
-        <Link href={catalogNextHref} className="inline-block underline underline-offset-2">
-          {t.collection.loadMoreBeyblades}
-        </Link>
+      {/* #155 — echte Seitenzahlen statt "Weitere laden". */}
+      {catalog.totalPages !== null && (
+        <Pagination page={catalog.page!} totalPages={catalog.totalPages} buildHref={buildCatalogHref} />
       )}
     </div>
   )
@@ -264,9 +277,11 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   if (partsType) partsParams.set('pt', partsType)
   if (partsSpin) partsParams.set('psd', partsSpin)
   if (partsOwnedOnly) partsParams.set('powned', '1')
-  const partsNextHref = partRows.nextCursor
-    ? `/collection?${(() => { const p = new URLSearchParams(partsParams); p.set('pcursor', partRows.nextCursor!); return p.toString() })()}`
-    : null
+  const buildPartsHref = (page: number) => {
+    const p = new URLSearchParams(partsParams)
+    p.set('ppage', String(page))
+    return `/collection?${p.toString()}`
+  }
 
   const partsContent = (
     <div className="space-y-6">
@@ -375,10 +390,9 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           ))}
         </div>
       )}
-      {partsNextHref && (
-        <Link href={partsNextHref} className="inline-block underline underline-offset-2">
-          {t.collection.loadMoreParts}
-        </Link>
+      {/* #155 — echte Seitenzahlen statt "Weitere laden". */}
+      {partRows.totalPages !== null && (
+        <Pagination page={partRows.page!} totalPages={partRows.totalPages} buildHref={buildPartsHref} />
       )}
     </div>
   )
