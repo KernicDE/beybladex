@@ -34,6 +34,7 @@ export function LanguageSwitcher({
   current,
   labels,
   authed = false,
+  align = 'right',
 }: {
   current: Locale
   /** Display name per locale (t.language.<locale>) + the control's accessible label. */
@@ -42,6 +43,9 @@ export function LanguageSwitcher({
    *  (#129) — otherwise the profile setting would override the cookie on the next request and
    *  the switcher would appear broken. */
   authed?: boolean
+  /** #157-Nachtrag — Dropdown-Ausrichtung; 'left' für Call-Sites am linken Bildschirmrand
+   *  (Sidebar), siehe ThemeToggle.tsx für die ausführliche Begründung (identischer Bug/Fix). */
+  align?: 'left' | 'right'
 }) {
   const router = useRouterSafe()
   const [pending, startTransition] = useTransition()
@@ -78,7 +82,9 @@ export function LanguageSwitcher({
       <ul
         role="listbox"
         aria-label={labels.label}
-        className="invisible absolute right-0 top-full z-50 mt-1 min-w-max rounded-md border border-current/15 bg-white p-1 shadow-lg group-focus-within:visible group-hover:visible dark:bg-base-dark-alt"
+        className={`invisible absolute top-full z-50 mt-1 min-w-max rounded-md border border-current/15 bg-white p-1 shadow-lg group-focus-within:visible group-hover:visible dark:bg-base-dark-alt ${
+          align === 'left' ? 'left-0' : 'right-0'
+        }`}
       >
         {SUPPORTED_LOCALES.map((locale) => (
           <li key={locale}>
