@@ -35,6 +35,7 @@ const COPY: Record<string, string> = {
   no_fields: 'Es wurden keine Felder zum Aktualisieren angegeben.',
   not_found: 'Nicht gefunden.',
   forbidden: 'Keine Berechtigung für diese Aktion.',
+  cannot_delete_self: 'Du kannst dein eigenes Konto nicht über die Admin-Verwaltung löschen — nutze dafür die Kontolöschung in den Einstellungen.',
   // TOTP / 2FA
   invalid_token: 'Der eingegebene Code ist ungültig.',
   setup_expired: 'Die 2FA-Einrichtung ist abgelaufen. Bitte starte sie erneut.',

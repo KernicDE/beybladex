@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { RoleSelect } from '@/components/admin/RoleSelect'
+import { DeleteUserButton } from '@/components/admin/DeleteUserButton'
 
 export const dynamic = 'force-dynamic' // per-user, privileged surface — never cached
 
@@ -28,6 +29,7 @@ export default async function AdminUsersPage({
 
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
   if (caller?.role !== 'ADMIN') redirect('/settings/profile')
+  const currentUserId = session.user.id
 
   const query = (q ?? '').trim()
   const rows = await prisma.user.findMany({
@@ -82,8 +84,11 @@ export default async function AdminUsersPage({
               <Card className="flex flex-wrap items-center gap-3 p-4">
                 <span className="font-medium">@{user.username}</span>
                 {user.role === 'ADMIN' && <Badge tone="cyan">Admin</Badge>}
-                <span className="ml-auto">
+                <span className="ml-auto flex items-center gap-2">
                   <RoleSelect userId={user.id} currentRole={user.role} />
+                  {user.id !== currentUserId && (
+                    <DeleteUserButton userId={user.id} username={user.username} />
+                  )}
                 </span>
               </Card>
             </li>
