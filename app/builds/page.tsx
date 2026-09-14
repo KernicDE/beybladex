@@ -10,8 +10,8 @@
 //     Rating-Summary (Batch-Aggregate) und Ersteller:in; Suche (Teilname) + Typ-Filter.
 // Offizielle Sets leben seit MVP4 #141 im Beyblade-Modell und im Beyblades-Tab der Sammlung.
 // Per-user surface — force-dynamic per the caching half of the Regression Guard; guests get
-// the explained GuestGate (RC8 #20) with a callbackUrl. Cursor-paginated per the
-// list-endpoint rule; beide Tabs cursoren über ?cursor= und tragen ihr tab= mit.
+// the explained GuestGate (RC8 #20) with a callbackUrl. Echte Seitenzahlen statt "Weitere
+// laden" (#155, ?page= — components/ui/Pagination.tsx); beide Tabs tragen ihr tab= mit.
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -25,6 +25,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
+import { Pagination } from '@/components/ui/Pagination'
 import { GuestGate } from '@/components/auth/GuestGate'
 
 export const dynamic = 'force-dynamic'
@@ -40,8 +41,14 @@ function str(v: string | string[] | undefined): string {
   return typeof v === 'string' ? v : ''
 }
 
+// #155 — 1-indexiert, nicht-numerisch/negativ fällt auf Seite 1 zurück statt zu crashen.
+function pageNum(v: string | string[] | undefined): number {
+  const n = typeof v === 'string' ? parseInt(v, 10) : NaN
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
+
 export default async function BuildsPage({ searchParams }: PageProps<'/builds'>) {
-  const { q, cursor, neu, tab, bt } = await searchParams
+  const { q, page, neu, tab, bt } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
@@ -59,10 +66,11 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
   const activeTab = tab === 'public' ? 'public' : 'mine'
   const query = str(q).trim()
   const typeFilter = str(bt)
+  const currentPage = pageNum(page)
 
-  const { builds, nextCursor } = await searchBuilds({
+  const { builds, page: resolvedPage, totalPages } = await searchBuilds({
     q: query,
-    cursor: typeof cursor === 'string' ? cursor : null,
+    page: currentPage,
     // #153 — "Meine Builds" zeigt, was die Nutzerin/der Nutzer ERSTELLT hat (creatorId),
     // nicht, wessen Teile sie/er im Besitz hat (das ist der onlyMineUserId-Availability-Filter
     // des Deck-Builder-Teile-Pickers, siehe lib/buildSearch.ts) — sonst verschwindet ein
@@ -155,13 +163,13 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
           ))}
         </ul>
       )}
-      {nextCursor && (
-        <Link
-          href={`/builds?${new URLSearchParams({ tab: 'mine', ...(query ? { q: query } : {}), cursor: nextCursor })}`}
-          className="inline-block underline underline-offset-2"
-        >
-          {t.builds.loadMore}
-        </Link>
+      {/* #155 — echte Seitenzahlen statt "Weitere laden". */}
+      {totalPages !== null && (
+        <Pagination
+          page={resolvedPage!}
+          totalPages={totalPages}
+          buildHref={(p) => `/builds?${new URLSearchParams({ tab: 'mine', ...(query ? { q: query } : {}), page: String(p) })}`}
+        />
       )}
       <p className="text-xs text-current/50">{t.builds.pageSize.replace('{size}', String(BUILD_PAGE_SIZE))}</p>
     </div>
@@ -235,13 +243,13 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
           ))}
         </ul>
       )}
-      {nextCursor && (
-        <Link
-          href={`/builds?${(() => { const p = new URLSearchParams(publicParams); p.set('cursor', nextCursor); return p.toString() })()}`}
-          className="inline-block underline underline-offset-2"
-        >
-          {t.builds.loadMore}
-        </Link>
+      {/* #155 — echte Seitenzahlen statt "Weitere laden". */}
+      {totalPages !== null && (
+        <Pagination
+          page={resolvedPage!}
+          totalPages={totalPages}
+          buildHref={(p) => { const params = new URLSearchParams(publicParams); params.set('page', String(p)); return `/builds?${params.toString()}` }}
+        />
       )}
       <p className="text-xs text-current/50">{t.builds.pageSize.replace('{size}', String(BUILD_PAGE_SIZE))}</p>
     </div>

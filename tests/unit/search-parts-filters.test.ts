@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
   prisma: {
-    part: { findMany: vi.fn(), findUnique: vi.fn() },
+    part: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn() },
     collectionItem: { findMany: vi.fn() },
   },
 }))
@@ -15,11 +15,13 @@ import { prisma } from '@/lib/db'
 import { searchParts } from '@/lib/buildSearch'
 
 const partFindMany = vi.mocked(prisma.part.findMany)
+const partCount = vi.mocked(prisma.part.count)
 const collectionFindMany = vi.mocked(prisma.collectionItem.findMany)
 
 beforeEach(() => {
   vi.clearAllMocks()
   partFindMany.mockResolvedValue([] as never)
+  partCount.mockResolvedValue(0 as never)
   collectionFindMany.mockResolvedValue([] as never)
 })
 
@@ -63,5 +65,26 @@ describe('searchParts type/spinDirection/ownedByUserId (#137)', () => {
     expect(where.AND).toContainEqual({ spinDirection: 'RIGHT' })
     expect(where.AND).toContainEqual({ id: { in: ['p1'] } })
     expect(where.AND).toContainEqual({ category: 'BLADE' })
+  })
+})
+
+describe('searchParts page (#155 — echte Seitenzahlen)', () => {
+  it('nutzt skip/take + COUNT statt der manuellen (name,id)-Cursor-Zeile', async () => {
+    partCount.mockResolvedValueOnce(125 as never)
+    const result = await searchParts({ page: 4, take: 60 })
+
+    const call = partFindMany.mock.calls[0][0] as { skip: number; take: number }
+    expect(call.skip).toBe(180)
+    expect(call.take).toBe(60)
+    expect(partCount).toHaveBeenCalledWith({ where: (partFindMany.mock.calls[0][0] as { where: unknown }).where })
+    expect(result.page).toBe(4)
+    expect(result.totalPages).toBe(3) // ceil(125/60) — Seite 4 liegt zwar über dem Ende, bleibt aber unverändert an den Aufrufer durchgereicht
+    expect(result.nextCursor).toBeNull()
+  })
+
+  it('lädt keine cursorRow (part.findUnique), wenn page statt cursor gesetzt ist', async () => {
+    const findUnique = vi.mocked((await import('@/lib/db')).prisma.part.findUnique)
+    await searchParts({ page: 1 })
+    expect(findUnique).not.toHaveBeenCalled()
   })
 })
