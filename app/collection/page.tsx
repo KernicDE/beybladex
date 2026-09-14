@@ -261,7 +261,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           {catalogQ !== '' && <CatalogProposalCTA defaultKind="BUILD" />}
         </div>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {catalog.beyblades.map((beyblade) => (
             <li key={beyblade.id}>
               <BeybladeCard beyblade={beyblade} rating={beybladeRatings.get(beyblade.id) ?? null} owned={ownedBeybladeIds.has(beyblade.id)} />
@@ -361,7 +361,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
                 </Badge>
                 <span className="text-current/50">{group.parts.length}</span>
               </h3>
-              <ul className="grid gap-3 sm:grid-cols-2">
+              <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {group.parts.map((part) => (
                   <li key={part.id}>
                     <Card className="p-3">
@@ -452,7 +452,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
               </h3>
               {/* #164 — mehrere Karten passen nebeneinander, wie die anderen Tabs (Grid statt
                   einspaltiger Liste). */}
-              <ul className="grid gap-3 sm:grid-cols-2">
+              <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {group.parts.map((item) => (
                   <li key={item.id}>
                     <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} />
@@ -478,7 +478,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   ]
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t.collection.heading}</h1>
         {items.length > 0 && (

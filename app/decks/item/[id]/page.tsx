@@ -81,7 +81,7 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/item/
 
   if (isOwner) {
     return (
-      <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+      <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
         {/* #164 — die Besitzer-Ansicht hatte bisher gar keinen Zurück-Link. */}
         <BackLink href="/decks">{t.decks.heading}</BackLink>
 
@@ -135,7 +135,7 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/item/
   // Builds und Turnier-Statistiken sind sichtbar, bearbeiten darf nur die Besitzerin bzw.
   // der Besitzer.
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <BackLink href="/decks">{t.decks.heading}</BackLink>
 
       <div className="flex flex-wrap items-center gap-2">

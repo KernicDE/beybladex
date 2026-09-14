@@ -254,7 +254,7 @@ export default async function MetaPage({ searchParams }: PageProps<'/meta'>) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <h1 className="text-2xl font-semibold">Meta</h1>
       <p className="text-current/70">
         Win-Rates aus ausgewerteten Turnier-Matches DACH-weit. Ein Teil oder Build braucht mindestens 10 ausgewertete

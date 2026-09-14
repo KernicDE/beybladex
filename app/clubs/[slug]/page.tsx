@@ -95,7 +95,7 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
   }))
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">{club.name}</h1>
         {canCreateEvent && (

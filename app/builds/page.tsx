@@ -140,7 +140,7 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
           />
         )
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {builds.map((build) => (
             <li key={build.id}>
               <BuildCard
@@ -218,7 +218,7 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
           ) : undefined}
         />
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {builds.map((build) => (
             <li key={build.id}>
               <BuildCard
@@ -261,7 +261,7 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
   ]
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t.builds.heading}</h1>
         {activeTab === 'mine' && builds.length > 0 && (

@@ -120,7 +120,7 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
   const displayName = part.category === 'BIT' ? formatBitDisplay(part.name) : part.name
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <BackLink href="/collection?tab=teile">Teile</BackLink>
 
       <Card>

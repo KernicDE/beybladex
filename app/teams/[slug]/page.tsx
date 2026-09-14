@@ -39,7 +39,7 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
   )
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{team.name}</h1>
         {team.club && (

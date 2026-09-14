@@ -45,7 +45,7 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
   })
   if (!subject) {
     return (
-      <main className="mx-auto w-full max-w-3xl flex-1 p-4 sm:p-6">
+      <main className="mx-auto w-full max-w-5xl flex-1 p-4 sm:p-6">
         <EmptyState title="Profil nicht gefunden" description="Dieser Benutzername existiert nicht." />
       </main>
     )
@@ -86,7 +86,7 @@ export default async function ProfilePage({ params }: PageProps<'/profile/[usern
     : [[], [], null]
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-4">
         {/* Avatar (Phase 21): the subject's uploaded photo, served by the generic
             /api/media/[id] route — but ONLY through the resolveVisibleFields projection

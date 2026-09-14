@@ -54,7 +54,7 @@ export default async function ClubsPage({
   const nextCursor = hasMore ? page[page.length - 1].id : null
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">{t.clubs.heading}</h1>
         {session?.user ? (
