@@ -1,12 +1,17 @@
 // components/beyblade/RatingSummary.tsx (MVP4 #143)
 // Sterne-Durchschnitt + Anzahl für Header/Karten der Detailseiten (Beyblade, Build, Teil) —
-// reine Anzeige aus dem kanonischen Aggregat (lib/ratingAggregate.ts). Rendert NICHTS, wenn
-// es noch keine Bewertung gibt (die Seiten zeigen dann schlicht nichts statt „Ø 0.0").
+// reine Anzeige aus dem kanonischen Aggregat (lib/ratingAggregate.ts). Rendert standardmäßig
+// NICHTS, wenn es noch keine Bewertung gibt (die Detailseiten zeigen dann schlicht nichts
+// statt „Ø 0.0"). Issue #137 — in der Sammlungs-Katalogliste (BeybladeCard) soll das nicht
+// aussehen wie ein fehlendes Feature: `emptyLabel` schaltet dort einen dezenten
+// Platzhaltertext frei, ohne das Detailseiten-Verhalten anzufassen.
 // Füllstand = gerundeter Durchschnitt, Farben wie überall: gefüllt gold, leer grau.
 import type { RatingAggregate } from '@/lib/ratingAggregate'
 
-export function RatingSummary({ aggregate }: { aggregate: RatingAggregate }) {
-  if (aggregate.avg === null || aggregate.count === 0) return null
+export function RatingSummary({ aggregate, emptyLabel }: { aggregate: RatingAggregate; emptyLabel?: string }) {
+  if (aggregate.avg === null || aggregate.count === 0) {
+    return emptyLabel ? <p className="text-sm text-current/40">{emptyLabel}</p> : null
+  }
   const filled = Math.round(aggregate.avg)
   return (
     <p
