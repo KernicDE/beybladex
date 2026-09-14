@@ -27,10 +27,14 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ci-test-secret-not-for-production
-      TOTP_ENCRYPTION_KEY: 6RtKQgoaU7k17jd5O5WRuLx8iTgnUdZ9Vnf0vLO86Ts=
       WEBAUTHN_RP_ID: localhost
     steps:
       - uses: actions/checkout@v4
+      # issue #151 — no fixed test key committed to the repo (it was public and, while never
+      # the production key, still bad practice); a fresh key per run needs no secret to manage
+      # or rotate, and is meaningless once the job ends.
+      - name: Generate ephemeral TOTP key
+        run: echo "TOTP_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -70,7 +74,6 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ci-test-secret-not-for-production
-      TOTP_ENCRYPTION_KEY: 6RtKQgoaU7k17jd5O5WRuLx8iTgnUdZ9Vnf0vLO86Ts=
       WEBAUTHN_RP_ID: localhost
       # Reachable from INSIDE the app container (bridge network, see note below)
       # — same services, addressed via the Docker-provided host gateway alias.
@@ -78,6 +81,9 @@ jobs:
       CONTAINER_REDIS_URL: redis://host.docker.internal:6379
     steps:
       - uses: actions/checkout@v4
+      # issue #151 — fresh key per run, see the `test` job above for the rationale.
+      - name: Generate ephemeral TOTP key
+        run: echo "TOTP_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       # NETWORKING NOTE, revised after the first real run: `--network host` DID
       # let the container reach Postgres/Redis outbound (11 migrations applied
       # successfully, twice), but `curl` on the runner could NEVER reach the
@@ -153,10 +159,12 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ci-test-secret-not-for-production
-      TOTP_ENCRYPTION_KEY: 6RtKQgoaU7k17jd5O5WRuLx8iTgnUdZ9Vnf0vLO86Ts=
       WEBAUTHN_RP_ID: localhost
     steps:
       - uses: actions/checkout@v4
+      # issue #151 — fresh key per run, see the `test` job above for the rationale.
+      - name: Generate ephemeral TOTP key
+        run: echo "TOTP_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
