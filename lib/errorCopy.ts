@@ -123,6 +123,8 @@ const COPY: Record<string, string> = {
   ratchet_not_allowed: 'Dieses Blade enthält das Ratchet bereits — wähle kein eigenes Ratchet.',
   invalid_isRatchetIntegrated: '„Ratchet integriert" ist nur bei Blades möglich.',
   invalid_type: 'Der angegebene Bey-Typ ist ungültig.',
+  // #161 — DELETE /api/builds/[id]
+  build_in_use: 'Dieser Build steckt noch in mindestens einem Deck — entferne ihn zuerst dort, bevor du ihn löschst.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).

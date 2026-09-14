@@ -14,7 +14,7 @@
 //   „ungesetzt"-Zustand, also muss ein gesendetes type einer der vier Enum-Werte sein).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -66,4 +66,30 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   await prisma.build.update({ where: { id }, data })
   return Response.json({ ok: true, ...data }, { status: 200 })
+}
+
+// #161 — DELETE: dieselbe Ersteller-only-Prüfung wie PATCH (404 für alle anderen, kein Leak).
+// DeckBuild.buildId ist ON DELETE RESTRICT (steckt der Build noch in einem Deck, schlägt der
+// DB-Constraint fehl — Prisma wirft P2003, hier zu 409 build_in_use übersetzt statt eines
+// rohen 500). Match.player1/2BuildId ist ON DELETE SET NULL — Turnierhistorie bleibt bestehen,
+// verliert nur den Build-Bezug.
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const session = await auth()
+  if (!session?.user?.id) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  const { id } = await params
+
+  const build = await prisma.build.findUnique({ where: { id }, select: { creatorId: true } })
+  if (!build || build.creatorId !== session.user.id) {
+    return Response.json({ error: 'not_found' }, { status: 404 })
+  }
+
+  try {
+    await prisma.build.delete({ where: { id } })
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+      return Response.json({ error: 'build_in_use' }, { status: 409 })
+    }
+    throw err
+  }
+  return Response.json({ ok: true }, { status: 200 })
 }
