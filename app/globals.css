@@ -134,4 +134,41 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
+
+  /* #157 Phase 4 — Hero-Banner (Konzept 6): weicher Rot-Verlauf + dezente Speed-Lines statt
+     eines harten Vollton-Blocks (der "blendete" laut Mockup-Kommentar in einer früheren
+     Konzept-Iteration). WICHTIG: der Verlauf endet NICHT bei var(--bg) wie im Original-Mockup
+     (dort einfarbig dunkel), sondern immer bei --color-base-dark, unabhängig vom Light/Dark-
+     Theme-Toggle der Seite — der Hero ist damit ein in sich geschlossener dunkler Streifen mit
+     garantiert hellem Text, ganz gleich ob die Seite gerade hell oder dunkel dargestellt wird.
+     Ein Verlauf zu var(--bg) hätte in HELLEM Theme am Übergang eine fast-weiße Zone erzeugt, auf
+     der weißer Text unlesbar würde (WCAG-Falle) — bewusst vermieden statt nachträglich gepatcht. */
+  .x-hero {
+    position: relative;
+    overflow: hidden;
+    color: #fff;
+    background: linear-gradient(120deg, var(--color-x-cyan-text) 0%, var(--color-x-cyan) 18%, var(--color-base-dark) 62%, var(--color-base-dark) 100%);
+  }
+  .x-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.18;
+    pointer-events: none;
+    background: repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.09) 0 3px, transparent 3px 30px);
+  }
+  .x-hero::after {
+    content: '';
+    position: absolute;
+    right: -60px;
+    top: -60px;
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(47, 102, 144, 0.25), transparent 70%);
+    pointer-events: none;
+  }
+  .x-hero > * {
+    position: relative;
+  }
 }
