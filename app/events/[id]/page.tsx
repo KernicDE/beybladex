@@ -210,12 +210,15 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           <span className="font-medium">{t.events.detail.entry}: </span>
           {formatFee(tournament.entryFeeCent, tournament.currency, locale, t.events.detail.freeEntry)}
         </p>
-        <p>
-          <span className="font-medium">{t.events.detail.ruleset}: </span>
-          <Link href={`/rules/${tournament.ruleset.slug}`} className="text-x-cyan-text hover:underline">
-            {tournament.ruleset.title}
-          </Link>
-        </p>
+        {/* Issue #176 — rulesetId ist nullable (Stammtisch/Freeplay haben keines). */}
+        {tournament.ruleset && (
+          <p>
+            <span className="font-medium">{t.events.detail.ruleset}: </span>
+            <Link href={`/rules/${tournament.ruleset.slug}`} className="text-x-cyan-text hover:underline">
+              {tournament.ruleset.title}
+            </Link>
+          </p>
+        )}
       </Card>
 
       <TournamentShareQR tournamentId={tournament.id} />

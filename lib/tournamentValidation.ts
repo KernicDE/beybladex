@@ -5,7 +5,7 @@
 // `clubId` is accepted on POST as a validated string (null = no club); whether the caller may
 // actually attach THAT club is the route's authz job (owner/admin ClubMember.isAdmin or a
 // global ORGANIZER/ADMIN role).
-import type { Country } from '@prisma/client'
+import type { Country, TournamentKind } from '@prisma/client'
 import { parseBody, type BodySchema } from '@/lib/parseBody'
 import { TOURNAMENT_DESCRIPTION_MAX as DESCRIPTION_MAX } from '@/lib/markdownFieldCaps'
 
@@ -20,6 +20,10 @@ const RECURRING_DAYS_MIN = 0 // day-of-week (0 = Sunday, per JS Date convention)
 const RECURRING_DAYS_MAX = 6
 const CURRENCIES = ['EUR', 'CHF', 'USD'] as const
 const COUNTRIES: string[] = ['DE', 'AT', 'CH']
+// Issue #176 — Event-Typen. Nicht als `required` im Schema: die Regel ("rulesetId nur bei
+// BRACKET Pflicht") hängt von diesem Feld ab, und parseBody kennt kein "required, wenn Feld X =
+// Y" — die eigentliche Pflicht wird unten in parseTournamentInput app-seitig durchgesetzt.
+const KINDS: string[] = ['BRACKET', 'STAMMTISCH', 'FREEPLAY']
 
 export type TournamentInputData = {
   title?: string
@@ -45,6 +49,8 @@ export type TournamentInputData = {
   rankedEligible?: boolean
   // RC15 #12 — 3-vs-3 team mode; the route rejects flipping it once registrations exist.
   teamMode?: boolean
+  // Issue #176 — Event-Typ; omitted defaults to BRACKET (DB-Default + bestehendes Verhalten).
+  kind?: TournamentKind
 }
 
 export type TournamentInput = {
@@ -74,7 +80,9 @@ const TOURNAMENT_SCHEMA: BodySchema = {
   rankedEligible: { type: 'boolean', token: 'invalid_boolean' },
   teamMode: { type: 'boolean', token: 'invalid_boolean' },
   recurringDays: { type: 'integer', min: RECURRING_DAYS_MIN, max: RECURRING_DAYS_MAX, nullable: true, token: 'invalid_recurring_days' },
-  rulesetId: { type: 'string', minLength: 1, required: true, token: 'invalid_ruleset' },
+  // Issue #176 — NICHT mehr `required: true`: nur bei kind=BRACKET Pflicht, siehe
+  // parseTournamentInput unten (parseBody kennt kein feldabhängiges "required").
+  rulesetId: { type: 'string', minLength: 1, token: 'invalid_ruleset' },
 }
 
 // `partial = true` is PATCH semantics: every field optional, but a recognized field with a
@@ -84,7 +92,10 @@ const TOURNAMENT_SCHEMA: BodySchema = {
 // clubId (Phase 4): accepted on POST only when the caller may administer that club — the
 // ROUTE verifies ClubMember.isAdmin (or an ORGANIZER/ADMIN role); this parser only validates
 // the shape, never the authorization.
-export function parseTournamentInput(body: unknown, partial: false): TournamentInput & { data: TournamentInputData & { title: string; startDate: Date; locationName: string; postalCode: string; city: string; state: string; latitude: number; longitude: number; rulesetId: string } }
+// Issue #176 — rulesetId ist im Rückgabetyp jetzt `string | undefined` statt garantiert
+// `string`: es ist nur bei kind=BRACKET Pflicht (unten app-seitig durchgesetzt), bei
+// STAMMTISCH/FREEPLAY bleibt es zulässigerweise leer.
+export function parseTournamentInput(body: unknown, partial: false): TournamentInput & { data: TournamentInputData & { title: string; startDate: Date; locationName: string; postalCode: string; city: string; state: string; latitude: number; longitude: number; kind: TournamentKind } }
 export function parseTournamentInput(body: unknown, partial: true): TournamentInput
 export function parseTournamentInput(body: unknown, partial: boolean): TournamentInput {
   const schema: BodySchema = partial
@@ -93,10 +104,32 @@ export function parseTournamentInput(body: unknown, partial: boolean): Tournamen
         ...TOURNAMENT_SCHEMA,
         // null means "no club"; a string must be non-empty (schema-level, authz is the route's).
         clubId: { type: 'string', minLength: 1, nullable: true, token: 'invalid_club' },
+        // Issue #176 — POST-only wie clubId: der Event-Typ steht mit der Bracket-/Match-/Judge-
+        // Infrastruktur in Beziehung, die an Kind hängt (Matches, Snapshots, ...) — ein
+        // nachträglicher Wechsel könnte inkonsistente Zustände erzeugen (z. B. ein bereits mit
+        // Matches laufendes BRACKET-Turnier zu STAMMTISCH heruntergestuft). Auf PATCH ist das
+        // Feld daher ein ignoriertes Unknown, exakt wie clubId oben.
+        kind: { type: 'enum', enum: KINDS, token: 'invalid_kind' },
       }
   const { data, errors } = parseBody(body, schema, { partial })
   if (partial && Object.keys(data).length === 0) {
     errors.push('no_fields')
   }
-  return { data: data as TournamentInputData, errors }
+  const result = data as TournamentInputData
+  if (!partial) {
+    // POST: kind defaults to BRACKET (matches the DB default / bisheriges Verhalten für
+    // Clients, die das Feld noch nicht kennen). rulesetId ist NUR bei BRACKET Pflicht — die
+    // eigentliche Regel, die parseBody selbst nicht ausdrücken kann.
+    result.kind = result.kind ?? 'BRACKET'
+    if (result.kind === 'BRACKET' && !result.rulesetId) {
+      errors.push('invalid_ruleset')
+    }
+    // Ranglisten-Wertung und Team-Modus ergeben bei einem reinen Termin ohne Bracket keinen
+    // Sinn — server-seitig erzwungen, unabhängig davon, was der Client schickt.
+    if (result.kind !== 'BRACKET') {
+      result.rankedEligible = false
+      result.teamMode = false
+    }
+  }
+  return { data: result, errors }
 }

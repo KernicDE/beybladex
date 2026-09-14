@@ -134,6 +134,11 @@ export async function POST(req: Request, { params }: Ctx) {
     )
   }
 
+  // Issue #176 — Tournament.rulesetId ist seit den Event-Typen nullable (Stammtisch/Freeplay
+  // brauchen keines). Ein Match existiert aber NUR über die Bracket-Generierung eines
+  // BRACKET-Turniers, das immer ein Ruleset hat — fehlt es trotzdem, ist das ein
+  // Dateninkonsistenz-Fall (sollte nie vorkommen), kein normaler Stammtisch-Zustand.
+  if (!match.tournament.ruleset) return Response.json({ error: 'missing_ruleset' }, { status: 500 })
   const ruleset = match.tournament.ruleset
   const event = body.event as { type?: string; player?: number } | undefined
   const type = event?.type

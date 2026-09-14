@@ -73,6 +73,10 @@ export default async function JudgePage({
     },
   })
   if (!tournament) notFound()
+  // Issue #176 — rulesetId ist seit den Event-Typen nullable (Stammtisch/Freeplay). Die
+  // Judge-Route ist nur für BRACKET-Turniere mit Matches erreichbar; fehlt das Ruleset trotzdem,
+  // ist das ein Dateninkonsistenz-Fall, kein normaler Stammtisch-Zustand.
+  if (!tournament.ruleset) notFound()
 
   // Phase 16 item 6 — once a locked-decks tournament has started, a participant's
   // lockedBuildIds SNAPSHOT (not their live deck) is authoritative: it may reference builds no

@@ -195,7 +195,7 @@ describe('TournamentForm — background geocoding UX (RC11 #100)', () => {
     fireEvent.change(field('Uhrzeit von'), { target: { value: '10:00' } })
     fireEvent.change(field('Veranstaltungsort'), { target: { value: 'Test-Arena' } })
     fireEvent.change(field('Bundesland / Kanton'), { target: { value: 'Hessen' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Turnier erstellen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Event erstellen' }))
 
     // The guard runs synchronously in the submit handler — no findBy* (fake timers stall it).
     expect(screen.getByText(/Der Standort konnte nicht automatisch aus der Adresse ermittelt werden/)).toBeInTheDocument()
@@ -230,6 +230,7 @@ describe('TournamentForm — background geocoding UX (RC11 #100)', () => {
           teamMode: false,
           rulesetId: 'r1',
           clubId: '',
+          kind: 'BRACKET',
         }}
       />,
     )

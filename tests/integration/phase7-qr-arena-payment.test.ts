@@ -55,7 +55,7 @@ async function cleanup(tournamentId: string, userIds: string[]) {
   await prisma.tournamentParticipant.deleteMany({ where: { tournamentId } })
   const t = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { rulesetId: true } })
   await prisma.tournament.delete({ where: { id: tournamentId } })
-  if (t) await prisma.ruleset.delete({ where: { id: t.rulesetId } })
+  if (t?.rulesetId) await prisma.ruleset.delete({ where: { id: t.rulesetId } })
   await prisma.user.deleteMany({ where: { id: { in: userIds } } })
 }
 

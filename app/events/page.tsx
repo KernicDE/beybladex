@@ -40,9 +40,12 @@ const DEFAULT_CENTER = { lat: 48.5, lng: 10 }
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string; from?: string; to?: string; plz?: string; radiusKm?: string }>
+  searchParams: Promise<{ country?: string; state?: string; q?: string; cursor?: string; from?: string; to?: string; plz?: string; radiusKm?: string; kind?: string }>
 }) {
-  const { country, state, q, cursor, from, to, plz, radiusKm } = await searchParams
+  const { country, state, q, cursor, from, to, plz, radiusKm, kind } = await searchParams
+  // Issue #176 — Event-Typ-Filter (Turnier/Stammtisch/Freeplay); ein unbekannter Wert wird wie
+  // "alle Typen" behandelt statt die Seite mit einem invaliden Enum-Wert crashen zu lassen.
+  const validKind = kind === 'BRACKET' || kind === 'STAMMTISCH' || kind === 'FREEPLAY' ? kind : null
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   // Malformed/unparseable input is ignored (no bound on that side) rather than erroring the
@@ -94,13 +97,14 @@ export default async function EventsPage({
     // effectiveFrom statt from: der implizite "heute"-Standard muss den Cache-Key mitbestimmen,
     // sonst würde ein kurz vor Mitternacht gefüllter Cache-Eintrag (TTL 60s) den alten Tag über
     // den Datumswechsel hinweg servieren und ein bereits vergangenes Turnier kurz durchrutschen lassen.
-    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${query}|${cursor ?? ''}|${effectiveFrom}|${to ?? ''}|${plzQuery}|${radiusCenter?.radiusKm ?? ''}`,
+    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${validKind ?? ''}|${query}|${cursor ?? ''}|${effectiveFrom}|${to ?? ''}|${plzQuery}|${radiusCenter?.radiusKm ?? ''}`,
     PUBLIC_LIST_TTL,
     () =>
       prisma.tournament.findMany({
         where: {
           ...(country ? { country: country as 'DE' | 'AT' | 'CH' } : {}),
           ...(state ? { state } : {}),
+          ...(validKind ? { kind: validKind } : {}),
           ...(query
             ? { OR: [{ title: { contains: query, mode: 'insensitive' } }, { city: { contains: query, mode: 'insensitive' } }] }
             : {}),
@@ -136,6 +140,8 @@ export default async function EventsPage({
           headerImageId: true,
           // #27 — the list card's Turnier/Bracket badges read these two.
           startedAt: true,
+          // Issue #176 — Event-Typ (Turnier/Stammtisch/Freeplay), Filter + Badge.
+          kind: true,
           _count: { select: { participants: true, stages: true } },
         },
       }),
@@ -153,6 +159,7 @@ export default async function EventsPage({
   const filterParams = new URLSearchParams()
   if (country) filterParams.set('country', country)
   if (state) filterParams.set('state', state)
+  if (validKind) filterParams.set('kind', validKind)
   if (query) filterParams.set('q', query)
   if (from) filterParams.set('from', from)
   if (to) filterParams.set('to', to)
@@ -187,16 +194,18 @@ export default async function EventsPage({
       />
 
       {/* Filter bar: plain GET form so every filter combination is a shareable URL. Country/
-          state/date-range/PLZ-radius are the interactive client piece (EventsFilterBar); the
+          state/kind/date-range/PLZ-radius are the interactive client piece (EventsFilterBar); the
           query text field and submit stay here.
-          RC11 #79 — CSS-Grid statt flex-wrap: die sechs Filterfelder füllen deterministisch
-          die erste Zeile (je 1/6), Filtern-Button und Suche stehen in einer eigenen Aktionen-
-          Zeile darunter — kein inzidenteller Umbruch mitten in der Feldgruppe mehr. Mobile
-          (<sm) bleibt die bisherige gestapelte Einspaltendarstellung. */}
-      <form method="GET" className="grid grid-cols-1 gap-3 sm:grid-cols-6 sm:items-end">
+          RC11 #79 — CSS-Grid statt flex-wrap: die Filterfelder füllen deterministisch die erste
+          Zeile, Filtern-Button und Suche stehen in einer eigenen Aktionen-Zeile darunter — kein
+          inzidenteller Umbruch mitten in der Feldgruppe mehr. Mobile (<sm) bleibt die bisherige
+          gestapelte Einspaltendarstellung.
+          Issue #176 — siebte Spalte für den neuen Typ-Filter (Turnier/Stammtisch/Freeplay). */}
+      <form method="GET" className="grid grid-cols-1 gap-3 sm:grid-cols-7 sm:items-end">
         <EventsFilterBar
           initialCountry={country ?? ''}
           initialState={state ?? ''}
+          initialKind={validKind ?? ''}
           // effectiveFrom statt from: das Feld zeigt den TATSÄCHLICH angewendeten Filter (heute
           // als impliziter Standard), nicht ein leeres Feld, das der laufenden Filterung
           // widersprechen würde.
@@ -212,7 +221,7 @@ export default async function EventsPage({
         >
           {t.common.filter}
         </button>
-        <div className="sm:col-span-5 sm:flex sm:justify-end">
+        <div className="sm:col-span-6 sm:flex sm:justify-end">
           <SearchInput action="/events" className="w-full sm:w-64" />
         </div>
       </form>
@@ -262,6 +271,7 @@ export default async function EventsPage({
                 headerImageId={t.headerImageId}
                 stageCount={t._count.stages}
                 startedAt={t.startedAt}
+                kind={t.kind}
               />
             </li>
           ))}

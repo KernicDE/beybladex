@@ -102,7 +102,11 @@ export default async function TournamentBracketPage({
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{tournament.title}</h1>
         {tournament.completedAt && <Badge tone="green">Abgeschlossen</Badge>}
-        <Badge tone="cyan">{tournament.ruleset.title}</Badge>
+        {/* Issue #176 — rulesetId ist nullable (Stammtisch/Freeplay haben keines). */}
+        {tournament.ruleset && <Badge tone="cyan">{tournament.ruleset.title}</Badge>}
+        {tournament.kind !== 'BRACKET' && (
+          <Badge tone="neutral">{tournament.kind === 'STAMMTISCH' ? 'Stammtisch' : 'Freeplay'}</Badge>
+        )}
       </div>
 
       {isOrganizer && (
@@ -218,6 +222,7 @@ export default async function TournamentBracketPage({
       {isOrganizer && managementView && (
         <OrganizerConsole
           tournamentId={tournament.id}
+          kind={tournament.kind}
           teamMode={tournament.teamMode}
           teamEntries={tournament.teamEntries.map((e) => ({
             entryId: e.id,

@@ -33,7 +33,10 @@ describe('parseTournamentInput — POST (partial: false)', () => {
 
   it('every POST-required field absence produces its token', () => {
     const { data, errors } = parseTournamentInput({}, false)
-    expect(data).toEqual({})
+    // Issue #176 — kind wird auch bei einem sonst leeren/ungültigen Body auf BRACKET
+    // defaultet (parseTournamentInput muss wissen, ob rulesetId Pflicht ist, um dessen
+    // eigenes invalid_ruleset unten korrekt auszulösen).
+    expect(data).toEqual({ kind: 'BRACKET' })
     for (const token of [
       'invalid_title', 'invalid_start_date', 'invalid_location', 'invalid_postal_code',
       'invalid_city', 'invalid_state', 'invalid_country', 'invalid_latitude',
@@ -120,5 +123,51 @@ describe('parseTournamentInput — PATCH (partial: true)', () => {
 
   it('unknown fields alone also yield no_fields', () => {
     expect(parseTournamentInput({ hackerField: true }, true).errors).toEqual(['no_fields'])
+  })
+
+  it('kind ist POST-only: auf PATCH ein ignoriertes Unknown (#176)', () => {
+    const { data, errors } = parseTournamentInput({ kind: 'STAMMTISCH' }, true)
+    expect(errors).toEqual(['no_fields'])
+    expect(data).not.toHaveProperty('kind')
+  })
+})
+
+// Issue #176 — Event-Typen: rulesetId ist nur bei kind=BRACKET Pflicht; STAMMTISCH/FREEPLAY
+// erzwingen zusätzlich rankedEligible=false und teamMode=false server-seitig.
+describe('parseTournamentInput — Event-Typen (#176)', () => {
+  it('kind fehlt im Body → defaultet auf BRACKET, rulesetId bleibt dadurch Pflicht', () => {
+    const { data, errors } = parseTournamentInput(VALID_POST, false)
+    expect(data.kind).toBe('BRACKET')
+    expect(errors).toEqual([])
+  })
+
+  it('STAMMTISCH ohne rulesetId ist gültig (kein invalid_ruleset)', () => {
+    const { title: _title, ...withoutRuleset } = VALID_POST
+    void _title
+    const { data, errors } = parseTournamentInput({ ...withoutRuleset, title: 'Stammtisch', rulesetId: undefined, kind: 'STAMMTISCH' }, false)
+    expect(errors).not.toContain('invalid_ruleset')
+    expect(data.rulesetId).toBeUndefined()
+  })
+
+  it('BRACKET ohne rulesetId ist invalid_ruleset (explizit UND per Default)', () => {
+    const { rulesetId: _r, ...withoutRuleset } = VALID_POST
+    void _r
+    expect(parseTournamentInput({ ...withoutRuleset, kind: 'BRACKET' }, false).errors).toContain('invalid_ruleset')
+    expect(parseTournamentInput(withoutRuleset, false).errors).toContain('invalid_ruleset')
+  })
+
+  it('STAMMTISCH/FREEPLAY erzwingen rankedEligible=false und teamMode=false, auch wenn der Client etwas anderes schickt', () => {
+    const { rulesetId: _r, ...withoutRuleset } = VALID_POST
+    void _r
+    const { data } = parseTournamentInput(
+      { ...withoutRuleset, kind: 'FREEPLAY', rankedEligible: true, teamMode: true },
+      false,
+    )
+    expect(data.rankedEligible).toBe(false)
+    expect(data.teamMode).toBe(false)
+  })
+
+  it('ein unbekannter kind-Wert ist invalid_kind', () => {
+    expect(parseTournamentInput({ ...VALID_POST, kind: 'LAN_PARTY' }, false).errors).toContain('invalid_kind')
   })
 })

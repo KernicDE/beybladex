@@ -127,6 +127,9 @@ const COPY: Record<string, string> = {
   build_in_use: 'Dieser Build steckt noch in mindestens einem Deck — entferne ihn zuerst dort, bevor du ihn löschst.',
   // #164 — DELETE /api/decks/[id]
   deck_in_use: 'Dieses Deck kann gerade nicht gelöscht werden.',
+  // #176 — POST /api/tournaments/[id]/stages: Stammtisch/Freeplay haben keinen Bracket.
+  not_a_bracket_tournament: 'Dieses Event ist kein Turnier mit Bracket — Stufen/Bracket gibt es nur bei Turnieren.',
+  invalid_kind: 'Ungültiger Event-Typ.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).

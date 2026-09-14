@@ -79,8 +79,13 @@ export function OrganizerConsole({
   tournamentJudges,
   entryFeeCent,
   headerImageId,
+  kind,
 }: {
   tournamentId: string
+  /** Issue #176 — Stammtisch/Freeplay haben keinen Bracket: "Turnier starten"/Seeding/
+   *  Stage-Verwaltung ergeben dort keinen Sinn (server-seitig ohnehin gesperrt, siehe
+   *  POST /api/tournaments/[id]/stages) und werden hier gar nicht erst angeboten. */
+  kind: 'BRACKET' | 'STAMMTISCH' | 'FREEPLAY'
   participants: ConsoleParticipant[]
   /** RC15 #12 — team mode switches the console from solo participants to team entries. */
   teamMode: boolean
@@ -184,7 +189,7 @@ export function OrganizerConsole({
           {/* Phase 16 item 6 — one-way; sets Tournament.startedAt and, for a locked-decks
               ruleset, snapshots every participant's current deck builds. Typically pressed
               before "Bracket generieren" for the first stage, but not enforced in either order. */}
-          {!startedAt && !completed && (
+          {kind === 'BRACKET' && !startedAt && !completed && (
             <Button
               disabled={busy}
               onClick={() => {
@@ -232,14 +237,14 @@ export function OrganizerConsole({
         {/* Phase 15 — seeding only makes sense pre-bracket (it's read once at generation time);
             hidden once the first stage has matches, same gating as "Stage hinzufügen" above.
             RC15 #12 — team mode has no seeding UI (entries carry a seed field, nothing more). */}
-        {!teamMode && !bracketGenerated && !completed && participants.length > 0 && (
+        {kind === 'BRACKET' && !teamMode && !bracketGenerated && !completed && participants.length > 0 && (
           <SeedingPanel
             tournamentId={tournamentId}
             participants={participants.filter((p) => !p.withdrawn).map((p) => ({ userId: p.userId, name: p.name, seed: p.seed }))}
           />
         )}
 
-        {!completed && (
+        {kind === 'BRACKET' && !completed && (
           <section aria-labelledby="stage-create-heading" className="space-y-2">
             <h3 id="stage-create-heading" className="text-sm font-semibold">Stage hinzufügen</h3>
             <div className="flex flex-wrap items-end gap-2">

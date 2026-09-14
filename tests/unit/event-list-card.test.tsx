@@ -28,6 +28,7 @@ const BASE: EventListCardProps = {
   headerImageId: null,
   stageCount: 0,
   startedAt: null,
+  kind: 'BRACKET',
 }
 
 describe('EventListCard — line order and metadata separation (#80, #32)', () => {
@@ -102,5 +103,20 @@ describe('EventListCard — tournament badge (#27)', () => {
     render(<EventListCard {...BASE} startedAt={new Date()} />)
     expect(screen.getByText('Turnier live')).toBeInTheDocument()
     expect(screen.queryByText('Bracket verfügbar')).not.toBeInTheDocument()
+  })
+})
+
+describe('EventListCard — Event-Typ-Badge (#176)', () => {
+  it('zeigt kein Badge für ein BRACKET-Turnier (Normalfall, schon über Turnier-Badges erkennbar)', () => {
+    render(<EventListCard {...BASE} kind="BRACKET" />)
+    expect(screen.queryByText('Stammtisch')).not.toBeInTheDocument()
+    expect(screen.queryByText('Freeplay')).not.toBeInTheDocument()
+  })
+
+  it('zeigt "Stammtisch" bzw. "Freeplay" für Nicht-Turnier-Events', () => {
+    const { rerender } = render(<EventListCard {...BASE} kind="STAMMTISCH" />)
+    expect(screen.getByText('Stammtisch')).toBeInTheDocument()
+    rerender(<EventListCard {...BASE} kind="FREEPLAY" />)
+    expect(screen.getByText('Freeplay')).toBeInTheDocument()
   })
 })

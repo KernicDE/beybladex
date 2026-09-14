@@ -71,6 +71,10 @@ export interface TournamentFormValues {
   teamMode: boolean
   rulesetId: string
   clubId: string
+  // Issue #176 — Event-Typ. Nur auf dem Erstellen-Formular wählbar (Select unten ist bei
+  // mode="edit" deaktiviert — siehe lib/tournamentValidation.ts für die serverseitige
+  // Begründung, warum PATCH das Feld gar nicht erst annimmt).
+  kind: 'BRACKET' | 'STAMMTISCH' | 'FREEPLAY'
 }
 
 export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
@@ -95,6 +99,7 @@ export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
   teamMode: false,
   rulesetId: '',
   clubId: '',
+  kind: 'BRACKET',
 }
 
 const COUNTRIES = [
@@ -115,6 +120,13 @@ const CURRENCIES = [
 const CURRENCY_BY_COUNTRY: Record<string, string> = { DE: 'EUR', AT: 'EUR', CH: 'CHF' }
 
 const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'] as const
+
+// Issue #176 — Event-Typen (Konzept 6 "X Arena": "nicht jedes Event ist ein Bracket-Turnier").
+const KINDS = [
+  { value: 'BRACKET', label: 'Turnier', hint: 'Bracket mit Matches, Judge-Modus und Regelwerk.' },
+  { value: 'STAMMTISCH', label: 'Stammtisch', hint: 'Geselliges Treffen ohne Wertung — kein Bracket, kein Regelwerk nötig.' },
+  { value: 'FREEPLAY', label: 'Freeplay', hint: 'Offenes Übungstreffen ohne Wertung — kein Bracket, kein Regelwerk nötig.' },
+] as const
 
 const AUTOCOMPLETE_DEBOUNCE_MS = 300
 const GEOCODE_DEBOUNCE_MS = 600
@@ -330,8 +342,14 @@ export function TournamentForm({
       recurringDays: values.recurringDays === '' ? null : Number(values.recurringDays),
       rankedEligible: values.rankedEligible,
       teamMode: values.teamMode,
-      rulesetId: values.rulesetId,
+      // Issue #176 — bei STAMMTISCH/FREEPLAY wird kein Regelwerk abgefragt; leer statt einer
+      // (falschen) Vorauswahl senden, die Route verlangt es ohnehin nur bei kind=BRACKET.
+      ...(values.kind === 'BRACKET' ? { rulesetId: values.rulesetId } : {}),
       clubId: values.clubId || null,
+      // kind ist POST-only (siehe lib/tournamentValidation.ts) — auf PATCH ein ignoriertes
+      // Unknown-Feld, wird hier trotzdem mitgeschickt, weil der Server es beim Edit einfach
+      // verwirft statt einen Fehler zu werfen.
+      ...(mode === 'create' ? { kind: values.kind } : {}),
     }
     const res =
       mode === 'edit'
@@ -368,6 +386,22 @@ export function TournamentForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      {/* Issue #176 — Event-Typ steuert, welche Felder unten überhaupt erscheinen (Regelwerk/
+          Eintritt-Währung/Ranked/Team-Modus nur bei "Turnier"). Nur im Erstellen-Modus wählbar —
+          der Typ ist nach dem Anlegen fix (siehe lib/tournamentValidation.ts). */}
+      <div>
+        <FormField label="Art des Events">
+          <Select value={values.kind} onChange={setText('kind')} disabled={mode === 'edit'}>
+            {KINDS.map((k) => (
+              <option key={k.value} value={k.value}>
+                {k.label}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+        <p className="mt-1 text-xs text-current/60">{KINDS.find((k) => k.value === values.kind)?.hint}</p>
+      </div>
+
       <FormField label="Titel">
         <Input value={values.title} onChange={setText('title')} maxLength={100} required />
       </FormField>
@@ -435,7 +469,7 @@ export function TournamentForm({
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={`grid gap-4 ${values.kind === 'BRACKET' ? 'sm:grid-cols-3' : ''}`}>
         <FormField label="Land">
           <Select value={values.country} onChange={onCountryChange}>
             {COUNTRIES.map((c) => (
@@ -445,25 +479,31 @@ export function TournamentForm({
             ))}
           </Select>
         </FormField>
-        <FormField label="Eintritt (Betrag)">
-          <Input
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            value={values.entryFeeCent}
-            onChange={setText('entryFeeCent')}
-          />
-        </FormField>
-        <FormField label="Währung">
-          <Select value={values.currency} onChange={onCurrencyChange}>
-            {CURRENCIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        {/* Issue #176 — Eintritt/Währung nur bei "Turnier": ein Stammtisch/Freeplay hat keine
+            Startgebühr in diesem Modell. */}
+        {values.kind === 'BRACKET' && (
+          <>
+            <FormField label="Eintritt (Betrag)">
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                value={values.entryFeeCent}
+                onChange={setText('entryFeeCent')}
+              />
+            </FormField>
+            <FormField label="Währung">
+              <Select value={values.currency} onChange={onCurrencyChange}>
+                {CURRENCIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </>
+        )}
       </div>
 
       {/* #100 — background geocoding feedback: the coordinates themselves stay invisible
@@ -526,15 +566,19 @@ export function TournamentForm({
         )}
       </div>
 
-      <FormField label="Regelwerk">
-        <Select value={values.rulesetId} onChange={setText('rulesetId')} required>
-          {rulesets.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.title}
-            </option>
-          ))}
-        </Select>
-      </FormField>
+      {/* Issue #176 — Regelwerk nur bei "Turnier": Stammtisch/Freeplay haben keins (rulesetId
+          bleibt in der DB null, siehe schema.prisma). */}
+      {values.kind === 'BRACKET' && (
+        <FormField label="Regelwerk">
+          <Select value={values.rulesetId} onChange={setText('rulesetId')} required>
+            {rulesets.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.title}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+      )}
 
       {/* Club attachment: only rendered when the session user administers at least one club
           (the page populates `clubs` accordingly). Empty option = a non-club event. */}
@@ -551,39 +595,45 @@ export function TournamentForm({
         </FormField>
       )}
 
-      <div className="flex items-start gap-3">
-        <input
-          id="tournament-rankedEligible"
-          type="checkbox"
-          checked={values.rankedEligible}
-          onChange={(e) => setValues((v) => ({ ...v, rankedEligible: e.target.checked }))}
-          className="mt-0.5 size-4 shrink-0 accent-x-cyan"
-        />
-        <label htmlFor="tournament-rankedEligible" className="text-sm">
-          Gewertet (Elo-Rangliste)
-          <span className="block text-xs text-current/60">
-            Abgeschlossene Matches dieses Turniers fließen in die Elo-Rangliste der Teilnehmer:innen ein. Für lockere/Test-Events deaktivieren.
-          </span>
-        </label>
-      </div>
+      {/* Issue #176 — Wertung/Team-Modus ergeben ohne Bracket keinen Sinn; die Route erzwingt
+          rankedEligible=false/teamMode=false bei kind!=BRACKET server-seitig ohnehin. */}
+      {values.kind === 'BRACKET' && (
+        <>
+          <div className="flex items-start gap-3">
+            <input
+              id="tournament-rankedEligible"
+              type="checkbox"
+              checked={values.rankedEligible}
+              onChange={(e) => setValues((v) => ({ ...v, rankedEligible: e.target.checked }))}
+              className="mt-0.5 size-4 shrink-0 accent-x-cyan"
+            />
+            <label htmlFor="tournament-rankedEligible" className="text-sm">
+              Gewertet (Elo-Rangliste)
+              <span className="block text-xs text-current/60">
+                Abgeschlossene Matches dieses Turniers fließen in die Elo-Rangliste der Teilnehmer:innen ein. Für lockere/Test-Events deaktivieren.
+              </span>
+            </label>
+          </div>
 
-      <div className="flex items-start gap-3">
-        <input
-          id="tournament-teamMode"
-          type="checkbox"
-          checked={values.teamMode}
-          disabled={teamModeLocked}
-          onChange={(e) => setValues((v) => ({ ...v, teamMode: e.target.checked }))}
-          className="mt-0.5 size-4 shrink-0 accent-x-cyan"
-        />
-        <label htmlFor="tournament-teamMode" className="text-sm">
-          3-gegen-3 Team-Turnier
-          <span className="block text-xs text-current/60">
-            Teams aus genau 3 Spieler:innen melden sich als Team an; Matches sind Best-of-3-Duelle
-            pro Lineup-Platz (WBO-Masters-League-Format). Nach der ersten Anmeldung nicht mehr änderbar.
-          </span>
-        </label>
-      </div>
+          <div className="flex items-start gap-3">
+            <input
+              id="tournament-teamMode"
+              type="checkbox"
+              checked={values.teamMode}
+              disabled={teamModeLocked}
+              onChange={(e) => setValues((v) => ({ ...v, teamMode: e.target.checked }))}
+              className="mt-0.5 size-4 shrink-0 accent-x-cyan"
+            />
+            <label htmlFor="tournament-teamMode" className="text-sm">
+              3-gegen-3 Team-Turnier
+              <span className="block text-xs text-current/60">
+                Teams aus genau 3 Spieler:innen melden sich als Team an; Matches sind Best-of-3-Duelle
+                pro Lineup-Platz (WBO-Masters-League-Format). Nach der ersten Anmeldung nicht mehr änderbar.
+              </span>
+            </label>
+          </div>
+        </>
+      )}
 
       <div className="flex items-start gap-3">
         <input
@@ -618,10 +668,10 @@ export function TournamentForm({
         </p>
       )}
 
-      <Button type="submit" disabled={pending || rulesets.length === 0}>
-        {pending ? 'Speichere…' : mode === 'edit' ? 'Änderungen speichern' : 'Turnier erstellen'}
+      <Button type="submit" disabled={pending || (values.kind === 'BRACKET' && rulesets.length === 0)}>
+        {pending ? 'Speichere…' : mode === 'edit' ? 'Änderungen speichern' : 'Event erstellen'}
       </Button>
-      {rulesets.length === 0 && (
+      {values.kind === 'BRACKET' && rulesets.length === 0 && (
         <p className="text-sm text-current/60">
           Es gibt noch keine Regelwerke — du brauchst ein öffentliches Regelwerk, bevor du ein Turnier erstellen kannst.
         </p>

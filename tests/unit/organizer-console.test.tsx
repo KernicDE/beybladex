@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 
 const BASE = {
   tournamentId: 't-1',
+  kind: 'BRACKET' as const,
   participants: [],
   teamMode: false,
   teamEntries: [],
@@ -93,5 +94,26 @@ describe('OrganizerConsole — section structure (RC11 #82)', () => {
     render(<OrganizerConsole {...BASE} stages={[STAGE]} completedAt={new Date().toISOString()} />)
     expect(screen.queryByRole('heading', { level: 2, name: 'Turnier abschließen' })).not.toBeInTheDocument()
     expect(screen.getByText('Turnier abgeschlossen')).toBeInTheDocument()
+  })
+})
+
+// Issue #176 — Stammtisch/Freeplay haben keinen Bracket: "Turnier starten"/Seeding/
+// "Stage hinzufügen" ergeben dort keinen Sinn (server-seitig ohnehin gesperrt) und werden nicht
+// angeboten.
+describe('OrganizerConsole — kind-Gating (#176)', () => {
+  it('zeigt "Stage hinzufügen" und "Turnier starten" für ein BRACKET-Turnier', () => {
+    render(<OrganizerConsole {...BASE} kind="BRACKET" />)
+    expect(screen.getByRole('heading', { name: 'Stage hinzufügen' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Turnier starten' })).toBeInTheDocument()
+  })
+
+  it('versteckt "Stage hinzufügen" und "Turnier starten" für STAMMTISCH/FREEPLAY', () => {
+    const { rerender } = render(<OrganizerConsole {...BASE} kind="STAMMTISCH" />)
+    expect(screen.queryByRole('heading', { name: 'Stage hinzufügen' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Turnier starten' })).not.toBeInTheDocument()
+
+    rerender(<OrganizerConsole {...BASE} kind="FREEPLAY" />)
+    expect(screen.queryByRole('heading', { name: 'Stage hinzufügen' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Turnier starten' })).not.toBeInTheDocument()
   })
 })
