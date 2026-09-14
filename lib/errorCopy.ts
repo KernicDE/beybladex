@@ -130,6 +130,8 @@ const COPY: Record<string, string> = {
   // #176 — POST /api/tournaments/[id]/stages: Stammtisch/Freeplay haben keinen Bracket.
   not_a_bracket_tournament: 'Dieses Event ist kein Turnier mit Bracket — Stufen/Bracket gibt es nur bei Turnieren.',
   invalid_kind: 'Ungültiger Event-Typ.',
+  // #181 — PATCH /api/tournaments/[id]/join: Decklock-Sperrfrist bereits verstrichen.
+  deck_locked: 'Die Deck-Sperrfrist für dieses Turnier ist bereits abgelaufen — das Deck kann nicht mehr geändert werden.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).

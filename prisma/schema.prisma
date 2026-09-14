@@ -488,6 +488,13 @@ model Tournament {
   // slot-vs-slot sub-matches). Immutable once any registration exists (route-enforced).
   teamMode Boolean @default(false)
 
+  // Issue #181 — "Decklock": Spieler können sich früher anmelden, als Decks gelockt werden
+  // müssen — der Veranstalter gibt optional eine EIGENE Sperrfrist fürs Deck-Wählen/-Wechseln
+  // vor, unabhängig von der Anmeldefrist (die bleibt bei startDate/Bracket-Generierung/
+  // startedAt, unverändert). null = "kein eigener Wert, Event-Start gilt" (siehe
+  // lib/deckLock.ts#resolveDeckLockAt) — kein zweiter Default-Mechanismus im Code nötig.
+  deckLockAt DateTime?
+
   participants TournamentParticipant[]
   matches      Match[]
   judges       TournamentJudge[]
@@ -567,6 +574,12 @@ model TournamentParticipant {
   // authoritative for THIS tournament's matches from that point on. Empty = no snapshot taken
   // (tournament not yet started, or its ruleset doesn't lock decks).
   lockedBuildIds String[]   @default([])
+
+  // Issue #181 — "Decklock": Dedupe-Wächter für die 24h-Erinnerung (POST /api/internal/
+  // decklock-sweep). null = noch keine Erinnerung für die AKTUELLE Sperrfrist verschickt; wird
+  // beim Wählen/Wechseln eines Decks (das die Erinnerung ja gegenstandslos macht) wieder auf
+  // null zurückgesetzt, damit ein späterer Deck-Reset (deckId → null) erneut erinnert.
+  deckReminderSentAt DateTime?
 
   @@unique([tournamentId, userId])
   // RC7 (#36): "all tournaments of a user" (profile page, account export) — the @@unique above

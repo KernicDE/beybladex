@@ -11,14 +11,16 @@
 //   participant pool is structurally fixed (arenas/seeding/pairings already computed), so a
 //   late joiner could never actually be scheduled into a match even before the event's stated
 //   start time.
-// - PATCH: only the participant themselves; edits their deckId up until Tournament.startDate
-//   (409 afterwards — editable-until-start decision from the master plan).
+// - PATCH: only the participant themselves; edits their deckId up until the tournament's
+//   effective deck lock (Issue #181 — Tournament.deckLockAt, default Tournament.startDate; see
+//   lib/deckLock.ts) OR Tournament.startedAt, whichever comes first.
 // - DELETE: only the participant themselves; withdraws up until Tournament.startDate (409 after).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 import { validateDeckAgainstTournamentFormat } from '@/lib/deckRegistration'
+import { resolveDeckLockAt } from '@/lib/deckLock'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -40,7 +42,7 @@ export async function POST(req: Request, { params }: Ctx) {
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
-    select: { startDate: true, startedAt: true, teamMode: true, stages: { select: { _count: { select: { matches: true } } } } },
+    select: { startDate: true, startedAt: true, teamMode: true, deckLockAt: true, stages: { select: { _count: { select: { matches: true } } } } },
   })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
   // RC15 #12 — team tournaments register TEAMS (TeamTournamentEntry), never solo participants;
@@ -66,6 +68,13 @@ export async function POST(req: Request, { params }: Ctx) {
   const deckId = (body as Record<string, unknown>).deckId
   if (!(await ownDeck(deckId, session.user.id))) {
     return Response.json({ error: 'invalid_deck' }, { status: 403 })
+  }
+  // Issue #181 — Decklock: die Registrierung selbst bleibt bis startDate offen (Gate oben), aber
+  // ein DECK darf ab der (ggf. früheren) Sperrfrist nicht mehr GESETZT werden — wer ohne Deck
+  // registriert. bleibt registriert und wird erst beim Sweep entfernt, falls bis dahin keins
+  // nachgereicht wird.
+  if (typeof deckId === 'string' && new Date() > resolveDeckLockAt(tournament.deckLockAt, tournament.startDate)) {
+    return Response.json({ error: 'deck_locked' }, { status: 409 })
   }
   if (typeof deckId === 'string') {
     const formatError = await validateDeckAgainstTournamentFormat(deckId, id)
@@ -97,15 +106,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true, startedAt: true } })
+  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { startDate: true, startedAt: true, deckLockAt: true } })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
-  // [REVIEW-FIX P16-5] same startedAt gate as POST above — a deck swap after "Turnier starten"
-  // would otherwise let a participant change deckId AFTER their (or an empty) snapshot was
-  // taken, pointing lockedBuildIds at a deck that no longer matches what deckId now says.
-  // (DELETE/withdraw below deliberately does NOT get this gate — dropping out mid-event stays
-  // allowed after start; only the deck-content edit this route guards is the lock-bypass risk.)
-  if (new Date() > tournament.startDate || tournament.startedAt !== null) {
+  // [REVIEW-FIX P16-5] startedAt bleibt der eigene, hart Gate mit seinem bestehenden Fehler-Token
+  // (tournament_started, bestehender Test/Copy) — ein Deck-Wechsel nach "Turnier starten" würde
+  // sonst lockedBuildIds auf ein Deck zeigen lassen, das nicht mehr zum genommenen Snapshot passt.
+  // (DELETE/withdraw unten bekommt dieses Gate bewusst NICHT — Abmelden bleibt nach Start erlaubt;
+  // nur der Deck-Inhalts-Edit hier ist das Lock-Bypass-Risiko.)
+  if (tournament.startedAt !== null) {
     return Response.json({ error: 'tournament_started' }, { status: 409 })
+  }
+  // Issue #181 — Decklock: zusätzliches, EIGENES Gate für die (ggf. vor startDate liegende)
+  // Deck-Sperrfrist — unabhängig davon, ob das Turnier schon gestartet wurde.
+  if (new Date() > resolveDeckLockAt(tournament.deckLockAt, tournament.startDate)) {
+    return Response.json({ error: 'deck_locked' }, { status: 409 })
   }
 
   const participant = await prisma.tournamentParticipant.findUnique({
@@ -133,7 +147,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   const updated = await prisma.tournamentParticipant.update({
     where: { id: participant.id },
-    data: { deckId },
+    // Issue #181 — ein bewusst (re-)gesetztes Deck macht eine evtl. schon verschickte
+    // Erinnerung gegenstandslos; Reset auf null, damit ein späterer Deck-Entzug (deckId → null
+    // vor der Sperrfrist) wieder erinnert werden kann.
+    data: { deckId, deckReminderSentAt: null },
   })
   return Response.json({ id: updated.id, deckId: updated.deckId })
 }
