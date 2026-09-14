@@ -8,11 +8,13 @@
 // Formsprache (Blade-Clip-Path, Rot/Blau) statt dessen eigener Optik.
 //
 // "Reduktion aufs Wesentliche" (Ursprüngliche Anforderung in #157: "was selten gebraucht wird,
-// muss nicht immer sichtbar sein — Sprache oder Farbschema ändert man nicht dauernd"): Sprache
-// (LanguageSwitcher) und Farbschema (ThemeToggle) sind beide bereits selbst einzeilige
-// Icon-Buttons mit Hover/Fokus-Dropdown (ThemeToggle wurde dafür in #157 an LanguageSwitcher
-// angeglichen) — hier im Footer platziert, nicht in der Nav-Liste, wo sie mit den tatsächlich
-// oft gebrauchten Seiten konkurrieren würden.
+// muss nicht immer sichtbar sein — Sprache oder Farbschema ändert man nicht dauernd") ging noch
+// weiter als der erste Wurf: Live-Nachtrag ("Entferne Sprache und Farbschema, das ist entweder
+// vom System oder im Nutzermenü") — beide Controls sind jetzt GANZ aus dem Chrome raus, nicht
+// nur zu Icon-Buttons verkleinert. Farbschema kommt ausschließlich noch aus
+// prefers-color-scheme (ThemeProvider-Default "system"); Sprache eingeloggt über
+// /settings/profile (ProfileForm.tsx), Gäste über die Browser-Sprache (Accept-Language,
+// lib/i18n/server.ts) — beides bereits vorhanden, kein neuer Weg nötig.
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -31,19 +33,17 @@ import {
   LogOut,
   Package,
   Search,
+  Settings,
   Shield,
   TrendingUp,
   Users,
   type LucideIcon,
 } from 'lucide-react'
 import type { Session } from 'next-auth'
-import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { NotificationBell } from '@/components/layout/NotificationBell'
-import { LanguageSwitcher } from '@/components/layout/LanguageSwitcher'
 import { ExpandIconLink } from '@/components/ui/ExpandIconLink'
 import { BrandMark } from '@/components/brand/BrandMark'
 import type { Messages } from '@/lib/i18n/server'
-import type { Locale } from '@/lib/i18n/locales'
 
 const NAV_LINKS: { href: string; labelKey: keyof Messages['nav']; icon: LucideIcon; auth?: boolean }[] = [
   { href: '/events', labelKey: 'events', icon: Calendar },
@@ -62,13 +62,11 @@ export function Sidebar({
   session,
   avatarImageId,
   unreadNotifications,
-  locale,
   t,
 }: {
   session: Session | null
   avatarImageId: string | null
   unreadNotifications: number
-  locale: Locale
   t: Messages
 }) {
   const pathname = usePathname()
@@ -163,14 +161,20 @@ export function Sidebar({
         ) : (
           <ExpandIconLink href="/search" icon={Search} label={t.common.search} />
         )}
-        <div className={`flex items-center gap-1 ${collapsed ? 'flex-col' : ''}`}>
-          {session && <NotificationBell unreadCount={unreadNotifications} />}
-          <LanguageSwitcher current={locale} authed={Boolean(session)} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} align="left" />
-          <ThemeToggle align="left" />
-        </div>
+        {/* Live-Report ("Entferne Sprache und Farbschema, das ist entweder vom System oder im
+            Nutzermenü"): Farbschema kommt jetzt ausschließlich aus der Systemeinstellung
+            (prefers-color-scheme, ThemeProvider-Default "system" — kein manueller Umschalter
+            mehr im Chrome). Sprache: eingeloggt über /settings/profile (ProfileForm.tsx trägt
+            den Sprach-Select bereits); Gäste fallen automatisch auf die Browser-Sprache
+            zurück (Accept-Language, lib/i18n/server.ts) — ebenfalls "vom System". */}
+        {session && (
+          <div className={`flex items-center gap-1 ${collapsed ? 'flex-col' : ''}`}>
+            <NotificationBell unreadCount={unreadNotifications} />
+          </div>
+        )}
 
         {session ? (
-          <div className={`mt-2 flex items-center gap-2 rounded-md px-1.5 py-1.5 ${collapsed ? 'justify-center' : ''}`}>
+          <div className={`mt-2 flex items-center gap-1 rounded-md px-1.5 py-1.5 ${collapsed ? 'flex-col' : ''}`}>
             <Link
               href={`/profile/${encodeURIComponent(session.user?.name ?? '')}`}
               className={`flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 transition-colors hover:bg-current/5 ${collapsed ? 'justify-center' : ''}`}
@@ -185,6 +189,19 @@ export function Sidebar({
                 </span>
               )}
               {!collapsed && <span className="truncate text-sm font-medium">{session.user?.name}</span>}
+            </Link>
+            {/* Live-Report ("Wo ist eigentlich der Adminbereich hin?"): beim ersten Sidebar-Entwurf
+                fiel dieser Link versehentlich weg — /settings ist der einzige Weg zum Admin-Tab
+                (der sich dort selbst nur für ADMIN-Rollen zeigt, siehe app/settings/layout.tsx).
+                Vorher erreichbar über UserMenu.tsx im alten Header; die Sidebar hatte nur noch
+                Avatar+Abmelden. */}
+            <Link
+              href="/settings"
+              aria-label="Einstellungen"
+              title="Einstellungen"
+              className="shrink-0 rounded-md p-1.5 text-current/60 transition-colors hover:bg-current/5 hover:text-current"
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
             </Link>
             {!collapsed && (
               <button

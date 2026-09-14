@@ -17,7 +17,7 @@ describe('Header — guest legal links (issue #22)', () => {
   it('gives a guest a path to Impressum and Datenschutz', () => {
     render(
       <ThemeProvider>
-        <Header session={null} avatarImageId={null} locale="de" t={t} />
+        <Header session={null} avatarImageId={null} t={t} />
       </ThemeProvider>
     )
 
@@ -35,7 +35,6 @@ describe('Header — guest legal links (issue #22)', () => {
         <Header
           session={{ user: { name: 'tester' }, expires: '2099-01-01' } as never}
           avatarImageId={null}
-          locale="de"
           t={t}
         />
       </ThemeProvider>

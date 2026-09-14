@@ -62,9 +62,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider>
           {/* #157 — Sidebar (Desktop-Nav, ab `lg`) + rechte Spalte (Header <lg, Inhalt, Footer)
               nebeneinander; Header selbst blendet sich ab `lg` aus (siehe dessen Kommentar). */}
-          <Sidebar session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} locale={locale} t={t} />
+          <Sidebar session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} t={t} />
           <div className="flex min-h-full min-w-0 flex-1 flex-col">
-            <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} locale={locale} t={t} />
+            <Header session={session} avatarImageId={avatarImageId} unreadNotifications={unreadNotifications} t={t} />
             <main className="flex-1 pb-12 md:pb-0">{children}</main>
             <Footer t={t} />
           </div>

@@ -6,14 +6,13 @@ import { ThemeProvider } from '@/components/theme/ThemeProvider'
 import deMessages from '@/lib/i18n/messages/de.json'
 
 const t = deMessages
-const locale = 'de' as const
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/builds/abc' }))
 
 function renderSidebar(session: { user: { id: string; name: string } } | null = null) {
   return render(
     <ThemeProvider>
-      <Sidebar session={session as never} avatarImageId={null} unreadNotifications={0} locale={locale} t={t} />
+      <Sidebar session={session as never} avatarImageId={null} unreadNotifications={0} t={t} />
     </ThemeProvider>,
   )
 }
@@ -47,10 +46,21 @@ describe('Sidebar (#157)', () => {
     expect(localStorage.getItem('beybladex-sidebar-collapsed')).toBe('0')
   })
 
+  it('zeigt keinen Sprach-/Theme-Umschalter mehr (Live-Nachtrag: "das ist entweder vom System oder im Nutzermenü")', () => {
+    renderSidebar()
+    expect(screen.queryByRole('group', { name: 'Farbschema' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('listbox', { name: /Sprache|Language/i })).not.toBeInTheDocument()
+  })
+
+  it('zeigt einen Einstellungen-Link für eine Session (Live-Report: "Wo ist der Adminbereich hin?" — /settings ist der einzige Weg dorthin)', () => {
+    renderSidebar({ user: { id: 'u1', name: 'kernic' } })
+    expect(screen.getByRole('link', { name: 'Einstellungen' })).toHaveAttribute('href', '/settings')
+  })
+
   it('zeigt Login-Link für Gäste, Avatar+Abmelden für eine Session', () => {
     const { rerender } = render(
       <ThemeProvider>
-        <Sidebar session={null} avatarImageId={null} unreadNotifications={0} locale={locale} t={t} />
+        <Sidebar session={null} avatarImageId={null} unreadNotifications={0} t={t} />
       </ThemeProvider>,
     )
     expect(screen.getByRole('link', { name: t.common.login })).toBeInTheDocument()
@@ -61,7 +71,6 @@ describe('Sidebar (#157)', () => {
           session={{ user: { id: 'u1', name: 'kernic' } } as never}
           avatarImageId={null}
           unreadNotifications={2}
-          locale={locale}
           t={t}
         />
       </ThemeProvider>,

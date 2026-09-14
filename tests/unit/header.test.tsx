@@ -1,7 +1,8 @@
 // tests/unit/header.test.tsx
 // #157 — die Desktop-Hauptnavigation zog aus Header.tsx in Sidebar.tsx (Nutzer-Feedback
 // "Verschiebung des Menüs auf die Seite"); Header ist jetzt nur noch die <lg-Utility-Leiste
-// (Marke, Suche, Glocke, Sprache, Theme, Nutzermenü) — kein eigener Nav-Link mehr.
+// (Marke, Suche, Glocke, Nutzermenü) — kein eigener Nav-Link mehr. Sprache/Theme leben seit dem
+// Live-Nachtrag ("Entferne Sprache und Farbschema") nicht mehr im Chrome.
 import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { Header } from '@/components/layout/Header'
@@ -13,27 +14,32 @@ import deMessages from '@/lib/i18n/messages/de.json'
 // RC14 #17 — Header/Sidebar/MobileNav render from a request dictionary; the tests pin German
 // chrome.
 const t = deMessages
-const locale = 'de' as const
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }))
 
 describe('Header (<lg-Utility-Leiste)', () => {
-  it('renders the brand name and the theme-toggle trigger (#124, an Sidebar-Header angeglichen in #157)', () => {
+  it('renders the brand name', () => {
     render(
       <ThemeProvider>
-        <Header session={null} avatarImageId={null} locale={locale} t={t} />
+        <Header session={null} avatarImageId={null} t={t} />
       </ThemeProvider>
     )
     expect(screen.getByText('BeybladeX.de')).toBeInTheDocument()
-    // #157 — ein Icon-Trigger statt einer immer sichtbaren 3er-Reihe; Details in
-    // tests/unit/theme-toggle.test.tsx.
-    expect(screen.getByRole('button', { name: /^Farbschema:/ })).toBeInTheDocument()
+  })
+
+  it('zeigt keinen Sprach-/Theme-Umschalter mehr (Live-Nachtrag: "das ist entweder vom System oder im Nutzermenü")', () => {
+    render(
+      <ThemeProvider>
+        <Header session={null} avatarImageId={null} t={t} />
+      </ThemeProvider>
+    )
+    expect(screen.queryByRole('group', { name: 'Farbschema' })).not.toBeInTheDocument()
   })
 
   it('trägt keine eigene Seitennavigation mehr (lebt in Sidebar.tsx)', () => {
     render(
       <ThemeProvider>
-        <Header session={null} avatarImageId={null} locale={locale} t={t} />
+        <Header session={null} avatarImageId={null} t={t} />
       </ThemeProvider>
     )
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
@@ -47,7 +53,7 @@ describe('nav label consistency (#29, #157)', () => {
   it('Sidebar und MobileNav verwenden dasselbe Label für /events', () => {
     const sidebarView = render(
       <ThemeProvider>
-        <Sidebar session={null} avatarImageId={null} unreadNotifications={0} locale={locale} t={t} />
+        <Sidebar session={null} avatarImageId={null} unreadNotifications={0} t={t} />
       </ThemeProvider>,
     )
     const sidebarLink = within(sidebarView.container).getByRole('link', { name: 'Events' })
