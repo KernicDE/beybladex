@@ -1,8 +1,11 @@
 // tests/unit/contrast.test.ts
 // PERMANENT regression guard (Task 13): the x-cyan-text token must keep clearing
-// WCAG AA (≥4.5:1) on the light backgrounds it renders on. The literal X-Cyan
-// #00F0FF computes to ~1.5:1 there and is illegible as text — if this token is ever
-// "fixed" back toward the accent value, this test fails. Real contrast math, not a
+// WCAG AA (≥4.5:1) on the light backgrounds it renders on. Originally guarded the
+// literal X-Cyan #00F0FF (~1.5:1, illegible as text). #157 Phase 1 repointed the
+// x-cyan/x-cyan-text tokens at the new red brand palette (token NAMES kept — see
+// app/globals.css's comment on that decision) — the raw accent (#C22436) now
+// clears AA outright, unlike the old cyan, but the darker -text variant (#7A1522)
+// stays as the deliberately safer choice for body text. Real contrast math, not a
 // hardcoded pass: the token hex is read from app/globals.css and the WCAG 2.x
 // relative-luminance formula is computed here.
 import { readFileSync } from 'node:fs'
@@ -51,10 +54,29 @@ describe('x-cyan-text contrast (WCAG AA)', () => {
     expect(ratio).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('the raw accent x-cyan does NOT clear AA on light (documents why the token exists)', () => {
-    // Guard against someone "simplifying" the two tokens back into one: the literal
-    // accent must remain the illegible-on-light value this rule is about.
+  it('the -text variant is meaningfully darker/safer than the raw accent, even though both clear AA now', () => {
+    // #157 Phase 1: unlike the old cyan, the raw red accent ALSO clears AA on light
+    // (documented below) — so the split is no longer strictly required for legibility.
+    // It stays anyway (existing ~250 call sites use the two tokens for different
+    // purposes — decorative vs. text) and this guards that the -text token keeps its
+    // larger safety margin rather than drifting back to equal the raw accent.
     const accent = readToken('--color-x-cyan')
-    expect(contrastRatio(accent, '#F8FAFC')).toBeLessThan(4.5)
+    const ratio = contrastRatio(token, '#FFFFFF')
+    const accentRatio = contrastRatio(accent, '#FFFFFF')
+    expect(ratio).toBeGreaterThan(accentRatio)
+  })
+
+  it('the raw accent x-cyan itself clears AA on light (documents the #157 red repaint — no longer the illegible-cyan case this token split originally guarded)', () => {
+    const accent = readToken('--color-x-cyan')
+    expect(contrastRatio(accent, '#F8FAFC')).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+describe('x-blue hover-state contrast (WCAG AA) — #157 Phase 1', () => {
+  // Header/MobileNav render white nav-link text over an x-blue hover fill — this must
+  // clear AA same as any other text/background pairing, not just "looks blue enough".
+  it('white text on x-blue clears ≥4.5:1', () => {
+    const blue = readToken('--color-x-blue')
+    expect(contrastRatio('#FFFFFF', blue)).toBeGreaterThanOrEqual(4.5)
   })
 })

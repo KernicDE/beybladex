@@ -63,7 +63,10 @@ export function Header({ session, avatarImageId, unreadNotifications, locale, t 
               key={href}
               href={href}
               {...(locked ? { 'aria-label': `${label} (${t.nav.loginRequired})` } : {})}
-              className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-current/5 hover:text-current"
+              // #157 Phase 1 — "Blau bei Hover" (Konzept 6 "X Arena"): Hauptnavigation als
+              // erster Anwendungsfall der Marken-Hover-Sprache, klar von der roten
+              // Primärfarbe (Auswahl/Aktion) unterschieden.
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-x-blue hover:text-white"
             >
               <span className="inline-flex items-center gap-1">
                 {label}

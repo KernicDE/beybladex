@@ -70,9 +70,11 @@ export function MobileNav({ session, t }: { session: Session | null; t: Messages
   const moreActive = MORE_LINKS.some(({ href }) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href),
   )
+  // #157 Phase 1 — dieselbe Rot/Blau-Hover-Sprache wie der Header: Hover = Blau,
+  // aktiver Tab bleibt bei der bestehenden Markenfarbe (jetzt Rot statt Cyan).
   const itemCls = (active: boolean) =>
     `flex w-full flex-col items-center gap-0.5 px-1 py-2 text-xs font-medium transition-colors ${
-      active ? 'text-x-cyan-text dark:text-x-cyan' : 'text-current/60 hover:text-current'
+      active ? 'text-x-cyan-text dark:text-x-cyan' : 'text-current/60 hover:bg-x-blue hover:text-white'
     }`
 
   return (
@@ -122,7 +124,7 @@ export function MobileNav({ session, t }: { session: Session | null; t: Messages
                 href={href}
                 role="menuitem"
                 onClick={() => setMoreOpen(false)}
-                className="block rounded-md px-3 py-2 text-sm transition-colors hover:bg-current/5"
+                className="block rounded-md px-3 py-2 text-sm transition-colors hover:bg-x-blue hover:text-white"
               >
                 {t.nav[labelKey]}
               </Link>
