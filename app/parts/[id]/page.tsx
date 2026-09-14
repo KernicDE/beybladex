@@ -102,6 +102,20 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
   const ratingAggregate = shapeRatingAggregate(ratingAggRow)
   const ownRating = viewerId ? partRatings.find((r) => r.user.id === viewerId) : undefined
 
+  // #160 — "In meinen Beyblades": personenbezogen (Login-gated), zu unterscheiden von der
+  // öffentlichen, katalogweiten "In X Beyblades (Sets) enthalten"-Sektion weiter unten
+  // (partOccurrenceWhere). Zeigt, in welchen EIGENEN CollectionItem-Zeilen dieses Teil steckt.
+  const myCollectionItems = viewerId
+    ? await prisma.collectionItem.findMany({
+        where: { userId: viewerId, partOrBeyId: id },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
+          sourceBeyblade: { select: { id: true, name: true } },
+        },
+      })
+    : []
+
   const displayName = part.category === 'BIT' ? formatBitDisplay(part.name) : part.name
 
   return (
@@ -178,6 +192,47 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
           }))}
         />
       </section>
+
+      {/* #160 — personenbezogen (nur für die angemeldete Person, nur wenn sie das Teil
+          besitzt) — zu unterscheiden von der öffentlichen, katalogweiten Sektion darunter. */}
+      {viewerId && myCollectionItems.length > 0 && (
+        <section aria-labelledby="part-mine" className="space-y-3">
+          <h2 id="part-mine" className="text-lg font-semibold">In meinen Beyblades</h2>
+          <ul className="space-y-2">
+            {myCollectionItems.map((item) => (
+              <li key={item.id}>
+                <Card className="p-3 text-sm">
+                  {item.sourceBeyblade ? (
+                    <p>
+                      Aus{' '}
+                      <Link href={`/beyblades/${item.sourceBeyblade.id}`} className="underline underline-offset-2">
+                        {item.sourceBeyblade.name}
+                      </Link>
+                    </p>
+                  ) : (
+                    <p className="text-current/50">Einzeln hinzugefügt</p>
+                  )}
+                  {(item.merchant || item.boughtAt || item.purchasePrice !== null) && (
+                    <p className="mt-1 text-current/60">
+                      {[
+                        item.boughtAt
+                          ? `Gekauft am ${new Date(item.boughtAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                          : null,
+                        item.merchant,
+                        item.purchasePrice !== null
+                          ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: item.currency }).format(item.purchasePrice)
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="part-beyblades" className="space-y-3">
         <h2 id="part-beyblades" className="text-lg font-semibold">

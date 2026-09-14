@@ -128,7 +128,11 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
         id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
-        part: { select: { name: true, category: true, manufacturer: true, imageId: true } },
+        // #160 — Herkunft (aus welchem Set stammt das Teil) statt Preis im Vordergrund; Bild
+        // und Drehrichtung ergänzt (waren auf Part immer schon da, wurden hier nur nicht selektiert).
+        sourceBeybladeId: true,
+        sourceBeyblade: { select: { id: true, name: true } },
+        part: { select: { id: true, name: true, category: true, manufacturer: true, imageId: true, spinDirection: true } },
       },
     }),
   ])
@@ -180,6 +184,9 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const hasMoreInventory = inventoryRows.length > PAGE_SIZE
   const items = hasMoreInventory ? inventoryRows.slice(0, PAGE_SIZE) : inventoryRows
   const nextInventoryCursor = hasMoreInventory ? items[items.length - 1]!.id : null
+  // #160 — Gruppierung nach Teileart wie der Teile-Tab; groupPartsByCategory erwartet
+  // `.category` am Element selbst, hier eine Ebene tiefer auf `.part`.
+  const inventoryGroups = groupPartsByCategory(items.map((item) => ({ ...item, category: item.part.category })))
 
   const catalogFilterActive = Boolean(catalogQ || catalogMf || catalogBt || ownedOnly)
   // #155 — Basis-Params ohne Seite; buildCatalogHref hängt die Zielseite pro Link an.
@@ -423,13 +430,29 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           }
         />
       ) : (
-        <ul className="space-y-3">
-          {items.map((item) => (
-            <li key={item.id}>
-              <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} />
-            </li>
+        // #160 — Gruppierung nach Teileart statt einer flachen Liste, dieselbe kanonische
+        // Reihenfolge wie der Teile-Tab (groupPartsByCategory/PART_CATEGORY_LABELS).
+        <div className="space-y-6">
+          {inventoryGroups.map((group) => (
+            <section key={group.category} aria-label={group.category} className="space-y-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <Badge tone="cyan">
+                  {group.category in PART_CATEGORY_LABELS
+                    ? PART_CATEGORY_LABELS[group.category as keyof typeof PART_CATEGORY_LABELS]
+                    : group.category}
+                </Badge>
+                <span className="text-current/50">{group.parts.length}</span>
+              </h3>
+              <ul className="space-y-3">
+                {group.parts.map((item) => (
+                  <li key={item.id}>
+                    <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} />
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
       {nextInventoryCursor && (
         <Link href={`/collection?tab=inventar&cursor=${nextInventoryCursor}`} className="inline-block underline underline-offset-2">

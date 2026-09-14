@@ -3,7 +3,7 @@
 // Rueckverweis muss OR ueber ALLE 7 Slot-FKs laufen (RC16 #122: CX-Builds ueber Lock Chip/
 // Over/Metal/Assist Blade, Ratchet-Integrated ueber Blade + Bit). Seams auf '@/lib/db' und
 // '@/lib/metaCache', kein echtes DB/Redis.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -12,6 +12,7 @@ vi.mock('@/lib/db', () => ({
     beyblade: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
     rating: { findMany: vi.fn(), aggregate: vi.fn() },
+    collectionItem: { findMany: vi.fn() },
   },
 }))
 vi.mock('@/lib/auth', () => ({ auth: vi.fn(async () => null) }))
@@ -26,11 +27,14 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { prisma } from '@/lib/db'
+import { auth } from '@/lib/auth'
 import PartDetailPage from '@/app/parts/[id]/page'
 
 const partFindUnique = vi.mocked(prisma.part.findUnique)
 const buildFindMany = vi.mocked(prisma.build.findMany)
 const beybladeFindMany = vi.mocked(prisma.beyblade.findMany)
+const collectionItemFindMany = vi.mocked(prisma.collectionItem.findMany)
+const mockAuth = vi.mocked(auth)
 
 const PART = {
   id: 'p1',
@@ -87,5 +91,42 @@ describe('PartDetailPage (issue #105; MVP4 #141 — Beyblades UND Builds)', () =
 
     partFindUnique.mockResolvedValue(null as never)
     await expect(PartDetailPage({ params: Promise.resolve({ id: 'nix' }) } as never)).rejects.toThrow('NEXT_NOT_FOUND')
+  })
+})
+
+describe('PartDetailPage — "In meinen Beyblades" (#160)', () => {
+  afterEach(() => mockAuth.mockReset())
+
+  it('lädt die eigenen CollectionItem-Zeilen nur für angemeldete Nutzer:innen (Login-Gate)', async () => {
+    partFindUnique.mockResolvedValue(PART as never)
+    collectionItemFindMany.mockResolvedValue([] as never)
+
+    // Nicht angemeldet (Default-Mock: auth() → null) — kein Query.
+    await PartDetailPage({ params: Promise.resolve({ id: 'p1' }) } as never)
+    expect(collectionItemFindMany).not.toHaveBeenCalled()
+
+    // Angemeldet — Query läuft, scoped auf userId + partOrBeyId.
+    mockAuth.mockResolvedValue({ user: { id: 'user-1' }, expires: new Date().toISOString() } as never)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: 'USER' } as never)
+    await PartDetailPage({ params: Promise.resolve({ id: 'p1' }) } as never)
+    expect(collectionItemFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'user-1', partOrBeyId: 'p1' } }),
+    )
+  })
+
+  it('zeigt die Herkunft ("Aus <Beyblade>") bzw. "Einzeln hinzugefügt" ohne Herkunft', async () => {
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    partFindUnique.mockResolvedValue(PART as never)
+    mockAuth.mockResolvedValue({ user: { id: 'user-1' }, expires: new Date().toISOString() } as never)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: 'USER' } as never)
+    collectionItemFindMany.mockResolvedValue([
+      { id: 'ci1', purchasePrice: 19.99, currency: 'EUR', merchant: 'Testladen', boughtAt: null, sourceBeyblade: { id: 'bey1', name: 'Dranzer' } },
+      { id: 'ci2', purchasePrice: null, currency: 'EUR', merchant: null, boughtAt: null, sourceBeyblade: null },
+    ] as never)
+
+    const html = renderToStaticMarkup(await PartDetailPage({ params: Promise.resolve({ id: 'p1' }) } as never))
+    expect(html).toContain('In meinen Beyblades')
+    expect(html).toContain('Dranzer')
+    expect(html).toContain('Einzeln hinzugefügt')
   })
 })

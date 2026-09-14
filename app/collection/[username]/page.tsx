@@ -54,7 +54,9 @@ export default async function UserCollectionPage({ params, searchParams }: PageP
     ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: {
       id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
-      part: { select: { name: true, category: true, manufacturer: true, imageId: true } },
+      sourceBeybladeId: true,
+      sourceBeyblade: { select: { id: true, name: true } },
+      part: { select: { id: true, name: true, category: true, manufacturer: true, imageId: true, spinDirection: true } },
     },
   })
   const hasMore = rows.length > PAGE_SIZE
@@ -74,7 +76,7 @@ export default async function UserCollectionPage({ params, searchParams }: PageP
         <ul className="space-y-3">
           {items.map((item) => (
             <li key={item.id}>
-              <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} />
+              <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} editable={false} />
             </li>
           ))}
         </ul>
