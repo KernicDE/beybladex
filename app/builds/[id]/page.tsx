@@ -7,9 +7,12 @@
 // Statistiken (Auto-Meta, WinRateBadge aus lib/meta) sind als getrennte, beschriftete
 // Bereiche sichtbar — User-Meinung ≠ Turnier-Statistik. Ersteller:in sieht den
 // Öffentlich/Ungelistet-Umschalter (BuildVisibilityToggle → PATCH /api/builds/[id]).
-// MVP4/5 (#145): Name/Typ-Bearbeitung ist ebenfalls Ersteller-only (BuildEditForm → derselbe
-// PATCH); der Vor-Split-Kuratoren-Edit (/api/admin/builds/[id]) wurde entfernt — Builds
-// sind eine reine Nutzersache, offizielle Sets leben im Beyblade-Modell.
+// MVP4/5 (#145): Name/Typ-Bearbeitung ist ebenfalls Ersteller-only (derselbe PATCH); der
+// Vor-Split-Kuratoren-Edit (/api/admin/builds/[id]) wurde entfernt — Builds sind eine reine
+// Nutzersache, offizielle Sets leben im Beyblade-Modell. #161: die frühere separate
+// "Build bearbeiten"-Box (BuildEditForm) ist einem Inline-Edit-Modus gewichen
+// (BuildTitleEditable — verwandelt Titel/Typ-Badge selbst in Eingabefelder), dazu ein
+// Lösch-Button (BuildDeleteButton, DELETE /api/builds/[id]).
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -23,7 +26,8 @@ import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { BuildVisibilityToggle } from '@/components/beyblade/BuildVisibilityToggle'
-import { BuildEditForm } from '@/components/beyblade/BuildEditForm'
+import { BuildTitleEditable } from '@/components/beyblade/BuildTitleEditable'
+import { BuildDeleteButton } from '@/components/beyblade/BuildDeleteButton'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import { shapeRatingAggregate } from '@/lib/ratingAggregate'
@@ -100,19 +104,28 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
       <Link href="/builds" className="text-sm text-current/60 underline underline-offset-2">← Alle Builds</Link>
 
       <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            {/* Titel: kanonischer/vergebener Name → Blade → Lock Chip → Bit (RC16 #122). */}
+        {/* Titel: kanonischer/vergebener Name → Blade → Lock Chip → Bit (RC16 #122). #161 —
+            für die Erstellerin bzw. den Ersteller ist dieser Block selbst der Bearbeiten-Modus
+            (BuildTitleEditable), nicht mehr nur eine statische Anzeige + separate Box darunter. */}
+        {viewerId && build.creatorId === viewerId ? (
+          <BuildTitleEditable
+            buildId={build.id}
+            displayName={build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name}
+            initialName={build.name ?? ''}
+            initialType={build.type}
+          />
+        ) : (
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <h1 className="text-2xl font-semibold">
               {build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name}
             </h1>
-            <p className="text-current/60">
-              {/* RC16 (#106): Bit als „Kurzcode (Vollname)". */}
-              {parts.map((p) => (p.part.category === 'BIT' ? formatBitDisplay(p.part.name) : p.part.name)).join(' · ')}
-            </p>
+            <TypeBadge type={build.type} />
           </div>
-          <TypeBadge type={build.type} />
-        </div>
+        )}
+        <p className="text-current/60">
+          {/* RC16 (#106): Bit als „Kurzcode (Vollname)". */}
+          {parts.map((p) => (p.part.category === 'BIT' ? formatBitDisplay(p.part.name) : p.part.name)).join(' · ')}
+        </p>
         {aggregate.count > 0 && (
           <div className="mt-2">
             <RatingSummary aggregate={aggregate} />
@@ -127,10 +140,12 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
             </Link>
           </p>
         )}
-        {/* #144 — Sichtbarkeits-Umschalter, nur für die Erstellerin bzw. den Ersteller. */}
+        {/* #144 — Sichtbarkeits-Umschalter; #161 — Lösch-Button daneben. Beide nur für die
+            Erstellerin bzw. den Ersteller. */}
         {viewerId && build.creatorId === viewerId && (
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
             <BuildVisibilityToggle buildId={build.id} initial={build.visibility} />
+            <BuildDeleteButton buildId={build.id} />
           </div>
         )}
       </Card>
@@ -218,16 +233,6 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         />
       </section>
 
-      {/* #145 — Name/Typ-Bearbeitung: nur die Erstellerin bzw. der Ersteller (Server-Gate:
-          PATCH /api/builds/[id] antwortet 404 für alle anderen, inkl. Kuratoren/Admins). */}
-      {viewerId && build.creatorId === viewerId && (
-        <section aria-labelledby="build-edit" className="space-y-3">
-          <h2 id="build-edit" className="text-lg font-semibold">Build bearbeiten</h2>
-          <Card className="p-4">
-            <BuildEditForm buildId={build.id} initial={{ name: build.name ?? '', type: build.type }} />
-          </Card>
-        </section>
-      )}
     </main>
   )
 }
