@@ -42,8 +42,13 @@ describe('POST /api/beyblades/[id]/purchases → Mein Inventar (#137-Nachtrag)',
       { params: Promise.resolve({ id: beyblade.id }) },
     )
     expect(res.status).toBe(201)
-    const { itemIds } = (await res.json()) as { purchaseId: string; itemIds: string[] }
+    const { purchaseId, itemIds } = (await res.json()) as { purchaseId: string; itemIds: string[] }
     expect(itemIds).toHaveLength(3)
+
+    // Issue #169 — jede erzeugte CollectionItem-Zeile trägt den Bezug auf GENAU diesen Kauf
+    // (nötig, damit "Kauf löschen" später kaskadierend nur ihre eigenen Teile trifft).
+    const createdItems = await prisma.collectionItem.findMany({ where: { id: { in: itemIds } }, select: { purchaseId: true } })
+    expect(createdItems.every((i) => i.purchaseId === purchaseId)).toBe(true)
 
     // Genau dieselbe Query-Form wie app/collection/page.tsx "Mein Inventar".
     const inventory = await prisma.collectionItem.findMany({
