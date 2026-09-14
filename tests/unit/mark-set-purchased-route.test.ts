@@ -5,10 +5,16 @@
 // ohne echte DB (CI-Postgres-Tests decken den vollen Round-Trip zusätzlich ab).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { authMock, beybladeFindUnique, transactionMock } = vi.hoisted(() => ({
+// Issue #169 — createBeybladePurchase nutzt die INTERACTIVE-Form von $transaction (ein
+// Callback, kein Array-von-ops mehr), weil CollectionItem.purchaseId die echte purchase.id aus
+// dem vorherigen purchase.create braucht. purchaseCreateMock/collectionItemCreateMock sind
+// separat greifbar, damit die tx-Fake-Implementierung unten sie direkt aufrufen kann.
+const { authMock, beybladeFindUnique, transactionMock, purchaseCreateMock, collectionItemCreateMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
   beybladeFindUnique: vi.fn(),
   transactionMock: vi.fn(),
+  purchaseCreateMock: vi.fn((args: unknown) => ({ __op: 'purchase.create', args })),
+  collectionItemCreateMock: vi.fn((args: unknown) => ({ __op: 'collectionItem.create', args })),
 }))
 
 vi.mock('@/lib/auth', () => ({ auth: authMock }))
@@ -16,8 +22,8 @@ vi.mock('@/lib/rateLimit', () => ({ rateLimit: vi.fn().mockResolvedValue({ allow
 vi.mock('@/lib/db', () => ({
   prisma: {
     beyblade: { findUnique: beybladeFindUnique },
-    purchase: { create: vi.fn((args: unknown) => ({ __op: 'purchase.create', args })) },
-    collectionItem: { create: vi.fn((args: unknown) => ({ __op: 'collectionItem.create', args })) },
+    purchase: { create: purchaseCreateMock },
+    collectionItem: { create: collectionItemCreateMock },
     $transaction: transactionMock,
   },
 }))
@@ -51,9 +57,14 @@ beforeEach(() => {
     ratchetId: 'p-ratchet',
     bitId: 'p-bit',
   })
-  // $transaction receives the array of prisma "op" calls above — resolve with matching fakes.
-  transactionMock.mockImplementation(async (ops: { __op: string }[]) =>
-    ops.map((op, i) => (op.__op === 'purchase.create' ? { id: 'purchase-1' } : { id: `item-${i}` })),
+  // Issue #169 — $transaction bekommt jetzt einen Callback (tx) => {...} statt eines Arrays;
+  // der Fake ruft ihn mit einem tx-Objekt auf, dessen create-Mocks feste ids zurückgeben.
+  let itemCounter = 0
+  transactionMock.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+    fn({
+      purchase: { create: (a: unknown) => { purchaseCreateMock(a); return { id: 'purchase-1' } } },
+      collectionItem: { create: (a: unknown) => { collectionItemCreateMock(a); return { id: `item-${itemCounter++}` } } },
+    }),
   )
 })
 
@@ -66,18 +77,21 @@ describe('POST /api/collection/mark-set-purchased — boughtAt (Kaufdatum)', () 
     // Ratchet-Integrated? nein — hier 3 belegte Slots (blade, ratchet, bit).
     expect(body.ids).toHaveLength(3)
 
-    const calledOps = transactionMock.mock.calls[0][0] as { __op: string; args: { data: Record<string, unknown> } }[]
-    for (const op of calledOps) {
-      expect(op.args.data.boughtAt).toBeInstanceOf(Date)
-      expect((op.args.data.boughtAt as Date).toISOString().slice(0, 10)).toBe('2026-09-14')
+    // Issue #169 — purchaseCreateMock/collectionItemCreateMock sind jetzt die direkt greifbaren
+    // Spies (statt eines Arrays von $transaction-"ops"), da $transaction seinen Callback selbst
+    // aufruft statt ein Array entgegenzunehmen.
+    const calledArgs = [...purchaseCreateMock.mock.calls, ...collectionItemCreateMock.mock.calls].map((c) => c[0] as { data: Record<string, unknown> })
+    for (const args of calledArgs) {
+      expect(args.data.boughtAt).toBeInstanceOf(Date)
+      expect((args.data.boughtAt as Date).toISOString().slice(0, 10)).toBe('2026-09-14')
     }
   })
 
   it('funktioniert weiterhin ganz ohne Kaufdatum (boughtAt optional)', async () => {
     const res = await POST(req({ beybladeId: 'bey-1' }))
     expect(res.status).toBe(201)
-    const calledOps = transactionMock.mock.calls[0][0] as { args: { data: Record<string, unknown> } }[]
-    for (const op of calledOps) expect(op.args.data.boughtAt).toBeNull()
+    const calledArgs = [...purchaseCreateMock.mock.calls, ...collectionItemCreateMock.mock.calls].map((c) => c[0] as { data: Record<string, unknown> })
+    for (const args of calledArgs) expect(args.data.boughtAt).toBeNull()
   })
 
   it('ein ungültiges Kaufdatum ist 400 invalid_boughtAt, nicht ein stiller Erfolg ohne Teile', async () => {

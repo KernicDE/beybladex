@@ -813,6 +813,9 @@ model Purchase {
   price      Float?
   currency   String    @default("EUR")
   createdAt  DateTime  @default(now())
+  // Issue #169 — die aus DIESEM Kauf erzeugten CollectionItem-Zeilen (Teile-Provenienz); siehe
+  // CollectionItem.purchaseId für die Cascade-Begründung.
+  collectionItems CollectionItem[]
 
   // Preisverlauf-Aggregation: alle gemeldeten Preise einer Beyblade über Zeit (pro Währung
   // gruppiert in der Lib).
@@ -1055,11 +1058,27 @@ model CollectionItem {
   sourceBeybladeId String?
   sourceBeyblade   Beyblade? @relation("CollectionItemSourceBeyblade", fields: [sourceBeybladeId], references: [id], onDelete: SetNull)
 
+  // Issue #169 — "Teile werden nicht mit Beyblade gelöscht": anders als sourceBeybladeId (welcher
+  // KATALOG-Beyblade, überlebt Löschung) trackt dies, welche EINZELNE Purchase-Zeile diesen
+  // Eintrag erzeugt hat — nötig, weil dieselbe Beyblade mehrfach gekauft werden kann (mehrere
+  // Purchase-Zeilen, PurchaseList.tsx) und "Kauf löschen" nur GENAU dessen eigene Teile treffen
+  // soll, nicht die einer anderen Kauf-Zeile derselben Beyblade. CASCADE (nicht SetNull wie oben):
+  // AC von #169 ist "Beyblade-Kauf löschen löscht auch dessen Teile aus der Sammlung", also ein
+  // echtes Löschen der Zeile, kein bloßes Verwaisen-lassen. Nullable, weil Alt-Zeilen (vor #169)
+  // keinen Kauf-Bezug hatten — Backfill in
+  // prisma/migrations/20260914170000_backfill_collectionitem_purchase_link nur für eindeutige
+  // Fälle (User+Beyblade mit GENAU einer Purchase-Zeile); mehrdeutige Alt-Fälle bleiben null.
+  purchaseId String?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
   pricePoints PricePoint[]
 
   @@index([partOrBeyId])
   // RC7 (#36): per-user collection list.
   @@index([userId])
+  // Issue #169 — lookup beim Kauf-Löschen (Cascade läuft ohnehin DB-seitig; der Index hilft
+  // trotzdem bei App-seitigen Abfragen "welche Teile stammen aus diesem Kauf").
+  @@index([purchaseId])
 }
 
 // MediaAsset (Phase 11, item 0) — ONE generic owned-asset model behind every image upload.

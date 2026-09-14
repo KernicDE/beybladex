@@ -14,7 +14,6 @@
 // eigenem Seiten-Kommentar "die Verfügbarkeitsgrundlage der Meine-Builds-Ansicht") bleibt leer.
 // Beide Routen rufen jetzt dieselbe Funktion — kein Pfad ohne Provenienz mehr.
 import { prisma } from '@/lib/db'
-import type { Prisma } from '@prisma/client'
 
 export interface BeybladePurchaseFields {
   price?: number | null
@@ -60,29 +59,33 @@ export async function createBeybladePurchase(
     beyblade.bitId,
   ].filter((id): id is string => id !== null)
 
-  const ops: [
-    Prisma.PrismaPromise<{ id: string }>,
-    ...Prisma.PrismaPromise<{ id: string }>[],
-  ] = [
-    prisma.purchase.create({
+  // Interactive transaction statt Array-Form: die CollectionItem-Zeilen brauchen die ECHTE
+  // purchase.id (Issue #169 — purchaseId-Verknüpfung fürs Cascade-Löschen), die erst nach dem
+  // purchase.create feststeht. Die Array-Form baut alle Promises VOR der Ausführung und kann
+  // dieses Ergebnis nicht referenzieren.
+  const { purchase, items } = await prisma.$transaction(async (tx) => {
+    const purchase = await tx.purchase.create({
       data: { userId, beybladeId: beyblade.id, price, currency, merchant, boughtAt },
       select: { id: true },
-    }),
-    ...partIds.map((partOrBeyId) =>
-      prisma.collectionItem.create({
-        data: {
-          userId,
-          partOrBeyId,
-          sourceBeybladeId: beyblade.id,
-          purchasePrice: price,
-          currency,
-          merchant,
-          boughtAt,
-        },
-        select: { id: true },
-      }),
-    ),
-  ]
-  const [purchase, ...items] = await prisma.$transaction(ops)
+    })
+    const items = await Promise.all(
+      partIds.map((partOrBeyId) =>
+        tx.collectionItem.create({
+          data: {
+            userId,
+            partOrBeyId,
+            sourceBeybladeId: beyblade.id,
+            purchaseId: purchase.id,
+            purchasePrice: price,
+            currency,
+            merchant,
+            boughtAt,
+          },
+          select: { id: true },
+        }),
+      ),
+    )
+    return { purchase, items }
+  })
   return { purchaseId: purchase.id, itemIds: items.map((i) => i.id) }
 }

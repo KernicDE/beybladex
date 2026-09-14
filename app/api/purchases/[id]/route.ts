@@ -2,9 +2,13 @@
 // Single-Purchase-Mutationen: Edit (Händler/Datum/Preis/Währung) und Delete. AUTHZ RULE
 // (standing Global-Constraints requirement): owner-only — 401 unauthenticated; ein Nicht-
 // Besitzer, der fremde ids anfasst, bekommt 404, nicht 403 (die Existenz der Zeile wird nicht
-// geleakt, gleiche Idiom wie app/api/collection/[id]). Das Löschen entfernt nur die Purchase:
-// Preisverlauf-Datenpunkte gehen mit, CollectionItem-Provenienz-Zeilen (mark-set-purchased,
-// RC16 #122) sind davon bewusst unberührt.
+// geleakt, gleiche Idiom wie app/api/collection/[id]). Issue #169 (Live-Report: "Teile werden
+// nicht mit Beyblade gelöscht") — das Löschen einer Purchase kaskadiert jetzt DB-seitig auf ihre
+// CollectionItem-Zeilen (CollectionItem.purchaseId, onDelete: Cascade, siehe schema.prisma) und
+// deren PricePoints (die hängen bereits an CollectionItem). Kein explizites App-Code nötig — der
+// einzelne prisma.purchase.delete() unten reicht, die FK erledigt den Rest. Alt-Zeilen aus VOR
+// dieser Migration ohne eindeutig rekonstruierbaren purchaseId (mehrfacher Kauf derselben
+// Beyblade) bleiben unverknüpft — siehe die Backfill-Migration für die genaue Abgrenzung.
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { parsePurchaseBody } from '@/lib/purchaseInput'

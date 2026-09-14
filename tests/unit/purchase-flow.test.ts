@@ -29,10 +29,17 @@ const {
   purchaseUpdate: vi.fn(),
   purchaseDelete: vi.fn(),
   collectionItemCreate: vi.fn(),
-  // #137-Nachtrag — createBeybladePurchase (lib/beybladePurchase.ts) baut die Purchase- und
-  // CollectionItem-create-Aufrufe zu einem Array und übergibt es an $transaction; Promise.all
-  // reicht als Fake, solange die einzelnen create-Mocks brauchbare Werte zurückgeben.
-  transactionMock: vi.fn((ops: unknown[]) => Promise.all(ops)),
+  // Issue #169 — createBeybladePurchase (lib/beybladePurchase.ts) nutzt seit der purchaseId-
+  // Verknüpfung die INTERACTIVE-Form von $transaction (ein Callback, kein Array), weil die
+  // CollectionItem-creates die echte purchase.id aus dem vorherigen purchase.create brauchen.
+  // Der Fake ruft den Callback mit einem `tx`-Objekt auf, das dieselben Mocks wie `prisma`
+  // selbst spiegelt — die einzelnen create-Mocks liefern weiterhin die Testwerte.
+  transactionMock: vi.fn((fn: (tx: unknown) => unknown) =>
+    fn({
+      purchase: { create: (...a: unknown[]) => purchaseCreate(...a) },
+      collectionItem: { create: (...a: unknown[]) => collectionItemCreate(...a) },
+    }),
+  ),
 }))
 
 vi.mock('@/lib/auth', () => ({ auth: (...a: unknown[]) => authMock(...a) }))
@@ -48,7 +55,7 @@ vi.mock('@/lib/db', () => ({
       delete: (...a: unknown[]) => purchaseDelete(...a),
     },
     collectionItem: { create: (...a: unknown[]) => collectionItemCreate(...a) },
-    $transaction: (...a: unknown[]) => transactionMock(...(a as [unknown[]])),
+    $transaction: (fn: (tx: unknown) => unknown) => transactionMock(fn),
   },
 }))
 
@@ -168,7 +175,8 @@ describe('POST /api/beyblades/[id]/purchases (#142; #137-Nachtrag — schreibt j
     expect(collectionItemCreate).toHaveBeenCalledTimes(3)
     for (const partOrBeyId of ['p-blade', 'p-ratchet', 'p-bit']) {
       expect(collectionItemCreate).toHaveBeenCalledWith({
-        data: { userId: 'user-1', partOrBeyId, sourceBeybladeId: 'b1', purchasePrice: null, currency: 'EUR', merchant: null, boughtAt: null },
+        // Issue #169 — purchaseId verknüpft die Zeile mit GENAU diesem Kauf (Cascade-Löschen).
+        data: { userId: 'user-1', partOrBeyId, sourceBeybladeId: 'b1', purchaseId: 'p1', purchasePrice: null, currency: 'EUR', merchant: null, boughtAt: null },
         select: { id: true },
       })
     }
