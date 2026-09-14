@@ -6,6 +6,6 @@ import { Badge } from '@/components/ui/Badge'
 const TONE = { ATTACK: 'attack', DEFENSE: 'defense', STAMINA: 'stamina', BALANCE: 'balance' } as const
 const LABEL = { ATTACK: 'Angriff', DEFENSE: 'Verteidigung', STAMINA: 'Ausdauer', BALANCE: 'Balance' } as const
 
-export function TypeBadge({ type }: { type: keyof typeof TONE }) {
-  return <Badge tone={TONE[type]}>{LABEL[type]}</Badge>
+export function TypeBadge({ type, className }: { type: keyof typeof TONE; className?: string }) {
+  return <Badge tone={TONE[type]} className={className}>{LABEL[type]}</Badge>
 }

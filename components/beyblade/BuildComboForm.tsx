@@ -96,9 +96,19 @@ function SlotPicker({
   )
 }
 
-export function BuildComboForm({ onCreated }: { onCreated: (build: CreatedBuild) => void }) {
-  const [parts, setParts] = useState<Record<string, PartOption | null>>({ bladeId: null, ratchetId: null, bitId: null })
-  const [type, setType] = useState('')
+export function BuildComboForm({
+  onCreated,
+  initial,
+}: {
+  onCreated: (build: CreatedBuild) => void
+  /** #164 — "Teile ändern" auf der Build-Detailseite startet vorbelegt mit den aktuellen
+   *  Teilen, statt bei drei leeren Slots. */
+  initial?: { blade: PartOption; ratchet: PartOption; bit: PartOption; type: string }
+}) {
+  const [parts, setParts] = useState<Record<string, PartOption | null>>(
+    initial ? { bladeId: initial.blade, ratchetId: initial.ratchet, bitId: initial.bit } : { bladeId: null, ratchetId: null, bitId: null },
+  )
+  const [type, setType] = useState(initial?.type ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 

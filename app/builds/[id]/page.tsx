@@ -15,6 +15,7 @@
 // Lösch-Button (BuildDeleteButton, DELETE /api/builds/[id]).
 import Image from 'next/image'
 import Link from 'next/link'
+import { BackLink } from '@/components/ui/BackLink'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -28,6 +29,7 @@ import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { BuildVisibilityToggle } from '@/components/beyblade/BuildVisibilityToggle'
 import { BuildTitleEditable } from '@/components/beyblade/BuildTitleEditable'
 import { BuildDeleteButton } from '@/components/beyblade/BuildDeleteButton'
+import { BuildPartsEditor } from '@/components/beyblade/BuildPartsEditor'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import { shapeRatingAggregate } from '@/lib/ratingAggregate'
@@ -101,7 +103,7 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <Link href="/builds" className="text-sm text-current/60 underline underline-offset-2">← Alle Builds</Link>
+      <BackLink href="/builds">Alle Builds</BackLink>
 
       <Card>
         {/* Titel: kanonischer/vergebener Name → Blade → Lock Chip → Bit (RC16 #122). #161 —
@@ -151,13 +153,32 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
       </Card>
 
       <section aria-labelledby="build-parts" className="space-y-3">
-        <h2 id="build-parts" className="text-lg font-semibold">Teile</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="build-parts" className="text-lg font-semibold">Teile</h2>
+          {/* #164 — "Teile ändern" nur für die Erstellerin/den Ersteller UND nur für die
+              Standard-Bauform (Blade+Ratchet+Bit ohne Lock Chip) — CX-/Ratchet-Integrated-Sets
+              sind offizielle Retail-Produkte, siehe BuildPartsEditor. */}
+          {viewerId && build.creatorId === viewerId && build.blade && build.ratchet && !build.lockChip && (
+            <BuildPartsEditor
+              currentBuildId={build.id}
+              initial={{
+                blade: { id: build.blade.id, name: build.blade.name },
+                ratchet: { id: build.ratchet.id, name: build.ratchet.name },
+                bit: { id: build.bit.id, name: build.bit.name },
+                type: build.type,
+              }}
+            />
+          )}
+        </div>
         <ul className="grid gap-3 sm:grid-cols-3">
           {parts.map(({ label, part }) => (
             <li key={part.id}>
               {/* RC16 (#105): die Teile-Karte verlinkt auf die neue Einzelteil-Detailseite. */}
-              <Link href={`/parts/${part.id}`} className="block transition-opacity hover:opacity-80">
-              <Card className="h-full p-4 text-center">
+              {/* #164 — einheitliche Boxgröße: flex-col + für optionale Zeilen (Typ-Badge,
+                  Gewicht) immer denselben Platz reservieren (invisible statt weggelassen),
+                  damit nicht jede Karte je nach Bauform/Teileart eine andere Höhe bekommt. */}
+              <Link href={`/parts/${part.id}`} className="block h-full transition-opacity hover:opacity-80">
+              <Card className="flex h-full flex-col items-center p-4 text-center">
                 {part.imageId ? (
                   <Image
                     src={`/api/media/${part.imageId}`}
@@ -165,10 +186,10 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                     width={96}
                     height={96}
                     sizes="96px"
-                    className="mx-auto h-24 w-24 rounded-lg object-contain"
+                    className="h-24 w-24 rounded-lg object-contain"
                   />
                 ) : (
-                  <div aria-hidden="true" className="mx-auto h-24 w-24 rounded-lg bg-x-cyan/10" />
+                  <div aria-hidden="true" className="h-24 w-24 rounded-lg bg-x-cyan/10" />
                 )}
                 <p className="mt-2 font-medium">
                   {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
@@ -177,12 +198,12 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
                 <p className="text-sm text-current/60">{label}</p>
                 <div className="mt-1 flex justify-center gap-1">
                   <Badge tone="cyan">{part.category}</Badge>
-                  {part.beyType && <TypeBadge type={part.beyType} />}
+                  <TypeBadge type={part.beyType ?? 'BALANCE'} className={part.beyType ? undefined : 'invisible'} />
                 </div>
                 <div className="mt-1 flex justify-center">
                   <WinRateBadge stats={partStats.get(part.id) ?? null} />
                 </div>
-                {part.weightGrams && <p className="mt-1 text-xs text-current/50">{part.weightGrams} g</p>}
+                <p className={`mt-1 text-xs text-current/50 ${part.weightGrams ? '' : 'invisible'}`}>{part.weightGrams ?? 0} g</p>
               </Card>
               </Link>
             </li>

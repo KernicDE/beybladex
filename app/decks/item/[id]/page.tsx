@@ -14,6 +14,7 @@
 // been caught locally (a full `next build` production build, not `next typegen`/`tsc`, is
 // what actually enforces this).
 import Link from 'next/link'
+import { BackLink } from '@/components/ui/BackLink'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -25,6 +26,7 @@ import { Card } from '@/components/ui/Card'
 import { BuildCard } from '@/components/beyblade/BuildCard'
 import { DeckBuilder } from '@/components/beyblade/DeckBuilder'
 import { DeckVisibilityToggle } from '@/components/beyblade/DeckVisibilityToggle'
+import { DeckDeleteButton } from '@/components/beyblade/DeckDeleteButton'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 
 export const dynamic = 'force-dynamic'
@@ -80,7 +82,13 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/item/
   if (isOwner) {
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-        <h1 className="text-2xl font-semibold">{t.decks.editHeading}</h1>
+        {/* #164 — die Besitzer-Ansicht hatte bisher gar keinen Zurück-Link. */}
+        <BackLink href="/decks">{t.decks.heading}</BackLink>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold">{t.decks.editHeading}</h1>
+          <DeckDeleteButton deckId={deck.id} />
+        </div>
 
         {/* #144 — Sichtbarkeits-Umschalter (PUBLIC = gelistet, UNLISTED = nicht gelistet,
             aber niemals geheim). */}
@@ -128,7 +136,7 @@ export default async function DeckDetailPage({ params }: PageProps<'/decks/item/
   // der Besitzer.
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <Link href="/decks" className="text-sm text-current/60 underline underline-offset-2">← {t.decks.heading}</Link>
+      <BackLink href="/decks">{t.decks.heading}</BackLink>
 
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{deck.title}</h1>

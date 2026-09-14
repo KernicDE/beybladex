@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { FormField } from '@/components/ui/FormField'
@@ -20,6 +21,16 @@ import type { WinRateStats } from '@/components/beyblade/WinRateBadge'
 import { validateNoDuplicateParts } from '@/lib/deckValidation'
 
 const MAX_BUILDS = 3
+
+// #164 — eigenes Build-Bild, sonst das Blade-/Lock-Chip-Bild als Fallback (dasselbe Prinzip
+// wie BuildCard.tsx — ein persönlicher Build hat fast nie ein eigenes Bild).
+function deckThumbnail(build: {
+  imageId?: string | null
+  blade?: { id: string; imageId?: string | null } | null
+  lockChip?: { id: string; imageId?: string | null } | null
+}) {
+  return build.imageId ?? build.blade?.imageId ?? build.lockChip?.imageId ?? null
+}
 
 interface SearchResult {
   id: string
@@ -48,6 +59,9 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // #164 — "Deck speichern" gab bisher kein Erfolgs-Feedback (nur Fehler). Kurzer, sich selbst
+  // zurücksetzender Hinweis, wie an anderen Stellen der App ("Gespeichert.").
+  const [saved, setSaved] = useState(false)
 
   // Client-side deck rule check — instant feedback while composing. Same library function
   // the API route runs server-side; BuildCardData carries the part ids for exactly this.
@@ -91,6 +105,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
   }
 
   function add(build: SearchResult) {
+    setSaved(false)
     setDeck((d) => [...d, {
       id: build.id,
       type: build.type,
@@ -106,6 +121,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
   }
 
   function remove(buildId: string) {
+    setSaved(false)
     setDeck((d) => d.filter((b) => b.id !== buildId))
   }
 
@@ -114,6 +130,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
     if (!valid) return
     setBusy(true)
     setError(null)
+    setSaved(false)
     const res = await fetch(`/api/decks/${deckId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -125,6 +142,7 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
       setError(body?.conflicts?.join(', ') ?? body?.error ?? `Fehler (${res.status})`)
       return
     }
+    setSaved(true)
     router.refresh()
   }
 
@@ -143,6 +161,19 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
             {deck.map((build, i) => (
               <li key={build.id} className="flex items-center gap-3 rounded-xl border border-x-cyan/20 p-3">
                 <Badge tone="cyan">#{i + 1}</Badge>
+                {/* #164 — eigenes Build-Bild, sonst Blade/Lock-Chip als Fallback. */}
+                {deckThumbnail(build) ? (
+                  <Image
+                    src={`/api/media/${deckThumbnail(build)}`}
+                    alt=""
+                    width={40}
+                    height={40}
+                    sizes="40px"
+                    className="h-10 w-10 shrink-0 rounded-lg object-contain"
+                  />
+                ) : (
+                  <div aria-hidden="true" className="h-10 w-10 shrink-0 rounded-lg bg-x-cyan/10" />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{buildDisplayName(build)}</p>
                   <p className="truncate text-sm text-current/60">{buildPartSummary(build)}</p>
@@ -205,6 +236,20 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
               const full = deck.length >= MAX_BUILDS
               return (
                 <li key={build.id} className="flex items-center gap-3 px-4 py-3">
+                  {/* #164 — eigenes Build-Bild, sonst Blade als Fallback (SearchResult trägt
+                      keine lockChip.imageId — für CX-Builds ohne Blade bleibt der Platzhalter). */}
+                  {deckThumbnail(build) ? (
+                    <Image
+                      src={`/api/media/${deckThumbnail(build)}`}
+                      alt=""
+                      width={40}
+                      height={40}
+                      sizes="40px"
+                      className="h-10 w-10 shrink-0 rounded-lg object-contain"
+                    />
+                  ) : (
+                    <div aria-hidden="true" className="h-10 w-10 shrink-0 rounded-lg bg-x-cyan/10" />
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{buildDisplayName(build)}</p>
                     <p className="truncate text-sm text-current/60">{buildPartSummary(build)}</p>
@@ -225,8 +270,9 @@ export function DeckBuilder({ deckId, initialTitle, initialBuilds }: { deckId: s
       </section>
 
       {error && <p role="alert" className="text-sm text-type-attack">{error}</p>}
+      {saved && !busy && <p role="status" className="text-sm text-type-balance">Gespeichert.</p>}
       <Button type="submit" disabled={busy || !valid}>
-        Deck speichern
+        {busy ? 'Speichere…' : 'Deck speichern'}
       </Button>
     </form>
   )

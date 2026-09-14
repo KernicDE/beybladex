@@ -6,6 +6,7 @@
 // → POST /api/builds mit denselben Teilen, Redirect auf den neuen Build, logged-in).
 import Image from 'next/image'
 import Link from 'next/link'
+import { BackLink } from '@/components/ui/BackLink'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -99,7 +100,7 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <Link href="/collection?tab=beyblades" className="text-sm text-current/60 underline underline-offset-2">← Sammlung</Link>
+      <BackLink href="/collection?tab=beyblades">Sammlung</BackLink>
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">

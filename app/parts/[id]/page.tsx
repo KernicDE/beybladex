@@ -10,6 +10,7 @@
 // rendern als „Kurzcode (Vollname)" (#106).
 import Image from 'next/image'
 import Link from 'next/link'
+import { BackLink } from '@/components/ui/BackLink'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -120,7 +121,7 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
-      <Link href="/collection?tab=teile" className="text-sm text-current/60 underline underline-offset-2">← Teile</Link>
+      <BackLink href="/collection?tab=teile">Teile</BackLink>
 
       <Card>
         <div className="flex flex-wrap items-start gap-4">

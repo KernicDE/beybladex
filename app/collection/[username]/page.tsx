@@ -73,7 +73,8 @@ export default async function UserCollectionPage({ params, searchParams }: PageP
           description={`${view.username} hat noch keine Teile eingetragen.`}
         />
       ) : (
-        <ul className="space-y-3">
+        // #164 — Grid statt einspaltiger Liste, wie die eigene Sammlung.
+        <ul className="grid gap-3 sm:grid-cols-2">
           {items.map((item) => (
             <li key={item.id}>
               <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} editable={false} />

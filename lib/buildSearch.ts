@@ -69,8 +69,15 @@ function buildSearchWhere(opts: SearchBuildsOpts, q: string) {
         ? [
             {
               // RC16 (#122) — OR über alle 7 Slot-Relationen: CX-Builds matchen auf Lock Chip /
-              // Over / Metal / Assist Blade, Ratchet-Integrated auf Blade + Bit.
-              OR: ASSEMBLY_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' } } })),
+              // Over / Metal / Assist Blade, Ratchet-Integrated auf Blade + Bit. #164 — PLUS
+              // der Build.name selbst: der angezeigte Titel ("Spear Scorpio 0-70Z") ist die
+              // kanonische Kombination aus Blade+Ratchet+Bit-Kurzcode, KEIN einzelner Teilname —
+              // wer genau das eintippt, was auf der Karte steht, fand vorher nichts, weil nur
+              // gegen die einzelnen Teilnamen gematcht wurde.
+              OR: [
+                ...ASSEMBLY_PART_SLOTS.map((slot) => ({ [slot]: { name: { startsWith: q, mode: 'insensitive' as const } } })),
+                { name: { startsWith: q, mode: 'insensitive' as const } },
+              ],
             },
           ]
         : []),
