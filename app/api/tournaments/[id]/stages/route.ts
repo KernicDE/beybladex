@@ -32,11 +32,16 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!allowed) return Response.json({ error: 'rate_limited' }, { status: 429 })
   const { id } = await params
 
-  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true, teamMode: true } })
+  const tournament = await prisma.tournament.findUnique({ where: { id }, select: { createdById: true, teamMode: true, kind: true } })
   if (!tournament) return Response.json({ error: 'not_found' }, { status: 404 })
   const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
   if (tournament.createdById !== session.user.id && caller?.role !== 'ADMIN') {
     return Response.json({ error: 'forbidden' }, { status: 403 })
+  }
+  // Issue #176 — Stammtisch/Freeplay haben keinen Bracket (kein Ruleset, keine Matches, kein
+  // Judge-Flow) — Stage-Erstellung serverseitig sperren statt nur im UI zu verstecken.
+  if (tournament.kind !== 'BRACKET') {
+    return Response.json({ error: 'not_a_bracket_tournament' }, { status: 409 })
   }
 
   let body: Record<string, unknown>

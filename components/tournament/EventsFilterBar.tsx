@@ -29,9 +29,18 @@ export interface FilterBarLabels {
   radiusAny: string
 }
 
+// Issue #176 — Event-Typ-Filter (Konzept 6: "Land/Typ/Von/Bis/PLZ/Radius"). Kein Dictionary-
+// Eintrag nötig (deutsch-hardcodiert, gleiches Idiom wie z. B. TournamentForm.tsx' KINDS).
+const KIND_OPTIONS = [
+  { value: 'BRACKET', label: 'Turnier' },
+  { value: 'STAMMTISCH', label: 'Stammtisch' },
+  { value: 'FREEPLAY', label: 'Freeplay' },
+] as const
+
 export function EventsFilterBar({
   initialCountry,
   initialState,
+  initialKind,
   initialFrom,
   initialTo,
   initialPlz,
@@ -40,6 +49,7 @@ export function EventsFilterBar({
 }: {
   initialCountry: string
   initialState: string
+  initialKind: string
   initialFrom: string
   initialTo: string
   initialPlz: string
@@ -86,6 +96,19 @@ export function EventsFilterBar({
           {regions?.map((r) => (
             <option key={r.code} value={r.name}>
               {r.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <label htmlFor="filter-kind" className="mb-1 block text-sm">
+          Typ
+        </label>
+        <Select id="filter-kind" name="kind" defaultValue={initialKind}>
+          <option value="">Alle Typen</option>
+          {KIND_OPTIONS.map((k) => (
+            <option key={k.value} value={k.value}>
+              {k.label}
             </option>
           ))}
         </Select>

@@ -31,7 +31,7 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
       locationName: true, street: true, postalCode: true, city: true, state: true, country: true,
       latitude: true, longitude: true, entryFeeCent: true, currency: true, isRecurring: true,
       recurringDays: true, rulesetId: true, clubId: true, createdById: true, rankedEligible: true,
-      teamMode: true, _count: { select: { participants: true, teamEntries: true } },
+      teamMode: true, kind: true, _count: { select: { participants: true, teamEntries: true } },
     },
   })
   if (!tournament) notFound()
@@ -70,8 +70,9 @@ export default async function EditTournamentPage({ params }: { params: Promise<{
     recurringDays: tournament.recurringDays === null ? '' : String(tournament.recurringDays),
     rankedEligible: tournament.rankedEligible,
     teamMode: tournament.teamMode,
-    rulesetId: tournament.rulesetId,
+    rulesetId: tournament.rulesetId ?? '',
     clubId: tournament.clubId ?? '',
+    kind: tournament.kind,
   }
 
   // RC15 #12 — team mode is frozen at the first registration (server returns 409

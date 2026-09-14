@@ -42,6 +42,14 @@ export interface EventListCardProps {
   stageCount: number
   /** #27 — set once the organizer started the tournament (Turnier live). */
   startedAt: Date | null
+  /** Issue #176 — Event-Typ; BRACKET zeigt kein eigenes Badge (das ist der Normalfall und
+   *  bereits über "Turnier live"/"Bracket verfügbar" erkennbar), STAMMTISCH/FREEPLAY schon. */
+  kind: 'BRACKET' | 'STAMMTISCH' | 'FREEPLAY'
+}
+
+const KIND_LABELS: Record<'STAMMTISCH' | 'FREEPLAY', string> = {
+  STAMMTISCH: 'Stammtisch',
+  FREEPLAY: 'Freeplay',
 }
 
 function formatFee(cent: number, currency: string): string {
@@ -63,6 +71,7 @@ export function EventListCard({
   headerImageId,
   stageCount,
   startedAt,
+  kind,
 }: EventListCardProps) {
   return (
     <Card className="p-4">
@@ -79,6 +88,7 @@ export function EventListCard({
               {formatDateDay(startDate)}, {formatTimeHM(startDate)} Uhr
             </span>
             {isRecurring && <Badge tone="cyan">Wiederkehrend</Badge>}
+            {kind !== 'BRACKET' && <Badge tone="neutral">{KIND_LABELS[kind]}</Badge>}
             {startedAt ? (
               <Badge tone="green">Turnier live</Badge>
             ) : stageCount > 0 ? (

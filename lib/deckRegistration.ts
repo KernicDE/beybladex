@@ -17,6 +17,9 @@ export async function validateDeckAgainstTournamentFormat(
     select: { ruleset: { select: { deckFormat: true } } },
   })
   if (!tournament) return { error: 'not_found' }
+  // Issue #176 — rulesetId ist nullable (Stammtisch/Freeplay haben keines): ohne Ruleset gibt es
+  // kein deckFormat, gegen das validiert werden könnte — jeder Deck ist dann zulässig.
+  if (!tournament.ruleset) return null
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
     include: {

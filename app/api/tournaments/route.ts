@@ -138,8 +138,13 @@ export async function POST(req: Request) {
   if (data.endDate && data.endDate < data.startDate) {
     return Response.json({ error: 'end_before_start' }, { status: 400 })
   }
-  const ruleset = await prisma.ruleset.findUnique({ where: { id: data.rulesetId } })
-  if (!ruleset) return Response.json({ error: 'invalid_ruleset' }, { status: 400 })
+  // Issue #176 — rulesetId ist nur bei kind=BRACKET überhaupt gesetzt (parseTournamentInput
+  // erzwingt das oben bereits als Fehler, wenn es fehlt); bei STAMMTISCH/FREEPLAY bleibt es
+  // undefined und wird hier übersprungen statt gegen eine undefined-id zu lookupen.
+  if (data.rulesetId) {
+    const ruleset = await prisma.ruleset.findUnique({ where: { id: data.rulesetId } })
+    if (!ruleset) return Response.json({ error: 'invalid_ruleset' }, { status: 400 })
+  }
 
   const tournament = await prisma.tournament.create({
     // description is a required (non-null) column; an absent/JSON-null description means "".

@@ -29,6 +29,18 @@ enum Country {
   CH
 }
 
+// Issue #176 — Event-Typen (Konzept 6 "X Arena": "nicht jedes Event ist ein Bracket-Turnier").
+// BRACKET: klassisches Turnier mit Bracket/Matches/Judge-Flow. STAMMTISCH: geselliges Treffen
+// ohne Wertung. FREEPLAY: offenes Übungstreffen ohne Wertung. Nur BRACKET nutzt Ruleset/
+// Bracket-Generierung/Matches/Judges — die anderen beiden sind reine Termin-Einträge.
+// Heißt bewusst NICHT "TournamentFormat" — der Name ist schon vergeben (Phase 5 Part C2:
+// Bracket-STAGE-Format wie SINGLE_ELIMINATION/SWISS, ein ganz anderes Konzept).
+enum TournamentKind {
+  BRACKET
+  STAMMTISCH
+  FREEPLAY
+}
+
 enum PrivacyLevel {
   PUBLIC
   FRIENDS_ONLY
@@ -424,8 +436,20 @@ model Tournament {
   isRecurring   Boolean @default(false)
   recurringDays Int?
 
-  rulesetId String
-  ruleset   Ruleset @relation(fields: [rulesetId], references: [id])
+  // Issue #176 — Event-Typen: ein STAMMTISCH/FREEPLAY hat kein Bracket, keine Matches, kein
+  // Regelwerk (das reduzierte Erstellen-Formular fragt gar nicht danach). rulesetId ist daher
+  // NUR bei format=BRACKET Pflicht (app-seitig in lib/tournamentValidation.ts durchgesetzt, da
+  // die Regel formatabhängig ist — parseBody kennt kein "required, wenn Feld X = Y"). Nullable
+  // in der DB statt eines Dummy-Rulesets: ein Stammtisch braucht wirklich keines, ein Platzhalter
+  // wäre nur eine Krücke um die NOT-NULL-Spalte herum gewesen.
+  rulesetId String?
+  ruleset   Ruleset? @relation(fields: [rulesetId], references: [id])
+
+  // Issue #176 — Turnier/Stammtisch/Freeplay. Steuert, ob Bracket-Generierung, Matches, Judge-
+  // Flow und das volle Erstellen-Formular (Regelwerk, Preisgeld, Team-Modus, ...) angeboten
+  // werden. STAMMTISCH/FREEPLAY bekommen das reduzierte Formular (nur Titel/Ort/Zeit/
+  // Beschreibung) — siehe components/tournament/TournamentForm.tsx.
+  kind TournamentKind @default(BRACKET)
 
   clubId String?
   club   Club?   @relation(fields: [clubId], references: [id])

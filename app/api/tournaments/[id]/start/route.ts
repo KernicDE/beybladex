@@ -60,7 +60,10 @@ export async function POST(_req: Request, { params }: Ctx) {
       }
       const updated = await tx.tournament.findUniqueOrThrow({ where: { id }, select: { startedAt: true } })
 
-      if (tournament.ruleset.lockedDecks) {
+      // Issue #176 — rulesetId ist seit den Event-Typen nullable (Stammtisch/Freeplay). "Turnier
+      // starten" ist ohnehin nur für BRACKET-Turniere im UI erreichbar; ohne Ruleset gibt es
+      // schlicht nichts zu snapshotten (kein lockedDecks-Zustand).
+      if (tournament.ruleset?.lockedDecks) {
         // [REVIEW-FIX P16-4] snapshot EVERY registered TournamentParticipant row, including
         // withdrawn ones — the plan says "every", and a withdrawn participant re-joining later
         // (if that ever becomes possible) must not end up with a stale/missing snapshot either.
