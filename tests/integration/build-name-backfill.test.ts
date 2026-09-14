@@ -17,12 +17,19 @@ describe('Build.name-Backfill: leer/Leerzeichen → NULL (#164-Nachtrag)', () =>
   it('räumt leere und nur-Leerzeichen-Namen auf NULL auf, lässt echte Namen unangetastet', async () => {
     const suffix = Date.now().toString(36)
     const blade = await prisma.part.create({ data: { name: `bnb_blade_${suffix}`, category: 'BLADE', manufacturer: 'TT', spinDirection: 'RIGHT' } })
-    const bit = await prisma.part.create({ data: { name: `bnb_bit_${suffix}`, category: 'BIT', manufacturer: 'TT', spinDirection: 'RIGHT' } })
+    // RC16 (#122) — Build.bladeId+ratchetId+bitId (u. a.) sind ein Unique-Index (comboWhere):
+    // jeder Test-Build braucht eine EIGENE Teile-Kombination, sonst schlägt das zweite create
+    // mit P2002 fehl. Vier eigene Bits statt eines gemeinsamen.
+    const bits = await Promise.all(
+      ['empty', 'ws', 'real', 'null'].map((tag) =>
+        prisma.part.create({ data: { name: `bnb_bit_${tag}_${suffix}`, category: 'BIT', manufacturer: 'TT', spinDirection: 'RIGHT' } }),
+      ),
+    )
 
-    const empty = await prisma.build.create({ data: { bladeId: blade.id, bitId: bit.id, type: 'ATTACK', name: '' } })
-    const whitespace = await prisma.build.create({ data: { bladeId: blade.id, bitId: bit.id, type: 'ATTACK', name: '   ' } })
-    const real = await prisma.build.create({ data: { bladeId: blade.id, bitId: bit.id, type: 'ATTACK', name: 'Mein Build' } })
-    const alreadyNull = await prisma.build.create({ data: { bladeId: blade.id, bitId: bit.id, type: 'ATTACK', name: null } })
+    const empty = await prisma.build.create({ data: { bladeId: blade.id, bitId: bits[0]!.id, type: 'ATTACK', name: '' } })
+    const whitespace = await prisma.build.create({ data: { bladeId: blade.id, bitId: bits[1]!.id, type: 'ATTACK', name: '   ' } })
+    const real = await prisma.build.create({ data: { bladeId: blade.id, bitId: bits[2]!.id, type: 'ATTACK', name: 'Mein Build' } })
+    const alreadyNull = await prisma.build.create({ data: { bladeId: blade.id, bitId: bits[3]!.id, type: 'ATTACK', name: null } })
 
     await prisma.$executeRawUnsafe(MIGRATION_SQL)
 
@@ -36,6 +43,6 @@ describe('Build.name-Backfill: leer/Leerzeichen → NULL (#164-Nachtrag)', () =>
     expect((await prisma.build.findUnique({ where: { id: real.id } }))?.name).toBe('Mein Build')
 
     await prisma.build.deleteMany({ where: { id: { in: [empty.id, whitespace.id, real.id, alreadyNull.id] } } })
-    await prisma.part.deleteMany({ where: { id: { in: [blade.id, bit.id] } } })
+    await prisma.part.deleteMany({ where: { id: { in: [blade.id, ...bits.map((b) => b.id)] } } })
   })
 })
