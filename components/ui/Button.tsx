@@ -14,7 +14,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANTS: Record<Variant, string> = {
   // x-cyan is the BACKGROUND here — the literal accent is fine as a fill; the
   // AA rule (see app/globals.css) only restricts light-mode *text* usage.
-  primary: 'bg-x-cyan text-base-dark hover:bg-x-cyan/85',
+  // #157 Phase 1: primary CTA text switched to white (the accent is now a saturated
+  // red, not a light cyan — base-dark text no longer has enough contrast on it).
+  primary: 'bg-x-cyan text-white hover:bg-x-cyan/85',
+  // #157 Phase 1 — "Blau bei Hover" gilt für die Navigation/Icon-Controls (Header,
+  // MobileNav); secondary/ghost-Buttons bleiben bei der neutralen Grau-Eskalation,
+  // damit nicht jede Hover-Fläche der Seite plötzlich blau aufleuchtet.
   secondary:
     'border border-current/30 bg-transparent text-current hover:bg-current/5',
   ghost: 'bg-transparent text-current hover:bg-current/10',

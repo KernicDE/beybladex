@@ -1,15 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --color-x-cyan: #00F0FF;
-  /* Light-mode text-safe variant of X-Cyan. DEVIATION from the plan's #0891A5:
-     that value computes to only 3.58:1 on base-light — below WCAG AA 4.5:1 —
-     so this token uses #0E7490 (cyan-700) instead: 5.12:1 on #F8FAFC, 5.36:1 on
-     #FFFFFF (guarded by tests/unit/contrast.test.ts, real WCAG math).
-     USAGE RULE (binding on every phase): text-x-cyan is for dark-mode text and
-     light-mode DECORATIVE use only (borders, fills, glows, large graphics); any
-     light-mode *text* in the cyan accent uses text-x-cyan-text instead. */
-  --color-x-cyan-text: #0E7490;
+  /* #157 — "X Arena" Rebrand, Phase 1 (Rot/Blau-Markenpalette + Blade-Formsprache).
+     Die Tailwind-TOKEN-NAMEN bleiben bewusst `x-cyan`/`x-cyan-text` — nur ihre WERTE
+     ändern sich auf Rot. Eine Umbenennung würde alle ~250 Verwendungsstellen in ~85
+     Dateien anfassen (reiner Bezeichner-Rename, kein Design-Review-Mehrwert) — das
+     Risiko eines flächendeckenden Blind-Edits steht in keinem Verhältnis zum Nutzen
+     eines "richtigen" Namens. `x-cyan` ist ab hier der interne Bezeichner für "die
+     Primär-/Auswahlfarbe der Marke", historisch cyan, jetzt Rot — wie in vielen
+     Codebasen nach einem Rebrand ein Token-Name hinter seinem Farbwert zurückbleibt.
+     Referenz-Mockup: Issue #157, Konzept 6 "X Arena". */
+  --color-x-cyan: #C22436;
+  /* Anders als beim alten Cyan (~1.5:1 auf Hell, siehe Test unten) ist der rohe
+     Rot-Wert selbst schon AA-tauglich (5.6–5.8:1) — die "-text"-Variante existiert
+     trotzdem weiter (schlankere Beibehaltung des bestehenden Nutzungsmusters
+     `text-x-cyan-text` vs. `bg-x-cyan`/`border-x-cyan`), jetzt als satteres Dunkelrot
+     für zusätzlichen Kontrast-Puffer bei Fließtext: 10.7:1 auf #FFFFFF, 10.3:1 auf
+     #F8FAFC (tests/unit/contrast.test.ts). */
+  --color-x-cyan-text: #7A1522;
+  /* Neu (#157): Hover-Zustand der Marke — "das hier fasse ich gerade an", klar von
+     Rot (Auswahl/Primäraktion) unterschieden. Bisher nutzten Hover-Zustände generische
+     Grautöne (current/5, current/10); die Kern-Navigations-Primitives (Header, MobileNav)
+     nutzen diesen Token jetzt gezielt für den "Blau bei Hover"-Effekt aus dem Konzept. */
+  --color-x-blue: #2F6690;
   --color-neon-green: #00FF66;
   --color-base-light: #F8FAFC;
   --color-base-light-alt: #FFFFFF;
