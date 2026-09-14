@@ -30,6 +30,7 @@ import { BuildVisibilityToggle } from '@/components/beyblade/BuildVisibilityTogg
 import { BuildTitleEditable } from '@/components/beyblade/BuildTitleEditable'
 import { BuildDeleteButton } from '@/components/beyblade/BuildDeleteButton'
 import { BuildPartsEditor } from '@/components/beyblade/BuildPartsEditor'
+import { buildDisplayName } from '@/components/beyblade/BuildCard'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import { shapeRatingAggregate } from '@/lib/ratingAggregate'
@@ -112,14 +113,14 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         {viewerId && build.creatorId === viewerId ? (
           <BuildTitleEditable
             buildId={build.id}
-            displayName={build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name}
+            displayName={buildDisplayName(build)}
             initialName={build.name ?? ''}
             initialType={build.type}
           />
         ) : (
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h1 className="text-2xl font-semibold">
-              {build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name}
+              {buildDisplayName(build)}
             </h1>
             <TypeBadge type={build.type} />
           </div>
