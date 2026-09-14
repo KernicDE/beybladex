@@ -7,6 +7,9 @@
 // Statistiken (Auto-Meta, WinRateBadge aus lib/meta) sind als getrennte, beschriftete
 // Bereiche sichtbar — User-Meinung ≠ Turnier-Statistik. Ersteller:in sieht den
 // Öffentlich/Ungelistet-Umschalter (BuildVisibilityToggle → PATCH /api/builds/[id]).
+// MVP4/5 (#145): Name/Typ-Bearbeitung ist ebenfalls Ersteller-only (BuildEditForm → derselbe
+// PATCH); der Vor-Split-Kuratoren-Edit (/api/admin/builds/[id]) wurde entfernt — Builds
+// sind eine reine Nutzersache, offizielle Sets leben im Beyblade-Modell.
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -20,8 +23,7 @@ import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { BuildVisibilityToggle } from '@/components/beyblade/BuildVisibilityToggle'
-import { BuildForm } from '@/components/admin/BuildForm'
-import { EditToggle } from '@/components/admin/EditToggle'
+import { BuildEditForm } from '@/components/beyblade/BuildEditForm'
 import { getBuildStats, getPartStats } from '@/lib/metaCache'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import { shapeRatingAggregate } from '@/lib/ratingAggregate'
@@ -61,13 +63,12 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   })
 
   let canModerate = false
-  let canAuthor = false
   let viewerUsername: string | null = null
   if (viewerId) {
     const caller = await prisma.user.findUnique({ where: { id: viewerId }, select: { role: true, username: true } })
+    // Bewertungs-Moderation bleibt TRUSTED/ADMIN; Build-Bearbeitung ist seit #145 ausschließlich
+    // Ersteller-Sache (kein Kuratoren-Schreibweg mehr am Build-Modell).
     canModerate = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
-    // RC16 (#108): Direct-Authoring-Tier sieht den Bearbeiten-Modus (Name/Typ/Bild).
-    canAuthor = canModerate
     viewerUsername = caller?.username ?? null
   }
 
@@ -217,15 +218,13 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
         />
       </section>
 
-      {/* RC16 (#108): Kuratoren bearbeiten Name/Typ/Bild direkt auf der Detailseite
-          (PATCH /api/admin/builds/[id] + ./image — Server-Gate: requireCurator). */}
-      {canAuthor && (
+      {/* #145 — Name/Typ-Bearbeitung: nur die Erstellerin bzw. der Ersteller (Server-Gate:
+          PATCH /api/builds/[id] antwortet 404 für alle anderen, inkl. Kuratoren/Admins). */}
+      {viewerId && build.creatorId === viewerId && (
         <section aria-labelledby="build-edit" className="space-y-3">
-          <h2 id="build-edit" className="text-lg font-semibold">Kuratieren</h2>
-          <Card>
-            <EditToggle label="Build bearbeiten">
-              <BuildForm initial={{ id: build.id, name: build.name ?? '', type: build.type, imageId: build.imageId }} />
-            </EditToggle>
+          <h2 id="build-edit" className="text-lg font-semibold">Build bearbeiten</h2>
+          <Card className="p-4">
+            <BuildEditForm buildId={build.id} initial={{ name: build.name ?? '', type: build.type }} />
           </Card>
         </section>
       )}
