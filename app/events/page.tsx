@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EventsFilterBar } from '@/components/tournament/EventsFilterBar'
 import { EventListCard } from '@/components/tournament/EventListCard'
+import { resolveEffectiveFrom } from '@/lib/eventsDefaultFrom'
 
 // [RC5 #43] No `revalidate` export: this page reads searchParams (filters) AND auth()
 // (session-gated CTA), which force per-request rendering in Next 16's non-cacheComponents
@@ -46,7 +47,15 @@ export default async function EventsPage({
   const t = await getDictionary()
   // Malformed/unparseable input is ignored (no bound on that side) rather than erroring the
   // whole list — a mistyped date must not 500 the page.
-  const fromDate = from && DATE_RE.test(from) ? new Date(`${from}T00:00:00`) : null
+  // Live-Report ("wann verschwinden Turniere aus der Liste? — nie, standardmäßig kein
+  // Datumsfilter"): ohne explizites "Von" wurden bislang ALLE Turniere gezeigt (aufsteigend
+  // sortiert schoben sich abgeschlossene Turniere sogar dauerhaft an die Spitze von Seite 1).
+  // Neuer Standard: kein explizites "Von" → heute 00:00 als unterer Rand, vergangene Turniere
+  // verschwinden. Ein explizit gesetztes (auch vergangenes) "Von" wird weiterhin respektiert —
+  // "nur wenn explizit ein Filter passt" darf Vergangenes wieder zeigen.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const effectiveFrom = resolveEffectiveFrom(from, todayIso)
+  const fromDate = new Date(`${effectiveFrom}T00:00:00`)
   const toDate = to && DATE_RE.test(to) ? new Date(`${to}T23:59:59`) : null
   const session = await auth()
   const query = (q ?? '').trim()
@@ -82,7 +91,10 @@ export default async function EventsPage({
   }
 
   const rows = await withPublicCache(
-    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${query}|${cursor ?? ''}|${from ?? ''}|${to ?? ''}|${plzQuery}|${radiusCenter?.radiusKm ?? ''}`,
+    // effectiveFrom statt from: der implizite "heute"-Standard muss den Cache-Key mitbestimmen,
+    // sonst würde ein kurz vor Mitternacht gefüllter Cache-Eintrag (TTL 60s) den alten Tag über
+    // den Datumswechsel hinweg servieren und ein bereits vergangenes Turnier kurz durchrutschen lassen.
+    `public:v1:events:list:${country ?? ''}|${state ?? ''}|${query}|${cursor ?? ''}|${effectiveFrom}|${to ?? ''}|${plzQuery}|${radiusCenter?.radiusKm ?? ''}`,
     PUBLIC_LIST_TTL,
     () =>
       prisma.tournament.findMany({
@@ -185,7 +197,10 @@ export default async function EventsPage({
         <EventsFilterBar
           initialCountry={country ?? ''}
           initialState={state ?? ''}
-          initialFrom={from ?? ''}
+          // effectiveFrom statt from: das Feld zeigt den TATSÄCHLICH angewendeten Filter (heute
+          // als impliziter Standard), nicht ein leeres Feld, das der laufenden Filterung
+          // widersprechen würde.
+          initialFrom={effectiveFrom}
           initialTo={to ?? ''}
           initialPlz={plzQuery}
           initialRadiusKm={radiusCenter ? String(radiusCenter.radiusKm) : ''}
