@@ -66,7 +66,9 @@ export function Header({ session, avatarImageId, unreadNotifications, locale, t 
               // #157 Phase 1 — "Blau bei Hover" (Konzept 6 "X Arena"): Hauptnavigation als
               // erster Anwendungsfall der Marken-Hover-Sprache, klar von der roten
               // Primärfarbe (Auswahl/Aktion) unterschieden.
-              className="rounded-md px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-x-blue hover:text-white"
+              // #157 Phase 3 — "Blade"-Formsprache (x-tab-Schnitt aus dem Mockup), rounded-md
+              // weicht dafür (siehe Button.tsx-Kommentar für dieselbe Begründung).
+              className="[clip-path:polygon(6px_0,100%_0,calc(100%_-_6px)_100%,0_100%)] px-3 py-1.5 text-sm font-medium text-current/80 transition-colors hover:bg-x-blue hover:text-white"
             >
               <span className="inline-flex items-center gap-1">
                 {label}
