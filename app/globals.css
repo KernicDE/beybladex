@@ -111,11 +111,24 @@
      Überschriften/Logo/Tabs"), nie als Fließtext. Ohne Kantenglättung wirkt die sehr
      fette, enge Schrift bei mittleren Größen schnell unscharf/ausgefranst (Erfahrung
      aus einer früheren Konzept-Iteration, siehe Referenz-Mockup) — daher explizit
-     antialiased statt der Browser-Grundeinstellung. */
+     antialiased statt der Browser-Grundeinstellung.
+     Live-Report ("Willkommen zurück"/"Dein nächstes Turnier" unscharf): Anton wird nur
+     in EINEM Schnitt (Weight 400) vendort. Überschriften im Code tragen aber vielerorts
+     zusätzlich Tailwind-Gewichts-Utilities (font-semibold/font-bold, z. B.
+     LoggedInDashboard.tsx) — ohne den passenden Font-Face-Schnitt synthetisiert der
+     Browser ein fettes Gewicht (Kantenverdickung per Algorithmus statt echter Glyphen),
+     was auf der ohnehin sehr fetten, engen Anton zu genau diesem "unscharf/verwaschen"-
+     Effekt führt. `font-weight: 400 !important` erzwingt für JEDE Überschrift Antons
+     echten (einzigen) Schnitt, `font-synthesis: none` unterbindet die Browser-Fake-Bold-
+     Synthese zusätzlich als zweite Absicherung — beides nötig, weil font-weight allein
+     (in @layer base, niedrigere Priorität als Tailwind-Utilities) von font-semibold/
+     font-bold-Klassen sonst überschrieben würde. */
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
+    font-weight: 400 !important;
+    font-synthesis: none;
     letter-spacing: 0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
