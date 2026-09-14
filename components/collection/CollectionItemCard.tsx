@@ -1,13 +1,20 @@
-// components/collection/CollectionItemCard.tsx
+// components/collection/CollectionItemCard.tsx (#160 — Redesign)
 // Server component: one CollectionItem row in a collection list, shared by /collection (own)
 // and /collection/[username] (another user's, privacy-gated by the page before rendering).
-// Links to the item detail at /collection/item/[id].
+// Vorher: Preis/Händler/Datum im Vordergrund, kein Bild, keine Drehrichtung, kein Herkunfts-
+// Bezug. Jetzt im Vordergrund: Bild, Drehrichtung, und "aus welchem Beyblade stammt das Teil"
+// (sourceBeyblade — null bei einzeln hinzugefügten Teilen). Preis/Händler/Kaufdatum bleiben
+// als dezente Zweitzeile. Der Haupt-Link geht auf die öffentliche Teile-Detailseite
+// (/parts/[id]) statt auf den Sammlungs-Eintrag; "Bearbeiten" (Preis/Preisverlauf/Löschen)
+// bleibt über einen eigenen, kleineren Link auf /collection/item/[id] erreichbar.
+import Image from 'next/image'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { PriceDisplay } from '@/components/collection/PriceDisplay'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import type { FxCurrency } from '@/lib/currency'
+import type { SpinDirection } from '@prisma/client'
 
 export interface CollectionItemCardData {
   id: string
@@ -15,7 +22,9 @@ export interface CollectionItemCardData {
   currency: string
   merchant: string | null
   boughtAt: Date | null
-  part: { name: string; category: string; manufacturer: string; imageId: string | null }
+  sourceBeybladeId: string | null
+  sourceBeyblade: { id: string; name: string } | null
+  part: { id: string; name: string; category: string; manufacturer: string; imageId: string | null; spinDirection: SpinDirection }
 }
 
 export function CollectionItemCard({
@@ -23,32 +32,78 @@ export function CollectionItemCard({
   rates,
   stale,
   target,
+  editable = true,
 }: {
   item: CollectionItemCardData
   rates: Record<string, number>
   stale: boolean
   target: FxCurrency
+  /** false auf /collection/[username] (read-only, fremde Sammlung) — kein "Bearbeiten"-Link,
+   *  der ohnehin nur die eigene Eintragsseite ohne Edit-UI zeigen würde. Default true (eigene
+   *  Sammlung, /collection). */
+  editable?: boolean
 }) {
+  const purchaseLine = [
+    item.merchant,
+    item.boughtAt ? new Date(item.boughtAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null,
+  ].filter(Boolean)
+
   return (
     <Card className="p-4">
-      <Link href={`/collection/item/${item.id}`} className="block space-y-1">
-        <div className="flex items-center gap-2">
-          {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
-          <p className="font-medium">{item.part.category === 'BIT' ? formatBitDisplay(item.part.name) : item.part.name}</p>
-          <Badge tone="neutral">{item.part.category}</Badge>
-          <Badge tone="neutral">{item.part.manufacturer}</Badge>
+      <div className="flex items-start gap-3">
+        <Link href={`/parts/${item.part.id}`} className="shrink-0">
+          {item.part.imageId ? (
+            <Image
+              src={`/api/media/${item.part.imageId}`}
+              alt=""
+              width={56}
+              height={56}
+              sizes="56px"
+              className="h-14 w-14 rounded-lg object-contain"
+            />
+          ) : (
+            <div aria-hidden="true" className="h-14 w-14 rounded-lg bg-x-cyan/10" />
+          )}
+        </Link>
+        <div className="min-w-0 flex-1 space-y-1">
+          <Link href={`/parts/${item.part.id}`} className="block hover:underline">
+            {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
+            <p className="font-medium">{item.part.category === 'BIT' ? formatBitDisplay(item.part.name) : item.part.name}</p>
+          </Link>
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge tone="neutral">{item.part.manufacturer}</Badge>
+            <Badge tone={item.part.spinDirection === 'RIGHT' ? 'attack' : 'defense'}>
+              {item.part.spinDirection === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'}
+            </Badge>
+          </div>
+          {/* #160 — Herkunft im Vordergrund: aus welchem Beyblade stammt das Teil. */}
+          {item.sourceBeyblade ? (
+            <p className="text-sm text-current/70">
+              Aus{' '}
+              <Link href={`/beyblades/${item.sourceBeyblade.id}`} className="underline underline-offset-2">
+                {item.sourceBeyblade.name}
+              </Link>
+            </p>
+          ) : (
+            <p className="text-sm text-current/50">Einzeln hinzugefügt</p>
+          )}
+          {/* Kaufangaben bleiben sichtbar, aber dezent — nicht mehr die primäre Information. */}
+          {(purchaseLine.length > 0 || item.purchasePrice !== null) && (
+            <p className="text-xs text-current/50">
+              {item.purchasePrice !== null && (
+                <PriceDisplay price={item.purchasePrice} currency={item.currency} target={target} rates={rates} stale={stale} />
+              )}
+              {item.purchasePrice !== null && purchaseLine.length > 0 && ' · '}
+              {purchaseLine.join(' · ')}
+            </p>
+          )}
+          {editable && (
+            <Link href={`/collection/item/${item.id}`} className="inline-block text-xs underline underline-offset-2 text-current/60">
+              Bearbeiten
+            </Link>
+          )}
         </div>
-        <p className="text-sm text-current/60">
-          <PriceDisplay price={item.purchasePrice} currency={item.currency} target={target} rates={rates} stale={stale} />
-        </p>
-        {(item.merchant || item.boughtAt) && (
-          <p className="text-sm text-current/60">
-            {[item.merchant, item.boughtAt ? new Date(item.boughtAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-        )}
-      </Link>
+      </div>
     </Card>
   )
 }
