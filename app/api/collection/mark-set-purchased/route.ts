@@ -1,17 +1,21 @@
 // app/api/collection/mark-set-purchased/route.ts (Phase 11, item 6; RC16 #122; MVP4 #141)
-// "Set als gekauft markieren" — selecting a Beyblade (offizielles Set) and marking it purchased
-// writes ONE Purchase row (User ↔ Beyblade, die neue Besitz-Einheit — unbegrenzt viele pro
-// User+Set, einzeln löschbar, Basis des Preisverlaufs) und erzeugt zusätzlich je belegtem Slot
-// EINE verknüpfte CollectionItem-Row (je nach Bauform 2–6: Standard 3, Ratchet-Integrated 2,
-// Custom Line 6) mit derselben Kaufangabe als Provenienz (sourceBeybladeId). Die CollectionItem-
-// Rows bleiben eigenständig editier-/löschbar über die bestehenden Single-Part-Routen (z. B.
-// wenn der User später nur das Bit verkauft). AUTHZ RULE (standing Global-Constraints
-// requirement): owner-only — die Zeilen werden immer für session.user.id angelegt, nie für eine
-// body-supplied userId (negative test in tests/integration/mark-set-purchased.test.ts).
+// "Set als gekauft markieren" (Formular auf /collection?tab=inventar&neu=1) — selecting a
+// Beyblade (offizielles Set) and marking it purchased writes ONE Purchase row (User ↔ Beyblade,
+// die Besitz-Einheit — unbegrenzt viele pro User+Set, einzeln löschbar, Basis des
+// Preisverlaufs) und erzeugt zusätzlich je belegtem Slot EINE verknüpfte CollectionItem-Row
+// (je nach Bauform 2–6: Standard 3, Ratchet-Integrated 2, Custom Line 6) mit derselben
+// Kaufangabe als Provenienz (sourceBeybladeId). Die CollectionItem-Rows bleiben eigenständig
+// editier-/löschbar über die bestehenden Single-Part-Routen (z. B. wenn der User später nur
+// das Bit verkauft). Dieselbe Schreiblogik wie POST /api/beyblades/[id]/purchases (der
+// Detailseiten-Button) — beide rufen lib/beybladePurchase.ts (#137-Nachtrag: die beiden Routen
+// hatten vorher UNTERSCHIEDLICHES Verhalten, siehe dortiger Kommentar). AUTHZ RULE (standing
+// Global-Constraints requirement): owner-only — die Zeilen werden immer für session.user.id
+// angelegt, nie für eine body-supplied userId (negative test in
+// tests/integration/mark-set-purchased.test.ts).
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseCollectionItemBody } from '@/lib/collectionItemBody'
+import { createBeybladePurchase } from '@/lib/beybladePurchase'
 
 export async function POST(req: Request): Promise<Response> {
   const session = await auth()
@@ -35,61 +39,9 @@ export async function POST(req: Request): Promise<Response> {
   const parsed = parseCollectionItemBody(body, { requirePart: false })
   if (parsed.error) return Response.json({ error: parsed.error }, { status: 400 })
 
-  const beyblade = await prisma.beyblade.findUnique({
-    where: { id: beybladeId },
-    select: {
-      id: true,
-      bladeId: true,
-      lockChipId: true,
-      overBladeId: true,
-      metalBladeId: true,
-      assistBladeId: true,
-      ratchetId: true,
-      bitId: true,
-    },
-  })
-  if (!beyblade) return Response.json({ error: 'not_found' }, { status: 404 })
-
   const { purchasePrice, currency, merchant, boughtAt } = parsed.fields ?? {}
-  const userId = session.user.id
+  const result = await createBeybladePurchase(session.user.id, beybladeId, { price: purchasePrice, currency, merchant, boughtAt })
+  if ('error' in result) return Response.json({ error: result.error }, { status: 404 })
 
-  // RC16 (#122) — je belegtem Slot eine CollectionItem-Row; leere Slots (Ratchet-Integrated,
-  // CX-Blade) erzeugen bewusst keine Row.
-  const partIds = [
-    beyblade.bladeId,
-    beyblade.lockChipId,
-    beyblade.overBladeId,
-    beyblade.metalBladeId,
-    beyblade.assistBladeId,
-    beyblade.ratchetId,
-    beyblade.bitId,
-  ].filter((id): id is string => id !== null)
-
-  // Purchase + Provenienz-Rows in EINER Transaktion: beide oder keine (kein halber Kauf).
-  const [purchase, ...items] = await prisma.$transaction([
-    prisma.purchase.create({
-      data: {
-        userId,
-        beybladeId: beyblade.id,
-        price: purchasePrice ?? null,
-        currency: currency ?? 'EUR',
-        merchant: merchant ?? null,
-        boughtAt: boughtAt ?? null,
-      },
-    }),
-    ...partIds.map((partOrBeyId) =>
-      prisma.collectionItem.create({
-        data: {
-          userId,
-          partOrBeyId,
-          sourceBeybladeId: beyblade.id,
-          purchasePrice: purchasePrice ?? null,
-          currency: currency ?? 'EUR',
-          merchant: merchant ?? null,
-          boughtAt: boughtAt ?? null,
-        },
-      }),
-    ),
-  ])
-  return Response.json({ purchaseId: purchase.id, ids: items.map((i) => i.id) }, { status: 201 })
+  return Response.json({ purchaseId: result.purchaseId, ids: result.itemIds }, { status: 201 })
 }
