@@ -1,9 +1,11 @@
 // app/builds/page.tsx
 // RC16 (#104): /builds ist die persönliche Build-Fläche. MVP4/4 (#144) — zwei Tabs nach dem
 // UX-Baum in #139:
-//   • "Meine Builds" — nur eigene Kombinationen (Login-Gate; "eigen" = alle Teile in der
-//     eigenen Sammlung, denselbe onlyMineUserId-Filter wie GET /api/builds?onlyMine=1 — Builds
-//     tragen keinen Owner-FK). Suche + Erstellen-Button (?neu=1, BuildComboPanel) wie bisher.
+//   • "Meine Builds" — nur eigene Kombinationen (Login-Gate; "eigen" = Build.creatorId, #153-Fix
+//     — vorher fälschlich derselbe onlyMineUserId-Filter wie GET /api/builds?onlyMine=1, der
+//     "alle Teile im Besitz" statt "von mir erstellt" prüft und einen frisch erstellten Build
+//     ausblendete, solange seine Teile nicht als "im Besitz" markiert waren). Suche +
+//     Erstellen-Button (?neu=1, BuildComboPanel) wie bisher.
 //   • "Öffentliche Builds" — visibility=PUBLIC aller User: Karten mit kanonischem Namen, Typ,
 //     Rating-Summary (Batch-Aggregate) und Ersteller:in; Suche (Teilname) + Typ-Filter.
 // Offizielle Sets leben seit MVP4 #141 im Beyblade-Modell und im Beyblades-Tab der Sammlung.
@@ -61,7 +63,11 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
   const { builds, nextCursor } = await searchBuilds({
     q: query,
     cursor: typeof cursor === 'string' ? cursor : null,
-    onlyMineUserId: activeTab === 'mine' ? session.user.id : null,
+    // #153 — "Meine Builds" zeigt, was die Nutzerin/der Nutzer ERSTELLT hat (creatorId),
+    // nicht, wessen Teile sie/er im Besitz hat (das ist der onlyMineUserId-Availability-Filter
+    // des Deck-Builder-Teile-Pickers, siehe lib/buildSearch.ts) — sonst verschwindet ein
+    // frisch erstellter Build sofort wieder, solange nicht jedes Teil als "im Besitz" markiert ist.
+    creatorId: activeTab === 'mine' ? session.user.id : null,
     publicOnly: activeTab === 'public',
     type: activeTab === 'public' ? typeFilter || null : null,
   })

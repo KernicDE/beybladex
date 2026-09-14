@@ -15,7 +15,16 @@ import { deriveAssemblyTraits } from '@/lib/assembly'
 import type { RatingAggregate } from '@/lib/ratingAggregate'
 import type { BeybladeSearchRow } from '@/lib/beybladeSearch'
 
-export function BeybladeCard({ beyblade, rating }: { beyblade: BeybladeSearchRow; rating?: RatingAggregate | null }) {
+export function BeybladeCard({
+  beyblade,
+  rating,
+  owned,
+}: {
+  beyblade: BeybladeSearchRow
+  rating?: RatingAggregate | null
+  /** #137 — "In Besitz"-Haken; undefined lässt das Badge einfach weg (z. B. andere Call-Sites). */
+  owned?: boolean
+}) {
   const traits = deriveAssemblyTraits(beyblade.blade, beyblade.lockChip)
   const imageId = beyblade.imageId ?? beyblade.blade?.imageId ?? beyblade.lockChip?.imageId ?? null
   return (
@@ -39,17 +48,23 @@ export function BeybladeCard({ beyblade, rating }: { beyblade: BeybladeSearchRow
             {beyblade.productCode && <span className="ml-2 text-xs font-normal text-current/50">{beyblade.productCode}</span>}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1">
-            <Badge tone="neutral">{beyblade.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}</Badge>
+            {/* #137 — Hersteller/Drehrichtung farblich unterscheidbar statt beide neutral-grau. */}
+            <Badge tone={beyblade.manufacturer === 'TT' ? 'cyan' : 'neutral'}>
+              {beyblade.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}
+            </Badge>
             {traits?.spinDirection && (
-              <Badge tone="neutral">{traits.spinDirection === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'}</Badge>
+              <Badge tone={traits.spinDirection === 'RIGHT' ? 'attack' : 'defense'}>
+                {traits.spinDirection === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'}
+              </Badge>
             )}
             {traits?.beyType && <TypeBadge type={traits.beyType} />}
+            {owned && <Badge tone="green">✓ Im Besitz</Badge>}
           </div>
-          {rating && (
-            <div className="mt-1">
-              <RatingSummary aggregate={rating} />
-            </div>
-          )}
+          {/* #137 — auch ohne Bewertungen etwas anzeigen (emptyLabel), statt der Karte
+              stillschweigend die ganze Zeile fehlen zu lassen. */}
+          <div className="mt-1">
+            <RatingSummary aggregate={rating ?? { avg: null, count: 0 }} emptyLabel="Noch nicht genug Bewertungen" />
+          </div>
         </div>
       </Link>
     </Card>

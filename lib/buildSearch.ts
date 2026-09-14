@@ -23,7 +23,19 @@ export async function searchBuilds(opts: {
   q?: string
   cursor?: string | null
   take?: number
+  /**
+   * "Nur meine Teile" (Phase 11 item 6, Deck-Builder-Teile-Picker): filtert NACH der
+   * DB-Query in-memory auf Builds, deren Teile ALLE im Besitz der Nutzerin/des Nutzers sind
+   * (CollectionItem) — eine Verfügbarkeits-, keine Eigentümerschafts-Frage. NICHT verwechseln
+   * mit `creatorId` unten (#153-Fix): ein frisch erstellter Build gehört seiner Erstellerin,
+   * auch wenn sie die Teile noch nicht als "im Besitz" markiert hat.
+   */
   onlyMineUserId?: string | null
+  /**
+   * "Meine Builds" (#144/#153): DB-seitiger Filter auf Build.creatorId — die tatsächliche
+   * Eigentümerschaft des Build-Datensatzes, unabhängig vom Teile-Besitz.
+   */
+  creatorId?: string | null
   /** #144 — nur visibility=PUBLIC (Öffentliche-Builds-Ansicht). */
   publicOnly?: boolean
   /** #144 — Typ-Filter (Build.type ist eine echte Spalte). */
@@ -45,6 +57,7 @@ export async function searchBuilds(opts: {
           : []),
         ...(opts.publicOnly ? [{ visibility: 'PUBLIC' as const }] : []),
         ...(opts.type ? [{ type: opts.type as BeyType }] : []),
+        ...(opts.creatorId ? [{ creatorId: opts.creatorId }] : []),
       ],
     },
     orderBy: { id: 'asc' },
@@ -100,7 +113,24 @@ export async function searchBuilds(opts: {
 // Parts-catalog search for /search's Teile section: name prefix + category filter.
 export const PART_PAGE_SIZE = 20
 
-export async function searchParts(opts: { q?: string; category?: string; cursor?: string | null; take?: number }) {
+export async function searchParts(opts: {
+  q?: string
+  category?: string
+  cursor?: string | null
+  take?: number
+  /** #137 — Typ-Filter für den Teile-Tab der Sammlung (nur BLADE/LOCK_CHIP tragen einen Typ). */
+  type?: string | null
+  /** #137 — Drehrichtungs-Filter für den Teile-Tab. */
+  spinDirection?: string | null
+  /**
+   * #137 — "Nur im Besitz": DB-seitiger Filter auf CollectionItem des Viewers (Teile-Tab-
+   * Äquivalent zu searchBeyblades' ownedByUserId). Anders als searchBuilds' onlyMineUserId
+   * (in-memory, weil dort eine Kombination AUS mehreren Teilen geprüft wird) ist ein einzelnes
+   * Teil trivial entweder besessen oder nicht — passt als WHERE-Klausel vor die Pagination,
+   * ohne deren cursor-Korrektheit zu gefährden.
+   */
+  ownedByUserId?: string | null
+}) {
   const q = (opts.q ?? '').trim()
   const take = opts.take ?? PART_PAGE_SIZE
   // [RC2 #63] Composite sort name+id with a MANUAL cursor predicate. The old query ordered by
@@ -113,11 +143,23 @@ export async function searchParts(opts: { q?: string; category?: string; cursor?
   if (opts.cursor) {
     cursorRow = await prisma.part.findUnique({ where: { id: opts.cursor }, select: { id: true, name: true } })
   }
+  let ownedIds: string[] | null = null
+  if (opts.ownedByUserId) {
+    const owned = await prisma.collectionItem.findMany({
+      where: { userId: opts.ownedByUserId },
+      select: { partOrBeyId: true },
+      distinct: ['partOrBeyId'],
+    })
+    ownedIds = owned.map((o) => o.partOrBeyId)
+  }
   const rows = await prisma.part.findMany({
     where: {
       AND: [
         ...(q ? [{ name: { startsWith: q, mode: 'insensitive' as const } }] : []),
         ...(opts.category ? [{ category: opts.category as PartCategory }] : []),
+        ...(opts.type ? [{ beyType: opts.type as BeyType }] : []),
+        ...(opts.spinDirection ? [{ spinDirection: opts.spinDirection as 'RIGHT' | 'LEFT' }] : []),
+        ...(ownedIds ? [{ id: { in: ownedIds } }] : []),
         ...(cursorRow
           ? [{ OR: [{ name: { gt: cursorRow.name } }, { name: cursorRow.name, id: { gt: cursorRow.id } }] }]
           : []),
@@ -135,6 +177,20 @@ export async function searchParts(opts: { q?: string; category?: string; cursor?
 // #144 — Teile-Tab der Sammlung: feste Anzeigereihenfolge der Kategorien (Assembly-Ordnung,
 // ACCESSORY zuletzt) und Gruppierung der Suchergebnisse danach.
 export const PART_CATEGORY_ORDER = ['BLADE', 'LOCK_CHIP', 'OVER_BLADE', 'METAL_BLADE', 'ASSIST_BLADE', 'RATCHET', 'BIT', 'ACCESSORY'] as const
+
+// #137 — Kategorie-Badge in der Sammlung zeigte den rohen Enum-Wert (z. B. "LOCK_CHIP") statt
+// eines lesbaren Namens. Dieselben deutschen Bezeichnungen wie components/admin/PartForm.tsx,
+// hier zentral, damit beide Stellen nicht auseinanderdriften.
+export const PART_CATEGORY_LABELS: Record<(typeof PART_CATEGORY_ORDER)[number], string> = {
+  BLADE: 'Blade',
+  LOCK_CHIP: 'Lock Chip (CX)',
+  OVER_BLADE: 'Over Blade (CX)',
+  METAL_BLADE: 'Metal Blade (CX)',
+  ASSIST_BLADE: 'Assist Blade (CX)',
+  RATCHET: 'Ratchet',
+  BIT: 'Bit',
+  ACCESSORY: 'Zubehör',
+}
 
 export interface PartGroup<T extends { category: string }> {
   category: string

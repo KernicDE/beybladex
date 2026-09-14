@@ -22,7 +22,7 @@ import { prisma } from '@/lib/db'
 import { getRateTable, type FxCurrency } from '@/lib/currency'
 import { getDictionary } from '@/lib/i18n/server'
 import { searchBeyblades } from '@/lib/beybladeSearch'
-import { searchParts, groupPartsByCategory, PART_CATEGORY_ORDER } from '@/lib/buildSearch'
+import { searchParts, groupPartsByCategory, PART_CATEGORY_ORDER, PART_CATEGORY_LABELS } from '@/lib/buildSearch'
 import { getPartStats } from '@/lib/metaCache'
 import { shapeRatingAggregates } from '@/lib/ratingAggregate'
 import { Badge } from '@/components/ui/Badge'
@@ -58,7 +58,7 @@ function str(v: string | string[] | undefined): string {
 }
 
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
-  const { cursor, kcursor, pcursor, neu, tab, q, mf, bt, owned, pq, pc } = await searchParams
+  const { cursor, kcursor, pcursor, neu, tab, q, mf, bt, owned, pq, pc, pt, psd, powned } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
@@ -83,9 +83,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const catalogMf = str(mf)
   const catalogBt = str(bt)
   const ownedOnly = owned === '1'
-  // Teile-Tab: Suche + Kategorie-Filter.
+  // Teile-Tab: Suche + Kategorie-/Typ-/Drehrichtungs-/Besitz-Filter (#137).
   const partsQ = str(pq).trim()
   const partsCategory = str(pc)
+  const partsType = str(pt)
+  const partsSpin = str(psd)
+  const partsOwnedOnly = powned === '1'
 
   const [viewer, fx, catalog, partRows, inventoryRows] = await Promise.all([
     prisma.user.findUnique({ where: { id: viewerId }, select: { country: true } }),
@@ -103,6 +106,9 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       category: partsCategory || undefined,
       cursor: typeof pcursor === 'string' ? pcursor : null,
       take: PARTS_TAB_PAGE_SIZE,
+      type: partsType || null,
+      spinDirection: partsSpin || null,
+      ownedByUserId: partsOwnedOnly ? viewerId : null,
     }),
     prisma.collectionItem.findMany({
       where: { userId: viewerId },
@@ -130,6 +136,31 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   // Auto-Meta-Winrates für den Teile-Tab (ein Batch-mget, wie auf /search).
   const partStats = await getPartStats(partRows.parts.map((p) => p.id))
   const partGroups = groupPartsByCategory(partRows.parts)
+
+  // #137 — "In Besitz"-Haken auf JEDER Karte, unabhängig vom "Nur im Besitz"-Filter: je ein
+  // scoped Batch-Query über die IDs dieser Seite (nie N Einzelqueries pro Karte).
+  const ownedBeybladeIds = catalog.beyblades.length
+    ? new Set(
+        (
+          await prisma.purchase.findMany({
+            where: { userId: viewerId, beybladeId: { in: catalog.beyblades.map((b) => b.id) } },
+            select: { beybladeId: true },
+            distinct: ['beybladeId'],
+          })
+        ).map((p) => p.beybladeId),
+      )
+    : new Set<string>()
+  const ownedPartIds = partRows.parts.length
+    ? new Set(
+        (
+          await prisma.collectionItem.findMany({
+            where: { userId: viewerId, partOrBeyId: { in: partRows.parts.map((p) => p.id) } },
+            select: { partOrBeyId: true },
+            distinct: ['partOrBeyId'],
+          })
+        ).map((c) => c.partOrBeyId),
+      )
+    : new Set<string>()
 
   // No per-user currency preference exists in the schema — the hint target is inferred from
   // the viewer's country (CH → CHF, else EUR). See components/collection/PriceDisplay.tsx.
@@ -212,7 +243,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
         <ul className="grid gap-3 sm:grid-cols-2">
           {catalog.beyblades.map((beyblade) => (
             <li key={beyblade.id}>
-              <BeybladeCard beyblade={beyblade} rating={beybladeRatings.get(beyblade.id) ?? null} />
+              <BeybladeCard beyblade={beyblade} rating={beybladeRatings.get(beyblade.id) ?? null} owned={ownedBeybladeIds.has(beyblade.id)} />
             </li>
           ))}
         </ul>
@@ -225,17 +256,21 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
     </div>
   )
 
-  const partsFilterActive = Boolean(partsQ || partsCategory)
+  // #137 — Filter ergänzt um Typ, Drehrichtung, "nur im Besitz" (Analogon zum Beyblades-Tab).
+  const partsFilterActive = Boolean(partsQ || partsCategory || partsType || partsSpin || partsOwnedOnly)
   const partsParams = new URLSearchParams({ tab: 'teile' })
   if (partsQ) partsParams.set('pq', partsQ)
   if (partsCategory) partsParams.set('pc', partsCategory)
+  if (partsType) partsParams.set('pt', partsType)
+  if (partsSpin) partsParams.set('psd', partsSpin)
+  if (partsOwnedOnly) partsParams.set('powned', '1')
   const partsNextHref = partRows.nextCursor
     ? `/collection?${(() => { const p = new URLSearchParams(partsParams); p.set('pcursor', partRows.nextCursor!); return p.toString() })()}`
     : null
 
   const partsContent = (
     <div className="space-y-6">
-      <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
+      <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
         <input type="hidden" name="tab" value="teile" />
         <div>
           <label htmlFor="col-pq" className="mb-1 block text-sm">{t.collection.partsSearchLabel}</label>
@@ -246,10 +281,31 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           <Select id="col-pc" name="pc" defaultValue={partsCategory}>
             <option value="">{t.catalog.categoryAll}</option>
             {PART_CATEGORY_ORDER.map((category) => (
-              <option key={category} value={category}>{category}</option>
+              <option key={category} value={category}>{PART_CATEGORY_LABELS[category]}</option>
             ))}
           </Select>
         </div>
+        <div>
+          <label htmlFor="col-pt" className="mb-1 block text-sm">{t.catalog.type}</label>
+          <Select id="col-pt" name="pt" defaultValue={partsType}>
+            <option value="">{t.catalog.typeAll}</option>
+            {BEY_TYPES.map(({ value, labelKey }) => (
+              <option key={value} value={value}>{t.catalog[labelKey]}</option>
+            ))}
+          </Select>
+        </div>
+        <div>
+          <label htmlFor="col-psd" className="mb-1 block text-sm">Drehrichtung</label>
+          <Select id="col-psd" name="psd" defaultValue={partsSpin}>
+            <option value="">Alle Drehrichtungen</option>
+            <option value="RIGHT">Rechtsdrehend</option>
+            <option value="LEFT">Linksdrehend</option>
+          </Select>
+        </div>
+        <label className="flex h-10 items-center gap-2 text-sm">
+          <input type="checkbox" name="powned" value="1" defaultChecked={partsOwnedOnly} className="size-4 accent-x-cyan-text" />
+          {t.catalog.ownedOnly}
+        </label>
         <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
           {t.common.search}
         </button>
@@ -275,7 +331,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
           {partGroups.map((group) => (
             <section key={group.category} aria-label={group.category} className="space-y-2">
               <h3 className="flex items-center gap-2 text-sm font-semibold">
-                <Badge tone="cyan">{group.category}</Badge>
+                {/* #137 — lesbarer Name statt rohem Enum-Wert ("LOCK_CHIP"). */}
+                <Badge tone="cyan">
+                  {group.category in PART_CATEGORY_LABELS
+                    ? PART_CATEGORY_LABELS[group.category as keyof typeof PART_CATEGORY_LABELS]
+                    : group.category}
+                </Badge>
                 <span className="text-current/50">{group.parts.length}</span>
               </h3>
               <ul className="grid gap-3 sm:grid-cols-2">
@@ -296,12 +357,14 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
                           <div aria-hidden="true" className="h-10 w-10 rounded bg-x-cyan/10" />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{part.name}</p>
+                          {/* #137 — voller Teilename statt abgeschnitten; bricht bei Bedarf um. */}
+                          <p className="font-medium break-words">{part.name}</p>
                           <p className="truncate text-sm text-current/60">
                             {part.manufacturer === 'TT' ? t.catalog.manufacturerTT : t.catalog.manufacturerHasbro}
                           </p>
                         </div>
                         {part.beyType && <TypeBadge type={part.beyType} />}
+                        {ownedPartIds.has(part.id) && <Badge tone="green">✓ Im Besitz</Badge>}
                         <WinRateBadge stats={partStats.get(part.id) ?? null} />
                       </Link>
                     </Card>

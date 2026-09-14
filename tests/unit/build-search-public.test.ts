@@ -50,6 +50,29 @@ describe('searchBuilds publicOnly (#144)', () => {
   })
 })
 
+describe('searchBuilds creatorId (#153 — "Meine Builds" muss Ersteller:innen-Filter, nicht Teile-Besitz sein)', () => {
+  it('filtert per DB-Query auf Build.creatorId — kein in-memory-Filter über die Sammlung', async () => {
+    await searchBuilds({ creatorId: 'user-1' })
+    const where = (buildFindMany.mock.calls[0][0] as { where: { AND: Record<string, unknown>[] } }).where
+    expect(where.AND).toContainEqual({ creatorId: 'user-1' })
+    // Der Regression aus #153: ein frisch erstellter Build (Teile ggf. noch nicht "im Besitz"
+    // markiert) darf NICHT über die CollectionItem-Verfügbarkeitsprüfung ausgefiltert werden.
+    expect(collectionFindMany).not.toHaveBeenCalled()
+  })
+
+  it('creatorId und onlyMineUserId (Teile-Besitz) sind unabhängige Filter, beide gleichzeitig anwendbar', async () => {
+    buildFindMany.mockResolvedValueOnce([
+      { id: 'b1', creatorId: 'user-1', bladeId: 'p1', ratchetId: 'p2', bitId: 'p3', lockChipId: null, overBladeId: null, metalBladeId: null, assistBladeId: null, blade: null, lockChip: null, overBlade: null, metalBlade: null, assistBlade: null, ratchet: null, bit: null },
+    ] as never)
+    collectionFindMany.mockResolvedValueOnce([{ partOrBeyId: 'p1' }, { partOrBeyId: 'p2' }, { partOrBeyId: 'p3' }] as never)
+
+    await searchBuilds({ creatorId: 'user-1', onlyMineUserId: 'user-1' })
+    const where = (buildFindMany.mock.calls[0][0] as { where: { AND: Record<string, unknown>[] } }).where
+    expect(where.AND).toContainEqual({ creatorId: 'user-1' })
+    expect(collectionFindMany).toHaveBeenCalled()
+  })
+})
+
 describe('groupPartsByCategory (#144)', () => {
   it('groups in the canonical category order and drops empty groups', () => {
     const parts = [
