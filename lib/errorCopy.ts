@@ -125,6 +125,8 @@ const COPY: Record<string, string> = {
   invalid_type: 'Der angegebene Bey-Typ ist ungültig.',
   // #161 — DELETE /api/builds/[id]
   build_in_use: 'Dieser Build steckt noch in mindestens einem Deck — entferne ihn zuerst dort, bevor du ihn löschst.',
+  // #164 — DELETE /api/decks/[id]
+  deck_in_use: 'Dieses Deck kann gerade nicht gelöscht werden.',
 }
 
 // German copy for a known code; falls back to a generic message (never the raw code).

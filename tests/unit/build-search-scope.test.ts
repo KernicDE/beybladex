@@ -36,12 +36,16 @@ describe('searchBuilds nach dem Build-Split (MVP4 #141)', () => {
     expect(JSON.stringify(call.where.AND)).not.toContain('isOfficialSet')
   })
 
-  it('die q-Prefix-Suche läuft weiter über alle 7 Slot-Relationen', async () => {
+  it('die q-Prefix-Suche läuft weiter über alle 7 Slot-Relationen PLUS den Build.name selbst (#164)', async () => {
     await searchBuilds({ q: 'Dran' })
 
     const call = buildFindMany.mock.calls[0][0] as { where: { AND: Array<{ OR?: unknown[] }> } }
     const orClause = call.where.AND.find((c) => Array.isArray(c.OR))
-    expect(orClause?.OR).toHaveLength(ASSEMBLY_PART_SLOTS.length)
+    // #164 — der angezeigte Titel ("Spear Scorpio 0-70Z") ist die kanonische Kombination aus
+    // Blade+Ratchet+Bit-Kurzcode, KEIN einzelner Teilname; wer genau das eintippt, fand vorher
+    // nichts. Ein zusätzlicher OR-Zweig auf Build.name behebt das.
+    expect(orClause?.OR).toHaveLength(ASSEMBLY_PART_SLOTS.length + 1)
+    expect(orClause?.OR).toContainEqual({ name: { startsWith: 'Dran', mode: 'insensitive' } })
   })
 })
 

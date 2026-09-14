@@ -443,7 +443,9 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
                 </Badge>
                 <span className="text-current/50">{group.parts.length}</span>
               </h3>
-              <ul className="space-y-3">
+              {/* #164 — mehrere Karten passen nebeneinander, wie die anderen Tabs (Grid statt
+                  einspaltiger Liste). */}
+              <ul className="grid gap-3 sm:grid-cols-2">
                 {group.parts.map((item) => (
                   <li key={item.id}>
                     <CollectionItemCard item={item} rates={fx.rates} stale={fx.stale} target={target} />
