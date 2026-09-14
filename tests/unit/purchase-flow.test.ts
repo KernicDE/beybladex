@@ -8,17 +8,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // vi.mock-Factories werden ABOVE der Deklaration gehoistet — die Spies muessen aus
 // vi.hoisted() kommen, sonst TDZ ("Cannot access before initialization").
-const { authMock, rateLimitMock, beybladeFindUnique, purchaseCreate, purchaseFindUnique, purchaseFindMany, purchaseUpdate, purchaseDelete } =
-  vi.hoisted(() => ({
-    authMock: vi.fn(),
-    rateLimitMock: vi.fn(),
-    beybladeFindUnique: vi.fn(),
-    purchaseCreate: vi.fn(),
-    purchaseFindUnique: vi.fn(),
-    purchaseFindMany: vi.fn(),
-    purchaseUpdate: vi.fn(),
-    purchaseDelete: vi.fn(),
-  }))
+const {
+  authMock,
+  rateLimitMock,
+  beybladeFindUnique,
+  purchaseCreate,
+  purchaseFindUnique,
+  purchaseFindMany,
+  purchaseUpdate,
+  purchaseDelete,
+  collectionItemCreate,
+  transactionMock,
+} = vi.hoisted(() => ({
+  authMock: vi.fn(),
+  rateLimitMock: vi.fn(),
+  beybladeFindUnique: vi.fn(),
+  purchaseCreate: vi.fn(),
+  purchaseFindUnique: vi.fn(),
+  purchaseFindMany: vi.fn(),
+  purchaseUpdate: vi.fn(),
+  purchaseDelete: vi.fn(),
+  collectionItemCreate: vi.fn(),
+  // #137-Nachtrag — createBeybladePurchase (lib/beybladePurchase.ts) baut die Purchase- und
+  // CollectionItem-create-Aufrufe zu einem Array und übergibt es an $transaction; Promise.all
+  // reicht als Fake, solange die einzelnen create-Mocks brauchbare Werte zurückgeben.
+  transactionMock: vi.fn((ops: unknown[]) => Promise.all(ops)),
+}))
 
 vi.mock('@/lib/auth', () => ({ auth: (...a: unknown[]) => authMock(...a) }))
 vi.mock('@/lib/rateLimit', () => ({ rateLimit: (...a: unknown[]) => rateLimitMock(...a) }))
@@ -32,6 +47,8 @@ vi.mock('@/lib/db', () => ({
       update: (...a: unknown[]) => purchaseUpdate(...a),
       delete: (...a: unknown[]) => purchaseDelete(...a),
     },
+    collectionItem: { create: (...a: unknown[]) => collectionItemCreate(...a) },
+    $transaction: (...a: unknown[]) => transactionMock(...(a as [unknown[]])),
   },
 }))
 
@@ -56,6 +73,22 @@ function jsonReq(url: string, method: string, body?: unknown): Request {
   })
 }
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) })
+
+// #137-Nachtrag — realistische Beyblade-Select-Form (alle 7 Slot-Spalten explizit, wie Prisma
+// sie liefert — nie `undefined`). Standard-Bauform: Blade + Ratchet + Bit.
+function fullBeyblade(id: string, overrides: Partial<Record<'bladeId' | 'lockChipId' | 'overBladeId' | 'metalBladeId' | 'assistBladeId' | 'ratchetId' | 'bitId', string | null>> = {}) {
+  return {
+    id,
+    bladeId: 'p-blade',
+    lockChipId: null,
+    overBladeId: null,
+    metalBladeId: null,
+    assistBladeId: null,
+    ratchetId: 'p-ratchet',
+    bitId: 'p-bit',
+    ...overrides,
+  }
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -113,29 +146,38 @@ describe('shapePriceHistory (#142)', () => {
   })
 })
 
-describe('POST /api/beyblades/[id]/purchases (#142)', () => {
-  it('erstellt einen minimalen Kauf (201, Defaults merchant/boughtAt/price null, EUR)', async () => {
-    beybladeFindUnique.mockResolvedValue({ id: 'b1' })
+describe('POST /api/beyblades/[id]/purchases (#142; #137-Nachtrag — schreibt jetzt auch CollectionItem-Provenienz)', () => {
+  it('erstellt einen minimalen Kauf (201, Defaults merchant/boughtAt/price null, EUR) UND je belegtem Slot eine CollectionItem-Row', async () => {
+    beybladeFindUnique.mockResolvedValue(fullBeyblade('b1'))
     purchaseCreate.mockResolvedValue({ id: 'p1' })
+    collectionItemCreate.mockImplementation((args: { data: { partOrBeyId: string } }) => ({ id: `ci-${args.data.partOrBeyId}` }))
 
     const res = await POST_PURCHASE(jsonReq('http://localhost/api/beyblades/b1/purchases', 'POST', {}), ctx('b1'))
 
     expect(res.status).toBe(201)
+    const body = (await res.json()) as { purchaseId: string; itemIds: string[] }
+    expect(body.purchaseId).toBe('p1')
+    // #137-Nachtrag — DIES ist die Regression: vorher blieb itemIds leer (keine CollectionItem-
+    // Provenienz), "Mein Inventar" zeigte einen gerade gekauften Beyblade trotzdem nicht an.
+    expect(body.itemIds).toHaveLength(3) // Standard-Bauform: Blade, Ratchet, Bit
+
     expect(purchaseCreate).toHaveBeenCalledWith({
-      data: {
-        userId: 'user-1',
-        beybladeId: 'b1',
-        merchant: null,
-        boughtAt: null,
-        price: null,
-        currency: 'EUR',
-      },
+      data: { userId: 'user-1', beybladeId: 'b1', merchant: null, boughtAt: null, price: null, currency: 'EUR' },
+      select: { id: true },
     })
+    expect(collectionItemCreate).toHaveBeenCalledTimes(3)
+    for (const partOrBeyId of ['p-blade', 'p-ratchet', 'p-bit']) {
+      expect(collectionItemCreate).toHaveBeenCalledWith({
+        data: { userId: 'user-1', partOrBeyId, sourceBeybladeId: 'b1', purchasePrice: null, currency: 'EUR', merchant: null, boughtAt: null },
+        select: { id: true },
+      })
+    }
   })
 
-  it('persistiert Händler/Datum/Preis/Währung wenn gesetzt', async () => {
-    beybladeFindUnique.mockResolvedValue({ id: 'b1' })
+  it('persistiert Händler/Datum/Preis/Währung an Purchase UND jeder CollectionItem-Row', async () => {
+    beybladeFindUnique.mockResolvedValue(fullBeyblade('b1'))
     purchaseCreate.mockResolvedValue({ id: 'p1' })
+    collectionItemCreate.mockResolvedValue({ id: 'ci1' })
 
     const res = await POST_PURCHASE(
       jsonReq('http://localhost/api/beyblades/b1/purchases', 'POST', {
@@ -148,16 +190,33 @@ describe('POST /api/beyblades/[id]/purchases (#142)', () => {
     )
 
     expect(res.status).toBe(201)
-    const { data } = purchaseCreate.mock.calls[0]![0] as { data: Record<string, unknown> }
-    expect(data.merchant).toBe('Amazon.de')
-    expect(data.price).toBe(24.99)
-    expect(data.currency).toBe('USD')
-    expect((data.boughtAt as Date).toISOString().slice(0, 10)).toBe('2026-09-01')
+    const { data: purchaseData } = purchaseCreate.mock.calls[0]![0] as { data: Record<string, unknown> }
+    expect(purchaseData.merchant).toBe('Amazon.de')
+    expect(purchaseData.price).toBe(24.99)
+    expect(purchaseData.currency).toBe('USD')
+    expect((purchaseData.boughtAt as Date).toISOString().slice(0, 10)).toBe('2026-09-01')
+
+    const { data: itemData } = collectionItemCreate.mock.calls[0]![0] as { data: Record<string, unknown> }
+    expect(itemData.merchant).toBe('Amazon.de')
+    expect(itemData.purchasePrice).toBe(24.99)
+    expect(itemData.currency).toBe('USD')
+  })
+
+  it('Ratchet-Integrated (kein Ratchet-Teil): nur 2 CollectionItem-Rows (Blade, Bit)', async () => {
+    beybladeFindUnique.mockResolvedValue(fullBeyblade('b1', { ratchetId: null }))
+    purchaseCreate.mockResolvedValue({ id: 'p1' })
+    collectionItemCreate.mockResolvedValue({ id: 'ci' })
+
+    const res = await POST_PURCHASE(jsonReq('http://localhost/api/beyblades/b1/purchases', 'POST', {}), ctx('b1'))
+
+    expect(res.status).toBe(201)
+    expect(collectionItemCreate).toHaveBeenCalledTimes(2)
   })
 
   it('lehnt fremde userId im Body ab — Owner kommt immer aus der Session', async () => {
-    beybladeFindUnique.mockResolvedValue({ id: 'b1' })
+    beybladeFindUnique.mockResolvedValue(fullBeyblade('b1'))
     purchaseCreate.mockResolvedValue({ id: 'p1' })
+    collectionItemCreate.mockResolvedValue({ id: 'ci' })
 
     await POST_PURCHASE(
       jsonReq('http://localhost/api/beyblades/b1/purchases', 'POST', { userId: 'user-2' }),
@@ -165,13 +224,16 @@ describe('POST /api/beyblades/[id]/purchases (#142)', () => {
     )
 
     expect(purchaseCreate.mock.calls[0]![0].data.userId).toBe('user-1')
+    expect(collectionItemCreate.mock.calls[0]![0].data.userId).toBe('user-1')
   })
 
-  it('unbekannte Beyblade → 404 ohne Purchase-Row', async () => {
+  it('unbekannte Beyblade → 404 ohne Purchase- oder CollectionItem-Row', async () => {
     beybladeFindUnique.mockResolvedValue(null)
     const res = await POST_PURCHASE(jsonReq('http://localhost/api/beyblades/b1/purchases', 'POST', {}), ctx('b1'))
     expect(res.status).toBe(404)
     expect(purchaseCreate).not.toHaveBeenCalled()
+    expect(collectionItemCreate).not.toHaveBeenCalled()
+    expect(transactionMock).not.toHaveBeenCalled()
   })
 
   it('ungültiger Preis → 400, kein DB-Write', async () => {
