@@ -27,8 +27,10 @@ export function BeybladeCard({
 }) {
   const traits = deriveAssemblyTraits(beyblade.blade, beyblade.lockChip)
   const imageId = beyblade.imageId ?? beyblade.blade?.imageId ?? beyblade.lockChip?.imageId ?? null
+  // #157 — dieselbe Anheben+Kante-Hover-Logik wie BuildCard.tsx (mehrfarbige Typ-/Hersteller-/
+  // Drehrichtungs-Badges).
   return (
-    <Card className="p-4">
+    <Card className="p-4" interactive>
       <Link href={`/beyblades/${beyblade.id}`} className="flex items-center gap-4">
         {imageId ? (
           <Image
