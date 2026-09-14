@@ -105,10 +105,10 @@ export function BuildCard({
             width={64}
             height={64}
             sizes="64px"
-            className="h-16 w-16 rounded-lg object-contain"
+            className="h-16 w-16 shrink-0 rounded-lg object-contain"
           />
         ) : (
-          <div aria-hidden="true" className="h-16 w-16 rounded-lg bg-x-cyan/10" />
+          <div aria-hidden="true" className="h-16 w-16 shrink-0 rounded-lg bg-x-cyan/10" />
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">
@@ -121,19 +121,29 @@ export function BuildCard({
           {creator && (
             <p className="mt-0.5 truncate text-xs text-current/50">von {creator}</p>
           )}
+          {/* Bug-Fix (Live-Report, "Warum ist das nicht wie bei Beyblades?"): WinRateBadge/
+              Verfügbarkeits-Badge/TypeBadge standen vorher als Geschwister DIESES Divs in der
+              obersten Flex-Zeile. `min-w-0 flex-1` erlaubt genau diesem Textblock (anders als den
+              Badges, die ihre Default-`min-width:auto` behalten) unter Platzdruck bis auf 0px zu
+              schrumpfen — bei einer langen WinRateBadge-Beschriftung ("Noch nicht genug Daten")
+              plus TypeBadge verschwand der Titel dadurch komplett. Fix: Badges in eine eigene
+              Flex-Zeile UNTER dem Titel (wie components/beyblade/BeybladeCard.tsx), statt in
+              derselben Zeile um Breite zu konkurrieren. */}
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {/* Auto-Meta win-rate badge (Phase 5 Part D) — optional so existing callers keep
+                working; list surfaces batch-read the cache and pass it in. */}
+            <WinRateBadge stats={winRate ?? null} />
+            {build.available !== undefined && build.available !== null && (
+              <Badge tone={build.available ? 'cyan' : 'neutral'}>{build.available ? 'Baubar' : 'Teile fehlen'}</Badge>
+            )}
+            <TypeBadge type={build.type} />
+          </div>
           {rating && (
             <div className="mt-1">
               <RatingSummary aggregate={rating} />
             </div>
           )}
         </div>
-        {/* Auto-Meta win-rate badge (Phase 5 Part D) — optional so existing callers keep
-            working; list surfaces batch-read the cache and pass it in. */}
-        <WinRateBadge stats={winRate ?? null} />
-        {build.available !== undefined && build.available !== null && (
-          <Badge tone={build.available ? 'cyan' : 'neutral'}>{build.available ? 'Baubar' : 'Teile fehlen'}</Badge>
-        )}
-        <TypeBadge type={build.type} />
       </Link>
     </Card>
   )
