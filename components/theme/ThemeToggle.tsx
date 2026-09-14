@@ -18,7 +18,7 @@ const OPTIONS: Array<{ id: 'light' | 'dark' | 'system'; label: string; Icon: Luc
   { id: 'system', label: 'System-Design', Icon: Monitor },
 ]
 
-export function ThemeToggle() {
+export function ThemeToggle({ align = 'right' }: { align?: 'left' | 'right' }) {
   const { theme, setTheme } = useTheme()
   const current = OPTIONS.find((o) => o.id === theme) ?? OPTIONS[2]!
 
@@ -36,7 +36,14 @@ export function ThemeToggle() {
       <ul
         role="listbox"
         aria-label="Farbschema"
-        className="invisible absolute right-0 top-full z-50 mt-1 min-w-max rounded-md border border-current/15 bg-white p-1 shadow-lg group-focus-within:visible group-hover:visible dark:bg-base-dark-alt"
+        // #157-Nachtrag (Live-Report, Sidebar-Screenshot: Dropdown lief bei rechtsbündiger
+        // Ausrichtung links über den Viewport-Rand hinaus) — die Sidebar sitzt am linken Rand,
+        // ein von dort aus rechtsbündig geöffnetes Dropdown hat keinen Platz. `align="left"`
+        // öffnet stattdessen nach rechts (Sidebar-Call-Site); Header behält die alte
+        // rechtsbündige Standardausrichtung (dort sitzt der Trigger selbst rechts im Screen).
+        className={`invisible absolute top-full z-50 mt-1 min-w-max rounded-md border border-current/15 bg-white p-1 shadow-lg group-focus-within:visible group-hover:visible dark:bg-base-dark-alt ${
+          align === 'left' ? 'left-0' : 'right-0'
+        }`}
       >
         {OPTIONS.map(({ id, label, Icon }) => {
           const active = theme === id

@@ -165,8 +165,8 @@ export function Sidebar({
         )}
         <div className={`flex items-center gap-1 ${collapsed ? 'flex-col' : ''}`}>
           {session && <NotificationBell unreadCount={unreadNotifications} />}
-          <LanguageSwitcher current={locale} authed={Boolean(session)} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} />
-          <ThemeToggle />
+          <LanguageSwitcher current={locale} authed={Boolean(session)} labels={{ label: t.language.label, de: t.language.de, en: t.language.en }} align="left" />
+          <ThemeToggle align="left" />
         </div>
 
         {session ? (
