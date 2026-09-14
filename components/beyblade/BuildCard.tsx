@@ -65,9 +65,15 @@ export function buildPartSummary(build: BuildCardData): string {
     .join(' · ')
 }
 
-/** Titel-Fallback-Kette: kuratierter Set-Name → Blade → Lock Chip (nie leer: Bit existiert immer). */
+/** Titel-Fallback-Kette: kuratierter Set-Name → Blade → Lock Chip (nie leer: Bit existiert immer).
+ *  #164-Nachtrag (Live-Report, Screenshot "hier steht kein Name") — `build.name` war bei
+ *  Alt-Zeilen (vor der "leer → null"-Regel aus PATCH /api/builds/[id], #145/#164) teils als
+ *  leerer/nur-Leerzeichen-String statt `null` gespeichert. `??` fällt NUR bei null/undefined
+ *  durch, nicht bei `""` — eine leere Zeile rendert dann eine leere Titelzeile statt des
+ *  kanonischen Namens. `|| undefined` normalisiert einen leeren/Leerzeichen-String zu
+ *  "fehlt", BEVOR die Fallback-Kette greift. */
 export function buildDisplayName(build: BuildCardData): string {
-  return build.name ?? build.blade?.name ?? build.lockChip?.name ?? build.bit.name
+  return build.name?.trim() || build.blade?.name || build.lockChip?.name || build.bit.name
 }
 
 export function BuildCard({
