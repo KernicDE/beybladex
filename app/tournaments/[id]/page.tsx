@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { loadTournamentBracket, stageWinnersRounds } from '@/lib/bracket'
+import { resolveDeckLockAt } from '@/lib/deckLock'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { JudgeBracketView, eliminationRoundLabel } from '@/components/judge/JudgeBracketView'
@@ -223,6 +224,9 @@ export default async function TournamentBracketPage({
         <OrganizerConsole
           tournamentId={tournament.id}
           kind={tournament.kind}
+          // Issue #181 — bereits auf den effektiven Wert aufgelöst (lib/deckLock.ts), die
+          // Console muss die "leer = Event-Start"-Regel nicht selbst kennen.
+          deckLockAt={resolveDeckLockAt(tournament.deckLockAt, tournament.startDate).toISOString()}
           teamMode={tournament.teamMode}
           teamEntries={tournament.teamEntries.map((e) => ({
             entryId: e.id,
@@ -238,6 +242,8 @@ export default async function TournamentBracketPage({
             withdrawn: p.withdrawn,
             paidAt: p.paidAt?.toISOString() ?? null,
             seed: p.seed,
+            // Issue #181 — "Veranstalter kann die Decks einsehen".
+            deck: p.deck ? { id: p.deck.id, name: p.deck.title } : null,
           }))}
           stages={tournament.stages.map((stage) => {
             const wbRounds = stageWinnersRounds(stage.matches)

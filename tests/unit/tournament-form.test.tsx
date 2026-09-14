@@ -231,6 +231,8 @@ describe('TournamentForm — background geocoding UX (RC11 #100)', () => {
           rulesetId: 'r1',
           clubId: '',
           kind: 'BRACKET',
+          deckLockDate: '',
+          deckLockTime: '',
         }}
       />,
     )

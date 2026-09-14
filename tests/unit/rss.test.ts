@@ -26,6 +26,7 @@ function makeTournament(overrides: Partial<Tournament>): Tournament {
     recurringDays: null,
     rulesetId: 'r-1',
     kind: 'BRACKET',
+    deckLockAt: null,
     clubId: null,
     createdById: 'u-1',
     completedAt: null,

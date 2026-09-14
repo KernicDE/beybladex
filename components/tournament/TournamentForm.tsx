@@ -75,6 +75,11 @@ export interface TournamentFormValues {
   // mode="edit" deaktiviert — siehe lib/tournamentValidation.ts für die serverseitige
   // Begründung, warum PATCH das Feld gar nicht erst annimmt).
   kind: 'BRACKET' | 'STAMMTISCH' | 'FREEPLAY'
+  // Issue #181 — "Decklock": optionale eigene Sperrfrist fürs Deck-Wählen/-Wechseln (beide
+  // leer = kein eigener Wert, Event-Start gilt als Sperrfrist, siehe lib/deckLock.ts). Nur bei
+  // kind=BRACKET relevant (siehe die UI-Bedingung unten).
+  deckLockDate: string
+  deckLockTime: string
 }
 
 export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
@@ -100,6 +105,8 @@ export const DEFAULT_TOURNAMENT_VALUES: TournamentFormValues = {
   rulesetId: '',
   clubId: '',
   kind: 'BRACKET',
+  deckLockDate: '',
+  deckLockTime: '',
 }
 
 const COUNTRIES = [
@@ -345,6 +352,13 @@ export function TournamentForm({
       // Issue #176 — bei STAMMTISCH/FREEPLAY wird kein Regelwerk abgefragt; leer statt einer
       // (falschen) Vorauswahl senden, die Route verlangt es ohnehin nur bei kind=BRACKET.
       ...(values.kind === 'BRACKET' ? { rulesetId: values.rulesetId } : {}),
+      // Issue #181 — beide Felder leer (oder kind != BRACKET) → null senden (kein eigener Wert,
+      // Event-Start gilt als Sperrfrist). Nur Datum ODER nur Uhrzeit gesetzt wird wie "leer"
+      // behandelt statt eine unsinnige Mitternachts-/Tagesangabe zu erraten.
+      deckLockAt:
+        values.kind === 'BRACKET' && values.deckLockDate && values.deckLockTime
+          ? new Date(`${values.deckLockDate}T${values.deckLockTime}`).toISOString()
+          : null,
       clubId: values.clubId || null,
       // kind ist POST-only (siehe lib/tournamentValidation.ts) — auf PATCH ein ignoriertes
       // Unknown-Feld, wird hier trotzdem mitgeschickt, weil der Server es beim Edit einfach
@@ -578,6 +592,25 @@ export function TournamentForm({
             ))}
           </Select>
         </FormField>
+      )}
+
+      {/* Issue #181 — "Decklock": optionale eigene Sperrfrist fürs Deck-Wählen/-Wechseln. Beide
+          Felder leer = kein eigener Wert, der Event-Start (Datum/Uhrzeit oben) gilt als
+          Sperrfrist (lib/deckLock.ts) — deshalb hier explizit "(optional)" und kein required. */}
+      {values.kind === 'BRACKET' && (
+        <div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Deck-Sperrfrist — Datum (optional)">
+              <Input type="date" value={values.deckLockDate} onChange={setText('deckLockDate')} />
+            </FormField>
+            <FormField label="Deck-Sperrfrist — Uhrzeit (optional)">
+              <Input type="time" value={values.deckLockTime} onChange={setText('deckLockTime')} />
+            </FormField>
+          </div>
+          <p className="mt-1 text-xs text-current/60">
+            Bis wann Teilnehmer:innen ihr Deck wählen/wechseln können. Leer lassen, damit der Event-Start gilt.
+          </p>
+        </div>
       )}
 
       {/* Club attachment: only rendered when the session user administers at least one club

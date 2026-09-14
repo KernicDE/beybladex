@@ -11,6 +11,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 const BASE = {
   tournamentId: 't-1',
   kind: 'BRACKET' as const,
+  deckLockAt: '2026-10-03T10:00:00.000Z',
   participants: [],
   teamMode: false,
   teamEntries: [],

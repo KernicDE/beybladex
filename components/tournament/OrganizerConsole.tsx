@@ -18,7 +18,16 @@ import { Card, CardTitle } from '@/components/ui/Card'
 import { HeaderImageUpload } from '@/components/tournament/HeaderImageUpload'
 import { SeedingPanel } from '@/components/tournament/SeedingPanel'
 
-export type ConsoleParticipant = { userId: string; name: string; checkedIn: boolean; withdrawn: boolean; paidAt: string | null; seed: number | null }
+export type ConsoleParticipant = {
+  userId: string
+  name: string
+  checkedIn: boolean
+  withdrawn: boolean
+  paidAt: string | null
+  seed: number | null
+  /** Issue #181 — "Decklock": Veranstalter kann die Decks einsehen. null = noch kein Deck hinterlegt. */
+  deck: { id: string; name: string } | null
+}
 export type ConsoleMatch = {
   id: string
   stageId: string
@@ -80,12 +89,16 @@ export function OrganizerConsole({
   entryFeeCent,
   headerImageId,
   kind,
+  deckLockAt,
 }: {
   tournamentId: string
   /** Issue #176 — Stammtisch/Freeplay haben keinen Bracket: "Turnier starten"/Seeding/
    *  Stage-Verwaltung ergeben dort keinen Sinn (server-seitig ohnehin gesperrt, siehe
    *  POST /api/tournaments/[id]/stages) und werden hier gar nicht erst angeboten. */
   kind: 'BRACKET' | 'STAMMTISCH' | 'FREEPLAY'
+  /** Issue #181 — bereits auf den EFFEKTIVEN Wert aufgelöst (lib/deckLock.ts#resolveDeckLockAt)
+   *  — die Console muss die "leer = Event-Start"-Regel nicht selbst kennen. */
+  deckLockAt: string
   participants: ConsoleParticipant[]
   /** RC15 #12 — team mode switches the console from solo participants to team entries. */
   teamMode: boolean
@@ -336,6 +349,37 @@ export function OrganizerConsole({
           </p>
         )}
       </Card>
+
+      {/* Issue #181 — "Veranstalter kann die Decks einsehen": eigene Karte statt in Card 1
+          verschachtelt, damit sie unabhängig vom Bracket-Zustand (vor/nach Stage-Erstellung)
+          immer an derselben Stelle steht. Nur BRACKET+Solo — Team-Modus verwaltet Decks pro
+          Team-Slot (eigene, hier noch nicht abgebildete Struktur, siehe ConsoleTeamEntry). */}
+      {kind === 'BRACKET' && !teamMode && participants.filter((p) => !p.withdrawn).length > 0 && (
+        <Card className="space-y-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>Teilnehmer &amp; Decks</CardTitle>
+            <span className="text-xs text-current/60">
+              Deck-Sperrfrist: {new Date(deckLockAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}
+            </span>
+          </div>
+          <ul className="divide-y divide-current/10 text-sm">
+            {participants
+              .filter((p) => !p.withdrawn)
+              .map((p) => (
+                <li key={p.userId} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span>{p.name}</span>
+                  {p.deck ? (
+                    <Link href={`/decks/item/${p.deck.id}`} className="text-x-cyan-text hover:underline">
+                      {p.deck.name}
+                    </Link>
+                  ) : (
+                    <Badge tone="neutral">Kein Deck</Badge>
+                  )}
+                </li>
+              ))}
+          </ul>
+        </Card>
+      )}
 
       {stages.length > 0 && (
         <Card className="space-y-4 p-4">

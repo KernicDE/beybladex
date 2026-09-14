@@ -107,7 +107,8 @@ export async function loadTournamentBracket(tournamentId: string) {
       ruleset: true,
       participants: {
         orderBy: { id: 'asc' },
-        include: { user: { select: { id: true, username: true, displayName: true } } },
+        // Issue #181 — "Veranstalter kann die Decks einsehen" (OrganizerConsole).
+        include: { user: { select: { id: true, username: true, displayName: true } }, deck: { select: { id: true, title: true } } },
       },
       // RC15 #12 — team-mode registrations and encounters (slots + users resolve sub-game
       // players; the bracket renders TeamMatch rows instead of solo matches).

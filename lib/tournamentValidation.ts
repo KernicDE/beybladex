@@ -30,6 +30,7 @@ export type TournamentInputData = {
   description?: string | null
   startDate?: Date
   endDate?: Date | null
+  deckLockAt?: Date | null
   locationName?: string
   street?: string | null
   postalCode?: string
@@ -66,6 +67,10 @@ const TOURNAMENT_SCHEMA: BodySchema = {
   description: { type: 'string', maxLength: DESCRIPTION_MAX, maxError: true, nullable: true, token: 'invalid_description' },
   startDate: { type: 'date', required: true, token: 'invalid_start_date' },
   endDate: { type: 'date', nullable: true, token: 'invalid_end_date' },
+  // Issue #181 — "Decklock": optionale Sperrfrist fürs Deck-Wählen/-Wechseln; nullable auf
+  // POST UND PATCH (anders als kind, das nach dem Anlegen fix bleibt — die Sperrfrist darf ein
+  // Veranstalter später anpassen, z. B. verlängern, wenn zu wenige Decks eingegangen sind).
+  deckLockAt: { type: 'date', nullable: true, token: 'invalid_deck_lock_at' },
   locationName: { type: 'string', trim: true, maxLength: LOCATION_MAX, maxError: true, required: true, token: 'invalid_location' },
   street: { type: 'string', maxLength: STREET_MAX, maxError: true, nullable: true, token: 'invalid_street' },
   postalCode: { type: 'string', trim: true, maxLength: POSTAL_CODE_MAX, maxError: true, required: true, token: 'invalid_postal_code' },
