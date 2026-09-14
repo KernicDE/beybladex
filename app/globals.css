@@ -32,15 +32,35 @@
   --color-type-defense: #3B82F6;
   --color-type-stamina: #EAB308;
   --color-type-balance: #10B981;
-  --font-sans: 'Geist Sans', 'Inter Display', system-ui, sans-serif;
+  /* #157 Phase 2 — X-Arena-Typografie: Rubik ersetzt Geist Sans als Fließtext-Schrift
+     (Konzept 6). Anton ist NEU, nur für Überschriften/Display-Kontexte (siehe die
+     h1–h3-Regel unten) — als Fließtext wäre die sehr fette, enge Display-Schrift
+     unlesbar. */
+  --font-sans: 'Rubik', 'Inter Display', system-ui, sans-serif;
+  --font-display: 'Anton', 'Arial Narrow', sans-serif;
 }
 
-/* Vendored locally in public/fonts/ — copied from Next.js's bundled Geist assets
-   (SIL OFL 1.1). */
+/* Selbst gehostet in public/fonts/ (SIL OFL 1.1, wie das bestehende Geist Sans) —
+   CSP erlaubt nur font-src 'self', kein externer Font-CDN-Link (siehe
+   tests/unit/no-external-resources.test.ts). Nur der lateinische Grundsatz (deckt
+   Deutsch inkl. äöüß ab, U+0000–00FF) statt aller Google-Fonts-Sprachsubsets —
+   kleinere Datei, alles, was diese Seite braucht. */
 @font-face {
   font-family: 'Geist Sans';
   src: url('/fonts/GeistSans-Variable.woff2') format('woff2');
   font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Rubik';
+  src: url('/fonts/Rubik-Variable.woff2') format('woff2');
+  font-weight: 300 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Anton';
+  src: url('/fonts/Anton-Regular.woff2') format('woff2');
+  font-weight: 400;
   font-display: swap;
 }
 /* TODO: replace/add real Inter Display .woff2 files before launch — see spec for
@@ -86,5 +106,19 @@
     color: var(--fg);
     font-family: var(--font-sans);
     transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  /* #157 Phase 2 — Anton nur für Überschriften (Konzept 6: "Display, für
+     Überschriften/Logo/Tabs"), nie als Fließtext. Ohne Kantenglättung wirkt die sehr
+     fette, enge Schrift bei mittleren Größen schnell unscharf/ausgefranst (Erfahrung
+     aus einer früheren Konzept-Iteration, siehe Referenz-Mockup) — daher explizit
+     antialiased statt der Browser-Grundeinstellung. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 }
