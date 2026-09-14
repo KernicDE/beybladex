@@ -103,7 +103,7 @@ export default async function BuildDetailPage({ params }: PageProps<'/builds/[id
   ])
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <BackLink href="/builds">Alle Builds</BackLink>
 
       <Card>

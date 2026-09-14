@@ -69,7 +69,7 @@ export default async function DecksPage({ searchParams }: PageProps<'/decks'>) {
   const nextCursor = hasMore ? decks[decks.length - 1]!.id : null
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t.decks.heading}</h1>
         {decks.length > 0 && (

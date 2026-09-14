@@ -172,7 +172,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
     : null
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       {tournament.headerImageId && (
         // Phase 11 (item 5): full-width event header image via the generic media pipeline.
         // MediaAsset is served at a fixed 1200x400 (EVENT_HEADER_TARGET) — a relatively

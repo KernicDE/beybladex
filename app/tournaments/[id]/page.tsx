@@ -98,7 +98,7 @@ export default async function TournamentBracketPage({
   const tournamentJudges = tournamentJudgeRows.map((j) => ({ id: j.userId, name: j.user.displayName ?? j.user.username }))
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold">{tournament.title}</h1>
         {tournament.completedAt && <Badge tone="green">Abgeschlossen</Badge>}

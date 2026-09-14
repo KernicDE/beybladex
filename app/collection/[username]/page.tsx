@@ -64,7 +64,7 @@ export default async function UserCollectionPage({ params, searchParams }: PageP
   const nextCursor = hasMore ? items[items.length - 1]!.id : null
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <h1 className="text-2xl font-semibold">Sammlung von {view.displayName ?? view.username}</h1>
 
       {items.length === 0 ? (

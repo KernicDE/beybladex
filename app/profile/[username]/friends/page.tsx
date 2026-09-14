@@ -44,7 +44,7 @@ export default async function FriendsPage({ params, searchParams }: PageProps<'/
   const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <h1 className="text-2xl font-semibold">Freunde von @{subject.username}</h1>
       {page.length === 0 ? (
         <EmptyState

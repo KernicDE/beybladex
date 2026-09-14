@@ -67,7 +67,7 @@ export default async function CollectionItemPage({ params }: PageProps<'/collect
   const target: FxCurrency = viewer?.country === 'CH' ? 'CHF' : 'EUR'
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         {/* RC16 (#105): der Teile-Name verlinkt auf die oeffentliche Einzelteil-Detailseite. */}
         <h1 className="text-2xl font-semibold">

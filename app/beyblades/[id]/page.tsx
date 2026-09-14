@@ -99,7 +99,7 @@ export default async function BeybladeDetailPage({ params }: PageProps<'/beyblad
   ].filter((p): p is { label: string; part: (typeof p.part & object) } => p.part !== null)
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <BackLink href="/collection?tab=beyblades">Sammlung</BackLink>
 
       <Card>

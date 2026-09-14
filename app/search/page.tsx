@@ -42,7 +42,7 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
   const partStats = partResults ? await getPartStats(partResults.parts.map((p) => p.id)) : null
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <h1 className="text-2xl font-semibold">Suche</h1>
       {/* #25: the page carries its own input — on mobile the header input is hidden and
           this page is the typing surface reached via the header search icon. */}

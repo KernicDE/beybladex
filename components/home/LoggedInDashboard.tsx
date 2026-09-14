@@ -48,9 +48,9 @@ export function LoggedInDashboard({
   clubActivity: DashboardClubActivity | null
 }) {
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       {/* #157 Phase 4 — Hero-Banner (Konzept 6), als abgerundete Karte statt Full-Bleed-Streifen:
-          das restliche Layout bleibt im bestehenden max-w-3xl-Container, ein echter Full-Bleed-
+          das restliche Layout bleibt im bestehenden max-w-5xl-Container, ein echter Full-Bleed-
           Hero würde die Seitenstruktur (main/Card-Sprache) für diese eine Fläche aufbrechen. */}
       <div className="x-hero rounded-xl px-4 py-6 sm:px-6">
         <h1 className="text-2xl font-semibold">Willkommen zurück, {name}</h1>
