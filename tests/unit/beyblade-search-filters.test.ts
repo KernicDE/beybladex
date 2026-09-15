@@ -39,6 +39,13 @@ describe('searchBeyblades filter composition (#144)', () => {
     })
   })
 
+  it('derives the spin-direction filter from blade OR lockChip (#188 — Parität zum Teile-Tab)', async () => {
+    await searchBeyblades({ spinDirection: 'LEFT' })
+    expect(callWhere().AND).toContainEqual({
+      OR: [{ blade: { spinDirection: 'LEFT' } }, { lockChip: { spinDirection: 'LEFT' } }],
+    })
+  })
+
   it('restricts to owned sets via a Purchase subquery when ownedByUserId is set', async () => {
     await searchBeyblades({ ownedByUserId: 'user-1' })
     expect(callWhere().AND).toContainEqual({ purchases: { some: { userId: 'user-1' } } })
@@ -81,8 +88,8 @@ describe('searchBeyblades Teilcode-Suche (#144)', () => {
   })
 
   it('combines the search clause with all filters', async () => {
-    await searchBeyblades({ q: '4-60', manufacturer: 'HASBRO', type: 'ATTACK', ownedByUserId: 'user-1' })
-    expect(callWhere().AND).toHaveLength(4)
+    await searchBeyblades({ q: '4-60', manufacturer: 'HASBRO', type: 'ATTACK', spinDirection: 'RIGHT', ownedByUserId: 'user-1' })
+    expect(callWhere().AND).toHaveLength(5)
   })
 })
 

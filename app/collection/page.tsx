@@ -34,10 +34,10 @@ import { Select } from '@/components/ui/Select'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
 import { Pagination } from '@/components/ui/Pagination'
 import { BeybladeCard } from '@/components/beyblade/BeybladeCard'
-import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { CatalogThumb } from '@/components/beyblade/CatalogThumb'
+import { AddCatalogEntryToggle } from '@/components/collection/AddCatalogEntryToggle'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
 import { CollectionItemForm } from '@/components/collection/CollectionItemForm'
 import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
@@ -67,7 +67,7 @@ function pageNum(v: string | string[] | undefined): number {
 }
 
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
-  const { cursor, kpage, ppage, neu, tab, q, mf, bt, owned, pq, pc, pt, psd, powned } = await searchParams
+  const { cursor, kpage, ppage, neu, tab, q, mf, bt, csd, owned, pq, pc, pt, psd, powned } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
@@ -91,6 +91,8 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const catalogQ = str(q).trim()
   const catalogMf = str(mf)
   const catalogBt = str(bt)
+  // #188 — Drehrichtungs-Filter, Parität zum Teile-Tab (dessen `psd`).
+  const catalogSpin = str(csd)
   const ownedOnly = owned === '1'
   const catalogPage = pageNum(kpage)
   // Teile-Tab: Suche + Kategorie-/Typ-/Drehrichtungs-/Besitz-Filter (#137).
@@ -102,7 +104,9 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const partsPage = pageNum(ppage)
 
   const [viewer, fx, catalog, partRows, inventoryRows] = await Promise.all([
-    prisma.user.findUnique({ where: { id: viewerId }, select: { country: true } }),
+    // #188 — role zusätzlich zu country: entscheidet, ob der "+"-Toggle direkt anlegt
+    // (TRUSTED/ADMIN) oder einen Vorschlag einreicht (jede:r andere Angemeldete).
+    prisma.user.findUnique({ where: { id: viewerId }, select: { country: true, role: true } }),
     getRateTable(),
     searchBeyblades({
       q: catalogQ,
@@ -110,6 +114,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       take: KATALOG_PAGE_SIZE,
       manufacturer: catalogMf || null,
       type: catalogBt || null,
+      spinDirection: catalogSpin || null,
       ownedByUserId: ownedOnly ? viewerId : null,
     }),
     searchParts({
@@ -180,6 +185,8 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   // No per-user currency preference exists in the schema — the hint target is inferred from
   // the viewer's country (CH → CHF, else EUR). See components/collection/PriceDisplay.tsx.
   const target: FxCurrency = viewer?.country === 'CH' ? 'CHF' : 'EUR'
+  // #188 — dieselbe TRUSTED/ADMIN-Prüfung wie app/parts/[id]/page.tsx's canAuthor.
+  const canAuthor = viewer?.role === 'TRUSTED' || viewer?.role === 'ADMIN'
 
   const hasMoreInventory = inventoryRows.length > PAGE_SIZE
   const items = hasMoreInventory ? inventoryRows.slice(0, PAGE_SIZE) : inventoryRows
@@ -188,12 +195,13 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   // `.category` am Element selbst, hier eine Ebene tiefer auf `.part`.
   const inventoryGroups = groupPartsByCategory(items.map((item) => ({ ...item, category: item.part.category })))
 
-  const catalogFilterActive = Boolean(catalogQ || catalogMf || catalogBt || ownedOnly)
+  const catalogFilterActive = Boolean(catalogQ || catalogMf || catalogBt || catalogSpin || ownedOnly)
   // #155 — Basis-Params ohne Seite; buildCatalogHref hängt die Zielseite pro Link an.
   const catalogParams = new URLSearchParams({ tab: 'beyblades' })
   if (catalogQ) catalogParams.set('q', catalogQ)
   if (catalogMf) catalogParams.set('mf', catalogMf)
   if (catalogBt) catalogParams.set('bt', catalogBt)
+  if (catalogSpin) catalogParams.set('csd', catalogSpin)
   if (ownedOnly) catalogParams.set('owned', '1')
   const buildCatalogHref = (page: number) => {
     const p = new URLSearchParams(catalogParams)
@@ -203,8 +211,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   const beybladesContent = (
     <div className="space-y-6">
+      {/* #188 — ersetzt die alte, nur bei leerer Suche sichtbare CatalogProposalCTA: ein
+          fester Einstiegspunkt statt eines Zufallsfunds am Ende einer leeren Trefferliste. */}
+      <AddCatalogEntryToggle kind="BEYBLADE" canAuthor={canAuthor} />
+
       {/* GET-Formular: jede Filterkombination bleibt eine teilbare URL (EventsFilterBar-Muster). */}
-      <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto]">
+      <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
         <input type="hidden" name="tab" value="beyblades" />
         <div>
           <label htmlFor="col-q" className="mb-1 block text-sm">{t.collection.beybladesSearchLabel}</label>
@@ -227,6 +239,15 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
             ))}
           </Select>
         </div>
+        <div>
+          {/* #188 — Parität zum Teile-Tab, der diesen Filter schon hatte. */}
+          <label htmlFor="col-csd" className="mb-1 block text-sm">Drehrichtung</label>
+          <Select id="col-csd" name="csd" defaultValue={catalogSpin}>
+            <option value="">Alle Drehrichtungen</option>
+            <option value="RIGHT">Rechtsdrehend</option>
+            <option value="LEFT">Linksdrehend</option>
+          </Select>
+        </div>
         <label className="flex h-10 items-center gap-2 text-sm">
           <input type="checkbox" name="owned" value="1" defaultChecked={ownedOnly} className="size-4 accent-x-cyan-text" />
           {t.catalog.ownedOnly}
@@ -244,22 +265,15 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       </form>
 
       {catalog.beyblades.length === 0 ? (
-        <div className="space-y-3">
-          <EmptyState
-            title={catalogFilterActive ? t.collection.beybladesEmptyFilteredTitle : t.collection.beybladesEmptyTitle}
-            description={catalogFilterActive ? t.collection.beybladesEmptyFilteredDescription : t.collection.beybladesEmptyDescription}
-            action={catalogFilterActive ? (
-              <Link href="/collection?tab=beyblades" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
-                {t.catalog.reset}
-              </Link>
-            ) : undefined}
-          />
-          {/* #145 — Suchlücke im offiziellen Katalog: Anlegen bleibt Curator-Sache, aber jede:r
-              Angemeldete darf ein fehlendes Set vorschlagen (kind=BUILD → erzeugt beim
-              Approval eine Beyblade-Zeile). Die Seite ist login-gegated, die CTA darf
-              also immer interaktiv sein. */}
-          {catalogQ !== '' && <CatalogProposalCTA defaultKind="BUILD" />}
-        </div>
+        <EmptyState
+          title={catalogFilterActive ? t.collection.beybladesEmptyFilteredTitle : t.collection.beybladesEmptyTitle}
+          description={catalogFilterActive ? t.collection.beybladesEmptyFilteredDescription : t.collection.beybladesEmptyDescription}
+          action={catalogFilterActive ? (
+            <Link href="/collection?tab=beyblades" className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5">
+              {t.catalog.reset}
+            </Link>
+          ) : undefined}
+        />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {catalog.beyblades.map((beyblade) => (
@@ -292,6 +306,8 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   const partsContent = (
     <div className="space-y-6">
+      <AddCatalogEntryToggle kind="PART" canAuthor={canAuthor} />
+
       <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
         <input type="hidden" name="tab" value="teile" />
         <div>
@@ -471,7 +487,11 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
     <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t.collection.heading}</h1>
-        {items.length > 0 && (
+        {/* #188 — dieser Button galt bisher unabhängig vom aktiven Tab und führte auf den
+            Beyblades-/Teile-Tabs verwirrend zu "Mein Inventar" statt dort etwas zu tun (die
+            beiden Tabs haben jetzt ihren eigenen "+"-Einstieg oben, AddCatalogEntryToggle).
+            Nur noch sichtbar, wenn Mein Inventar auch wirklich der aktive Tab ist. */}
+        {activeTab === 'inventar' && items.length > 0 && (
           <Link href="/collection?tab=inventar&neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
             {t.collection.addPart}
           </Link>

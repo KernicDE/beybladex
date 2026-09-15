@@ -34,7 +34,16 @@ const EMPTY: PartFormValues = {
   isRatchetIntegrated: false,
 }
 
-export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
+export function PartForm({
+  initial = EMPTY,
+  onCreated,
+}: {
+  initial?: PartFormValues
+  /** #188 — die Sammlung-Seite bettet dieses Formular hinter einem "+ Teil anlegen"-Toggle
+   *  ein; nach dem Anlegen soll sich das Formular schließen statt offen stehen zu bleiben.
+   *  Optional (die Kuratoren-Verwaltung /settings/admin/parts nutzt es weiterhin ohne). */
+  onCreated?: () => void
+}) {
   const router = useRouter()
   const [values, setValues] = useState(initial)
   const [error, setError] = useState<string | null>(null)
@@ -96,7 +105,10 @@ export function PartForm({ initial = EMPTY }: { initial?: PartFormValues }) {
       setError(body?.error ?? `Fehler (${res.status})`)
       return
     }
-    if (!editing) setValues(EMPTY)
+    if (!editing) {
+      setValues(EMPTY)
+      onCreated?.()
+    }
     router.refresh()
   }
 

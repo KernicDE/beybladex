@@ -14,6 +14,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { PART_IMAGE_TARGET, mediaFilePath, processAndStoreImage } from '@/lib/media'
 import { parsePartProposalPayload, parseBuildProposalPayload, PROPOSAL_SLOT_CATEGORIES } from '@/lib/proposalValidation'
+import { notifyCatalogCurators } from '@/lib/notify'
 import { unlink } from 'node:fs/promises'
 
 export async function POST(req: Request): Promise<Response> {
@@ -90,6 +91,15 @@ export async function POST(req: Request): Promise<Response> {
         imageAssetId,
       },
       select: { id: true },
+    })
+    // Issue #188 — Admins/Vertrauenspersonen bekommen eine Benachrichtigung statt den
+    // Vorschlag nur durch einen Besuch von /settings/admin/parts zu entdecken.
+    notifyCatalogCurators({
+      title: kind === 'PART' ? 'Neuer Teil-Vorschlag' : 'Neuer Set-Vorschlag',
+      message: `@${session.user.name} hat ${kind === 'PART' ? 'ein neues Teil' : 'ein neues Set'} vorgeschlagen.`,
+      link: '/settings/admin/parts',
+    }).catch((err) => {
+      console.error('[notify] catalog curator notification after proposal create failed:', err)
     })
     return Response.json({ id: proposal.id }, { status: 201 })
   } catch (err) {

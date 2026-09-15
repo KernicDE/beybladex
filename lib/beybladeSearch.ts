@@ -12,7 +12,7 @@
 // mitgelieferte blade-Relation).
 import { prisma } from '@/lib/db'
 import { ASSEMBLY_PART_SLOTS } from '@/lib/assembly'
-import type { BeyType, Manufacturer } from '@prisma/client'
+import type { BeyType, Manufacturer, SpinDirection } from '@prisma/client'
 
 export const BEYBLADE_PAGE_SIZE = 20
 
@@ -41,6 +41,8 @@ export interface SearchBeybladesOpts {
   manufacturer?: string | null
   /** Typ-Filter (abgeleitet: blade.beyType ODER lockChip.beyType bei Custom Line). */
   type?: string | null
+  /** #188 — Drehrichtungs-Filter (Parität zum Teile-Tab), gleiche Ableitung wie type oben. */
+  spinDirection?: string | null
   /** "Nur im Besitz" — nur Sets, für die der Viewer mindestens einen Purchase hat. */
   ownedByUserId?: string | null
 }
@@ -67,6 +69,13 @@ function beybladeWhere(opts: SearchBeybladesOpts, q: string) {
             // Abgeleiteter Typ: Standard/Ratchet-Integrated trägt ihn am BLADE-Teil,
             // Custom Line am Lock Chip (deriveAssemblyTraits in lib/assembly.ts).
             { OR: [{ blade: { beyType: opts.type as BeyType } }, { lockChip: { beyType: opts.type as BeyType } }] },
+          ]
+        : []),
+      ...(opts.spinDirection
+        ? [
+            // #188 — dieselbe Ableitung wie beim Typ-Filter oben: Standard/Ratchet-Integrated
+            // trägt die Drehrichtung am BLADE-Teil, Custom Line am Lock Chip.
+            { OR: [{ blade: { spinDirection: opts.spinDirection as SpinDirection } }, { lockChip: { spinDirection: opts.spinDirection as SpinDirection } }] },
           ]
         : []),
       ...(opts.ownedByUserId ? [{ purchases: { some: { userId: opts.ownedByUserId } } }] : []),
