@@ -7,14 +7,13 @@
 // als dezente Zweitzeile. Der Haupt-Link geht auf die öffentliche Teile-Detailseite
 // (/parts/[id]) statt auf den Sammlungs-Eintrag; "Bearbeiten" (Preis/Preisverlauf/Löschen)
 // bleibt über einen eigenen, kleineren Link auf /collection/item/[id] erreichbar.
-import Image from 'next/image'
 import Link from 'next/link'
-import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { CatalogThumb } from '@/components/beyblade/CatalogThumb'
 import { PriceDisplay } from '@/components/collection/PriceDisplay'
 import { formatBitDisplay } from '@/lib/buildNaming'
 import type { FxCurrency } from '@/lib/currency'
-import type { SpinDirection } from '@prisma/client'
+import type { Manufacturer, SpinDirection } from '@prisma/client'
 
 export interface CollectionItemCardData {
   id: string
@@ -24,7 +23,7 @@ export interface CollectionItemCardData {
   boughtAt: Date | null
   sourceBeybladeId: string | null
   sourceBeyblade: { id: string; name: string } | null
-  part: { id: string; name: string; category: string; manufacturer: string; imageId: string | null; spinDirection: SpinDirection }
+  part: { id: string; name: string; category: string; manufacturer: Manufacturer; imageId: string | null; spinDirection: SpinDirection }
 }
 
 export function CollectionItemCard({
@@ -48,39 +47,34 @@ export function CollectionItemCard({
     item.boughtAt ? new Date(item.boughtAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null,
   ].filter(Boolean)
 
+  const partTitle = item.part.category === 'BIT' ? formatBitDisplay(item.part.name) : item.part.name
+
+  // #188 — die ganze Karte soll auf die Teile-Detailseite verlinkt sein, trägt aber ZWEI
+  // weitere, unabhängige Links (Herkunfts-Beyblade, Bearbeiten) — ein <a> darf kein <a>
+  // verschachteln, also der "stretched link"-Trick: ein unsichtbarer Vollflächen-Link liegt
+  // UNTER dem Karteninhalt; der Inhalt selbst ist `pointer-events-none`, seine eigenen Links
+  // schalten sich mit `pointer-events-auto` gezielt wieder ein — Klicks überall sonst auf der
+  // Karte fallen durch zum Vollflächen-Link, die beiden echten Links bleiben eigenständig klickbar.
   return (
-    <Card className="p-4">
-      <div className="flex items-start gap-3">
-        <Link href={`/parts/${item.part.id}`} className="shrink-0">
-          {item.part.imageId ? (
-            <Image
-              src={`/api/media/${item.part.imageId}`}
-              alt=""
-              width={56}
-              height={56}
-              sizes="56px"
-              className="h-14 w-14 rounded-lg object-contain"
-            />
-          ) : (
-            <div aria-hidden="true" className="h-14 w-14 rounded-lg bg-x-cyan/10" />
-          )}
-        </Link>
+    <Card className="relative p-4" interactive>
+      <Link href={`/parts/${item.part.id}`} className="absolute inset-0" aria-label={partTitle}>
+        <span className="sr-only">{partTitle}</span>
+      </Link>
+      <div className="pointer-events-none flex items-start gap-3">
+        <CatalogThumb
+          imageId={item.part.imageId}
+          alt=""
+          size={56}
+          manufacturer={item.part.manufacturer}
+          spinDirection={item.part.spinDirection}
+        />
         <div className="min-w-0 flex-1 space-y-1">
-          <Link href={`/parts/${item.part.id}`} className="block hover:underline">
-            {/* RC16 (#106): Bit als „Kurzcode (Vollname)" — „F (Flat)". */}
-            <p className="font-medium">{item.part.category === 'BIT' ? formatBitDisplay(item.part.name) : item.part.name}</p>
-          </Link>
-          <div className="flex flex-wrap items-center gap-1">
-            <Badge tone="neutral">{item.part.manufacturer}</Badge>
-            <Badge tone={item.part.spinDirection === 'RIGHT' ? 'attack' : 'defense'}>
-              {item.part.spinDirection === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'}
-            </Badge>
-          </div>
+          <p className="font-medium">{partTitle}</p>
           {/* #160 — Herkunft im Vordergrund: aus welchem Beyblade stammt das Teil. */}
           {item.sourceBeyblade ? (
             <p className="text-sm text-current/70">
               Aus{' '}
-              <Link href={`/beyblades/${item.sourceBeyblade.id}`} className="underline underline-offset-2">
+              <Link href={`/beyblades/${item.sourceBeyblade.id}`} className="pointer-events-auto relative underline underline-offset-2">
                 {item.sourceBeyblade.name}
               </Link>
             </p>
@@ -98,7 +92,7 @@ export function CollectionItemCard({
             </p>
           )}
           {editable && (
-            <Link href={`/collection/item/${item.id}`} className="inline-block text-xs underline underline-offset-2 text-current/60">
+            <Link href={`/collection/item/${item.id}`} className="pointer-events-auto relative inline-block text-xs underline underline-offset-2 text-current/60">
               Bearbeiten
             </Link>
           )}

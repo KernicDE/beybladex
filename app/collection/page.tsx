@@ -17,7 +17,6 @@
 // echten Seitenzahlen (#155, kpage/ppage — components/ui/Pagination.tsx); "Mein Inventar"
 // bleibt vorerst cursor-basiert ("Weitere laden", eigenes Issue #155 nennt es explizit als
 // Scope-Grenze).
-import Image from 'next/image'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -38,6 +37,7 @@ import { BeybladeCard } from '@/components/beyblade/BeybladeCard'
 import { CatalogProposalCTA } from '@/components/proposals/CatalogProposalCTA'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
+import { CatalogThumb } from '@/components/beyblade/CatalogThumb'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
 import { CollectionItemForm } from '@/components/collection/CollectionItemForm'
 import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
@@ -364,31 +364,21 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
               <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {group.parts.map((part) => (
                   <li key={part.id}>
-                    <Card className="p-3">
-                      {/* #164-Nachtrag — die Badges standen bisher NEBEN dem Namen in derselben
-                          Zeile und drückten die Textspalte auf einer schmalen Karte bis auf
-                          wenige Pixel zusammen; break-words (für den vollen Namen, #137) brach
-                          dann buchstabenweise um. Jetzt wie BeybladeCard: Badges in einer
-                          eigenen Zeile UNTER dem Namen, Bild/Textspalte shrink-0/min-w-0. */}
+                    {/* #188 — interactive (Hover-Effekt wie die anderen beiden Tabs), Hersteller/
+                        Drehrichtung abgekürzt unter dem Bild statt als Fließtext-Zeile. Die ganze
+                        Karte war hier schon vorher EIN Link (Bild+Text) — bleibt so. */}
+                    <Card className="p-3" interactive>
                       <Link href={`/parts/${part.id}`} className="flex items-center gap-3">
-                        {part.imageId ? (
-                          <Image
-                            src={`/api/media/${part.imageId}`}
-                            alt=""
-                            width={40}
-                            height={40}
-                            sizes="40px"
-                            className="h-10 w-10 shrink-0 rounded object-contain"
-                          />
-                        ) : (
-                          <div aria-hidden="true" className="h-10 w-10 shrink-0 rounded bg-x-cyan/10" />
-                        )}
+                        <CatalogThumb
+                          imageId={part.imageId}
+                          alt=""
+                          size={40}
+                          manufacturer={part.manufacturer}
+                          spinDirection={part.spinDirection}
+                        />
                         <div className="min-w-0 flex-1">
                           {/* #137 — voller Teilename statt abgeschnitten; bricht bei Bedarf um. */}
                           <p className="font-medium break-words">{part.name}</p>
-                          <p className="truncate text-sm text-current/60">
-                            {part.manufacturer === 'TT' ? t.catalog.manufacturerTT : t.catalog.manufacturerHasbro}
-                          </p>
                           <div className="mt-1 flex flex-wrap items-center gap-1">
                             {part.beyType && <TypeBadge type={part.beyType} />}
                             {ownedPartIds.has(part.id) && <Badge tone="green">✓ Im Besitz</Badge>}
