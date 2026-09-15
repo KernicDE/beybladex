@@ -5,10 +5,10 @@
 // Lock Chip) — dieselbe Ableitung wie auf der Detailseite (lib/assembly.ts). Die Bewertung
 // kommt als Batch-Aggregat vom Listen-Call-Site (ein groupBy für die ganze Seite, nie N
 // Einzelqueries). Katalog-Oberflächen sind Deutsch-hardcoded (Idiom wie BuildCard/TypeBadge).
-import Image from 'next/image'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { CatalogThumb } from '@/components/beyblade/CatalogThumb'
 import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { RatingSummary } from '@/components/beyblade/RatingSummary'
 import { deriveAssemblyTraits } from '@/lib/assembly'
@@ -32,33 +32,21 @@ export function BeybladeCard({
   return (
     <Card className="p-4" interactive>
       <Link href={`/beyblades/${beyblade.id}`} className="flex items-center gap-4">
-        {imageId ? (
-          <Image
-            src={`/api/media/${imageId}`}
-            alt={`Bild zu ${beyblade.name}`}
-            width={64}
-            height={64}
-            sizes="64px"
-            className="h-16 w-16 rounded-lg object-contain"
-          />
-        ) : (
-          <div aria-hidden="true" className="h-16 w-16 rounded-lg bg-x-cyan/10" />
-        )}
+        {/* #188 — Hersteller/Drehrichtung abgekürzt, direkt unter dem Bild (links/rechts
+            bündig), statt als volle Badges in der Namenszeile. */}
+        <CatalogThumb
+          imageId={imageId}
+          alt={`Bild zu ${beyblade.name}`}
+          size={64}
+          manufacturer={beyblade.manufacturer}
+          spinDirection={traits?.spinDirection ?? null}
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">
             {beyblade.name}
             {beyblade.productCode && <span className="ml-2 text-xs font-normal text-current/50">{beyblade.productCode}</span>}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1">
-            {/* #137 — Hersteller/Drehrichtung farblich unterscheidbar statt beide neutral-grau. */}
-            <Badge tone={beyblade.manufacturer === 'TT' ? 'cyan' : 'neutral'}>
-              {beyblade.manufacturer === 'TT' ? 'Takara Tomy' : 'Hasbro'}
-            </Badge>
-            {traits?.spinDirection && (
-              <Badge tone={traits.spinDirection === 'RIGHT' ? 'attack' : 'defense'}>
-                {traits.spinDirection === 'RIGHT' ? 'Rechtsdrehend' : 'Linksdrehend'}
-              </Badge>
-            )}
             {traits?.beyType && <TypeBadge type={traits.beyType} />}
             {owned && <Badge tone="green">✓ Im Besitz</Badge>}
           </div>
