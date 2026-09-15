@@ -7,6 +7,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import { sanitizeCallbackUrl } from '@/lib/callbackUrl'
@@ -91,6 +92,14 @@ export function LoginForm({ t }: { t: LoginStrings }) {
         >
           {pending ? '…' : t.submit}
         </button>
+        {/* #197 — jeder Weg zu /login (Sidebar, Teams-GuestGate-Klick, direkter Aufruf) landete
+            bisher ohne Ausweg zur Registrierung; GuestGate selbst zeigt schon beide Buttons. */}
+        <p className="text-center text-sm text-current/70">
+          {t.noAccount}{' '}
+          <Link href="/register" className="font-medium text-x-cyan-text underline underline-offset-2 dark:text-x-cyan">
+            {t.registerLink}
+          </Link>
+        </p>
       </form>
     </main>
   )

@@ -55,8 +55,11 @@ const NAV_GROUPS: readonly (readonly NavLink[])[] = [
   [{ href: '/events', labelKey: 'events', icon: Calendar }],
   [
     { href: '/decks', labelKey: 'decks', icon: Layers, auth: true },
+    // #197 — Builds/Sammlung sind teilweise öffentlich (view-only Katalog-Tabs), deshalb kein
+    // Schloss mehr; nur die jeweils eingebettete "Meine ..."-Tab-Ansicht bleibt gated
+    // (GuestTabBanner statt vollem Sperrbildschirm).
     { href: '/builds', labelKey: 'builds', icon: Package },
-    { href: '/collection', labelKey: 'collection', icon: Archive, auth: true },
+    { href: '/collection', labelKey: 'collection', icon: Archive },
   ],
   [
     { href: '/rangliste', labelKey: 'leaderboard', icon: TrendingUp },

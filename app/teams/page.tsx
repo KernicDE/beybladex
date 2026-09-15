@@ -1,7 +1,9 @@
-// app/teams/page.tsx (RC15, issue #12; public directory added #198)
+// app/teams/page.tsx (RC15, issue #12; public directory + guest access added #197/#198)
 // Two tabs, same pattern as /builds and /collection:
 //   • "Meine Teams" — the viewer's own memberships (gated; a GuestTabBanner replaces the
-//     panel for guests instead of a full-page block, since the directory tab is public).
+//     panel for guests instead of a full-page block, since the directory tab is public —
+//     this supersedes #197's original full-page GuestGate treatment for /teams, which
+//     predated the directory tab and would now also hide it from guests).
 //   • "Alle Teams" — public directory with search (name) and an "aktiv" filter. "Aktiv" is
 //     defined here as a full 3-member roster (the only objectively determinable "can
 //     compete" state — the issue itself doesn't define the term further).

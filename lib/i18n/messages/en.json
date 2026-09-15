@@ -17,7 +17,9 @@
       "password": "Password",
       "totp": "2FA code (TOTP)",
       "error": "Sign-in failed. If 2FA is enabled, enter the current TOTP code.",
-      "submit": "Sign in"
+      "submit": "Sign in",
+      "noAccount": "Don't have an account yet?",
+      "registerLink": "Register"
     },
     "register": {
       "heading": "Register",
@@ -374,6 +376,8 @@
     "emptyDirectoryFilteredTitle": "No teams found",
     "emptyDirectoryFilteredDescription": "No team matches this search and filter.",
     "gateMineTitle": "My teams is members-only",
-    "gateMineDescription": "Sign in to see and manage your teams."
+    "gateMineDescription": "Sign in to see and manage your teams.",
+    "gateTitle": "Teams are members-only",
+    "gateDescription": "Found a 3-vs-3 team with two teammates and register together for team tournaments. Sign in to see your teams."
   }
 }

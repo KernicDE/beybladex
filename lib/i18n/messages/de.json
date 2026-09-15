@@ -17,7 +17,9 @@
       "password": "Passwort",
       "totp": "2FA-Code (TOTP)",
       "error": "Anmeldung fehlgeschlagen. Falls 2FA aktiv ist, gib den aktuellen TOTP-Code ein.",
-      "submit": "Anmelden"
+      "submit": "Anmelden",
+      "noAccount": "Noch kein Konto?",
+      "registerLink": "Registrieren"
     },
     "register": {
       "heading": "Registrieren",
@@ -374,6 +376,8 @@
     "emptyDirectoryFilteredTitle": "Keine Teams gefunden",
     "emptyDirectoryFilteredDescription": "Für diese Suche und diesen Filter gibt es kein Team.",
     "gateMineTitle": "Meine Teams sind nur für Mitglieder",
-    "gateMineDescription": "Melde dich an, um deine Teams zu sehen und zu verwalten."
+    "gateMineDescription": "Melde dich an, um deine Teams zu sehen und zu verwalten.",
+    "gateTitle": "Teams sind nur für Mitglieder",
+    "gateDescription": "Gründe ein 3-gegen-3-Team mit zwei Mitspieler:innen und meldet euch gemeinsam zu Team-Turnieren an. Melde dich an, um deine Teams zu sehen."
   }
 }

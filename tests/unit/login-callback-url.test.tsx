@@ -40,6 +40,14 @@ describe('LoginForm — callbackUrl return (issue #20)', () => {
     expect(screen.getByText(/Du wolltest eine Seite aufrufen, die nur für Mitglieder ist/i)).toBeInTheDocument()
   })
 
+  // issue #197 — every path into /login (Sidebar, Teams' GuestGate, direct visit) used to be a
+  // dead end for someone who wanted to register, not sign in.
+  it('links to registration', () => {
+    render(<LoginForm t={t} />)
+
+    expect(screen.getByRole('link', { name: 'Registrieren' })).toHaveAttribute('href', '/register')
+  })
+
   it('returns to the callbackUrl after a successful login', async () => {
     window.history.replaceState(null, '', '/login?callbackUrl=%2Fdecks')
     render(<LoginForm t={t} />)

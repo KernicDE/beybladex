@@ -9,9 +9,11 @@
 //   • "Öffentliche Builds" — visibility=PUBLIC aller User: Karten mit kanonischem Namen, Typ,
 //     Rating-Summary (Batch-Aggregate) und Ersteller:in; Suche (Teilname) + Typ-Filter.
 // Offizielle Sets leben seit MVP4 #141 im Beyblade-Modell und im Beyblades-Tab der Sammlung.
-// Per-user surface — force-dynamic per the caching half of the Regression Guard; guests get
-// the explained GuestGate (RC8 #20) with a callbackUrl. Echte Seitenzahlen statt "Weitere
-// laden" (#155, ?page= — components/ui/Pagination.tsx); beide Tabs tragen ihr tab= mit.
+// Per-user surface — force-dynamic per the caching half of the Regression Guard. #197 — "Öffentliche
+// Builds" ist inhaltlich schon öffentlich, deshalb sehen Gäste diesen Tab als View-Only-Default;
+// nur "Meine Builds" bleibt gated, mit einem GuestTabBanner statt einer vollen Seitensperre.
+// Echte Seitenzahlen statt "Weitere laden" (#155, ?page= — components/ui/Pagination.tsx); beide
+// Tabs tragen ihr tab= mit.
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -26,7 +28,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Tabs, type TabDef } from '@/components/ui/Tabs'
 import { Pagination } from '@/components/ui/Pagination'
-import { GuestGate } from '@/components/auth/GuestGate'
+import { GuestTabBanner } from '@/components/auth/GuestTabBanner'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,18 +54,10 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
-  if (!session?.user?.id) {
-    return (
-      <GuestGate
-        title={t.builds.gateTitle}
-        description={t.builds.gateDescription}
-        callbackUrl="/builds"
-        labels={t.guestGate}
-      />
-    )
-  }
-
-  const activeTab = tab === 'public' ? 'public' : 'mine'
+  const isGuest = !session?.user?.id
+  // #197 — Gäste landen immer auf "Öffentliche Builds" (Default-Tab), egal was ?tab= sagt;
+  // "Meine Builds" existiert für sie nur als GuestTabBanner, nie mit echter Query.
+  const activeTab = isGuest ? 'public' : tab === 'public' ? 'public' : 'mine'
   const query = str(q).trim()
   const typeFilter = str(bt)
   const currentPage = pageNum(page)
@@ -75,7 +69,7 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
     // nicht, wessen Teile sie/er im Besitz hat (das ist der onlyMineUserId-Availability-Filter
     // des Deck-Builder-Teile-Pickers, siehe lib/buildSearch.ts) — sonst verschwindet ein
     // frisch erstellter Build sofort wieder, solange nicht jedes Teil als "im Besitz" markiert ist.
-    creatorId: activeTab === 'mine' ? session.user.id : null,
+    creatorId: activeTab === 'mine' ? session!.user!.id : null,
     publicOnly: activeTab === 'public',
     type: activeTab === 'public' ? typeFilter || null : null,
   })
@@ -93,7 +87,14 @@ export default async function BuildsPage({ searchParams }: PageProps<'/builds'>)
     : []
   const ratings = shapeRatingAggregates(ratingRows)
 
-  const mineContent = (
+  const mineContent = isGuest ? (
+    <GuestTabBanner
+      title={t.builds.gateTitle}
+      description={t.builds.gateDescription}
+      callbackUrl="/builds?tab=mine"
+      labels={t.guestGate}
+    />
+  ) : (
     <div className="space-y-6">
       {neu === '1' && <BuildComboPanel />}
 
