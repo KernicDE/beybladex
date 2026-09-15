@@ -10,6 +10,12 @@ const rateLimit = vi.fn()
 const tournamentFindUnique = vi.fn()
 const userFindUnique = vi.fn()
 const tournamentUpdate = vi.fn()
+// Issue #199 — POST /complete now also calls lib/tournamentPlacement.ts's
+// computeAndPersistPlacement, which queries these two collections before deciding there is
+// nothing to rank (no COMPLETED stages) and returning early — mocked here so that placement
+// computation stays a no-op for this route-level rate-limit test, which isn't about placement.
+const tournamentStageFindMany = vi.fn()
+const tournamentParticipantFindMany = vi.fn()
 
 vi.mock('@/lib/auth', () => ({ auth: (...a: unknown[]) => auth(...a) }))
 vi.mock('@/lib/rateLimit', () => ({ rateLimit: (...a: unknown[]) => rateLimit(...a) }))
@@ -20,6 +26,8 @@ vi.mock('@/lib/db', () => ({
       update: (...a: unknown[]) => tournamentUpdate(...a),
     },
     user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
+    tournamentStage: { findMany: (...a: unknown[]) => tournamentStageFindMany(...a) },
+    tournamentParticipant: { findMany: (...a: unknown[]) => tournamentParticipantFindMany(...a) },
   },
 }))
 
@@ -31,9 +39,11 @@ const params = Promise.resolve({ id: 'tournament-1' })
 beforeEach(() => {
   vi.clearAllMocks()
   auth.mockResolvedValue({ user: { id: ORGANIZER.id } })
-  tournamentFindUnique.mockResolvedValue({ createdById: ORGANIZER.id, completedAt: null })
+  tournamentFindUnique.mockResolvedValue({ createdById: ORGANIZER.id, completedAt: null, teamMode: false })
   userFindUnique.mockResolvedValue({ role: 'USER' })
   tournamentUpdate.mockResolvedValue({ id: 'tournament-1' })
+  tournamentStageFindMany.mockResolvedValue([])
+  tournamentParticipantFindMany.mockResolvedValue([])
 })
 
 describe('POST /api/tournaments/[id]/complete rate limiting (issue #37)', () => {

@@ -7,6 +7,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
+import { computeAndPersistPlacement } from '@/lib/tournamentPlacement'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -27,6 +28,9 @@ export async function POST(_req: Request, { params }: Ctx) {
 
   const completedAt = tournament.completedAt ?? new Date()
   await prisma.tournament.update({ where: { id }, data: { completedAt } })
+  // Issue #199 — persist final placement now, once, so "bester Platz"/"durchschnittliche
+  // Platzierung" never re-derives an old tournament's bracket/standings shape at read time.
+  await computeAndPersistPlacement(id)
   // Hotfix #99: keeps the cached public detail consistent if completion state ever joins the
   // public SELECT; one DEL, same cost as the TTL path it replaces.
   await invalidatePublicCache(publicTournamentKey(id))
