@@ -79,7 +79,10 @@ describe('PartDetailPage (issue #105; MVP4 #141 — Beyblades UND Builds)', () =
 
     await PartDetailPage({ params: Promise.resolve({ id: 'p1' }) } as never)
 
-    expect(buildFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: OCCURRENCE_WHERE }))
+    // Issue #187 — die Builds-Rückverweis-Query ist zusätzlich auf visibility=PUBLIC
+    // eingeschränkt (öffentliche Katalogseite, kein Login nötig); Beyblades (offizielle Sets)
+    // kennen keine Sichtbarkeit und bleiben beim reinen Occurrence-where.
+    expect(buildFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [OCCURRENCE_WHERE, { visibility: 'PUBLIC' }] } }))
     expect(beybladeFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: OCCURRENCE_WHERE }))
   })
 
