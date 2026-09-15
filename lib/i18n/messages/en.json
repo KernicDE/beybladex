@@ -356,7 +356,12 @@
     "colMatches": "Matches",
     "lastSeason": "View last season: {name}",
     "notifyInbox": "Get notified when a season starts",
-    "notifyLogin": "Sign in to get notified"
+    "notifyLogin": "Sign in to get notified",
+    "clubFilterLabel": "Club",
+    "clubFilterAll": "All clubs",
+    "yourRank": "Your rank: #{rank}",
+    "jumpToRank": "Jump to your rank",
+    "notRanked": "You're not ranked yet — play {min} matches this season to get a rank."
   },
   "teamsPage": {
     "heading": "My teams",
