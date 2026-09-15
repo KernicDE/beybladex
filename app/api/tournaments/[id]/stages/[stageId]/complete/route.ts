@@ -21,6 +21,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
 import { sortSwiss } from '@/lib/swiss'
+import { eliminationRanking } from '@/lib/bracket'
 import { invalidatePublicCache, publicTournamentKey } from '@/lib/publicCache'
 
 type Ctx = { params: Promise<{ id: string; stageId: string }> }
@@ -99,36 +100,4 @@ export async function POST(_req: Request, { params }: Ctx) {
   // Hotfix #99: the cached public detail page previews the latest stage's matches/standings.
   await invalidatePublicCache(publicTournamentKey(id))
   return Response.json({ id: stageId, status: 'COMPLETED', ranking, qualified: qualified.length > 0 ? qualified : undefined })
-}
-
-/**
- * Bracket-placement ranking for an elimination stage (see header). `lbRounds` = 2R−2 for
- * double-elimination (a WB loss is virtualized to round + lbRounds), 0 for single-elimination.
- */
-function eliminationRanking(
-  matches: { id: string; round: number; bracketOrder: number; bracketSide: string | null; player1Id: string | null; player2Id: string | null; winnerId: string | null; status: string }[],
-  pool: string[]
-): string[] {
-  const played = matches.filter((m) => m.status === 'COMPLETED' && m.winnerId !== null && m.player1Id !== null && m.player2Id !== null)
-  const championMatch = [...played].sort((a, b) => b.round - a.round || b.bracketOrder - a.bracketOrder)[0]
-  const champion = championMatch?.winnerId ?? null
-  const maxRound = Math.max(0, ...matches.map((m) => m.round))
-  const lbRounds = maxRound > 0 && matches.some((m) => m.bracketSide === 'GRAND_FINAL') ? 2 * ((maxRound + 1) / 3) - 2 : 0
-
-  const placement = new Map<string, number>()
-  for (const m of played) {
-    if (m.winnerId === champion && m.id === championMatch?.id) continue
-    const loser = m.player1Id === m.winnerId ? m.player2Id! : m.player1Id!
-    const virtualRound = m.round + (m.bracketSide === 'WINNERS' ? lbRounds : 0)
-    // A player's placement is their LAST (deepest-round) loss; winning the whole stage never
-    // lands here (champion excluded above).
-    placement.set(loser, Math.max(placement.get(loser) ?? 0, virtualRound))
-  }
-
-  return [
-    ...(champion ? [champion] : []),
-    ...pool
-      .filter((u) => u !== champion)
-      .sort((a, b) => (placement.get(b) ?? 0) - (placement.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0)),
-  ]
 }

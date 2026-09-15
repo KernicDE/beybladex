@@ -20,6 +20,11 @@ const matchCreateMany = vi.fn()
 const matchFindMany = vi.fn()
 const userFindUnique = vi.fn()
 const notifyMatchReady = vi.fn()
+// Issue #199 — Team-Elo write path (lib/teamElo.ts) hooked into resolveTeamEncounter.
+const tournamentFindUnique = vi.fn()
+const seasonFindFirst = vi.fn()
+const teamRatingUpsert = vi.fn()
+const teamRatingUpdate = vi.fn()
 
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -43,6 +48,12 @@ vi.mock('@/lib/db', () => ({
       findMany: (...a: unknown[]) => matchFindMany(...a),
     },
     user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
+    tournament: { findUnique: (...a: unknown[]) => tournamentFindUnique(...a) },
+    season: { findFirst: (...a: unknown[]) => seasonFindFirst(...a) },
+    teamRating: {
+      upsert: (...a: unknown[]) => teamRatingUpsert(...a),
+      update: (...a: unknown[]) => teamRatingUpdate(...a),
+    },
   },
 }))
 vi.mock('@/lib/notify', () => ({ notifyMatchReady: (...a: unknown[]) => notifyMatchReady(...a) }))
@@ -71,6 +82,7 @@ function teamMatchRow(overrides: Record<string, unknown> = {}) {
   const slots = (prefix: string) => [1, 2, 3].map((position) => ({ position, userId: `${prefix}-${position}` }))
   return {
     id: 'tm-1',
+    tournamentId: T,
     stageId: STAGE,
     round: 1,
     bracketOrder: 0,
@@ -228,6 +240,63 @@ describe('resolveTeamEncounter — the score-route hook', () => {
       where: { id: 'tm-1', status: { not: 'COMPLETED' } },
       data: { status: 'COMPLETED', winnerEntryId: 'entry-2', winsTeam1: 1, winsTeam2: 2 },
     })
+  })
+
+  it('issue #199 — a decided encounter applies Team-Elo when the tournament is rankedEligible and a season is active', async () => {
+    tmFindUnique.mockResolvedValue(teamMatchRow({
+      team1Entry: { slots: [{ position: 1, userId: 'a-1' }, { position: 2, userId: 'a-2' }, { position: 3, userId: 'a-3' }], teamId: 'team-a' },
+      team2Entry: { slots: [{ position: 1, userId: 'b-1' }, { position: 2, userId: 'b-2' }, { position: 3, userId: 'b-3' }], teamId: 'team-b' },
+      games: [
+        { id: 'g1', status: 'COMPLETED', winnerId: 'a-2' },
+        { id: 'g2', status: 'COMPLETED', winnerId: 'a-1' },
+        { id: 'g3', status: 'PENDING', winnerId: null },
+      ],
+    }))
+    tsFindUnique.mockResolvedValue({ format: 'SINGLE_ELIMINATION' })
+    tmUpdateMany.mockResolvedValue({ count: 1 })
+    tournamentFindUnique.mockResolvedValue({ rankedEligible: true })
+    seasonFindFirst.mockResolvedValue({ id: 'season-1', status: 'ACTIVE' })
+    teamRatingUpsert.mockImplementation(({ where }: { where: { seasonId_teamId: { teamId: string } } }) =>
+      Promise.resolve({ id: `rating-${where.seasonId_teamId.teamId}`, elo: 1000, peakElo: 1000, matchesPlayed: 0 }))
+
+    await resolveTeamEncounter('tm-1')
+
+    expect(tournamentFindUnique).toHaveBeenCalledWith({ where: { id: T }, select: { rankedEligible: true } })
+    expect(teamRatingUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { seasonId_teamId: { seasonId: 'season-1', teamId: 'team-a' } },
+    }))
+    expect(teamRatingUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { seasonId_teamId: { seasonId: 'season-1', teamId: 'team-b' } },
+    }))
+    // team-a (winner) gains Elo, team-b (loser) loses it — both starting at 1000.
+    expect(teamRatingUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'rating-team-a' },
+      data: expect.objectContaining({ elo: expect.any(Number), matchesPlayed: { increment: 1 } }),
+    }))
+    const winnerCall = teamRatingUpdate.mock.calls.find((c) => c[0].where.id === 'rating-team-a')![0]
+    const loserCall = teamRatingUpdate.mock.calls.find((c) => c[0].where.id === 'rating-team-b')![0]
+    expect(winnerCall.data.elo).toBeGreaterThan(1000)
+    expect(loserCall.data.elo).toBeLessThan(1000)
+  })
+
+  it('issue #199 — skips Team-Elo when the tournament is not rankedEligible', async () => {
+    tmFindUnique.mockResolvedValue(teamMatchRow({
+      team1Entry: { slots: [{ position: 1, userId: 'a-1' }, { position: 2, userId: 'a-2' }, { position: 3, userId: 'a-3' }], teamId: 'team-a' },
+      team2Entry: { slots: [{ position: 1, userId: 'b-1' }, { position: 2, userId: 'b-2' }, { position: 3, userId: 'b-3' }], teamId: 'team-b' },
+      games: [
+        { id: 'g1', status: 'COMPLETED', winnerId: 'a-2' },
+        { id: 'g2', status: 'COMPLETED', winnerId: 'a-1' },
+        { id: 'g3', status: 'PENDING', winnerId: null },
+      ],
+    }))
+    tsFindUnique.mockResolvedValue({ format: 'SINGLE_ELIMINATION' })
+    tmUpdateMany.mockResolvedValue({ count: 1 })
+    tournamentFindUnique.mockResolvedValue({ rankedEligible: false })
+
+    await resolveTeamEncounter('tm-1')
+
+    expect(seasonFindFirst).not.toHaveBeenCalled()
+    expect(teamRatingUpsert).not.toHaveBeenCalled()
   })
 
   it('already-resolved encounter (lost race) → claim count 0, no double propagation', async () => {

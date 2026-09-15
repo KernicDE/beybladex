@@ -25,6 +25,8 @@ import { slotFeeder } from '@/lib/stageFlow'
 import { notifyMatchReady } from '@/lib/notify'
 import { encounterState, encounterGamePlayers, type LineupSlot } from '@/lib/teams'
 import { StageGenerateError, type GenerateStageResult } from '@/lib/stageGenerate'
+import { getActiveSeason } from '@/lib/season'
+import { applyTeamMatchResultToRatings } from '@/lib/teamElo'
 import type { Prisma, PrismaClient, TeamMatch } from '@prisma/client'
 
 // Same contract as lib/stageFlow.ts: callers inside a transaction (the score route) pass the
@@ -235,6 +237,24 @@ export async function resolveTeamEncounter(teamMatchId: string, db: Db = prisma)
     data: { status: 'COMPLETED', winnerEntryId, winsTeam1: state.winsTeam1, winsTeam2: state.winsTeam2 },
   })
   if (claimed.count === 0) return
+
+  // Issue #199 — Team-Elo update, the encounter-level analog of the solo score route's Phase 14
+  // block: gated on the tournament's rankedEligible flag AND an ACTIVE season existing, applies
+  // once per real COMPLETED transition (inherited from the conditional claim above). Team-Elo
+  // is keyed by TEAM id, not entry id — an entry is one tournament's registration, the team
+  // itself is the persistent, cross-tournament competitive identity.
+  const loserEntryId = teamMatch.team1EntryId === winnerEntryId ? teamMatch.team2EntryId : teamMatch.team1EntryId
+  const winnerTeamId = winnerEntryId === teamMatch.team1EntryId ? teamMatch.team1Entry?.teamId : teamMatch.team2Entry?.teamId
+  const loserTeamId = loserEntryId === teamMatch.team1EntryId ? teamMatch.team1Entry?.teamId : teamMatch.team2Entry?.teamId
+  if (winnerTeamId && loserTeamId) {
+    const tournament = await db.tournament.findUnique({ where: { id: teamMatch.tournamentId }, select: { rankedEligible: true } })
+    if (tournament?.rankedEligible) {
+      const activeSeason = await getActiveSeason(db)
+      if (activeSeason) {
+        await applyTeamMatchResultToRatings(db, activeSeason.id, winnerTeamId, loserTeamId)
+      }
+    }
+  }
 
   const stageFormat = (await db.tournamentStage.findUnique({ where: { id: teamMatch.stageId }, select: { format: true } }))?.format
   if (stageFormat === 'DOUBLE_ELIMINATION') {

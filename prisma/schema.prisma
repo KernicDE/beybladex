@@ -526,12 +526,13 @@ enum SeasonStatus {
 }
 
 model Season {
-  id       String         @id @default(uuid())
-  name     String // organizer-facing label, e.g. "Season 1 – Frühjahr 2026"
-  startsAt DateTime
-  endsAt   DateTime
-  status   SeasonStatus   @default(ACTIVE)
-  ratings  PlayerRating[]
+  id           String         @id @default(uuid())
+  name         String // organizer-facing label, e.g. "Season 1 – Frühjahr 2026"
+  startsAt     DateTime
+  endsAt       DateTime
+  status       SeasonStatus   @default(ACTIVE)
+  ratings      PlayerRating[]
+  teamRatings  TeamRating[]
 
   @@index([status])
 }
@@ -548,6 +549,25 @@ model PlayerRating {
   updatedAt   DateTime @updatedAt
 
   @@unique([seasonId, userId])
+  @@index([seasonId, elo])
+}
+
+// Issue #199 — team-ranking groundwork: the exact TEAM analog of PlayerRating (same Elo
+// formula via lib/elo.ts's applyEloResult, same per-season shape), updated from
+// lib/teamStage.ts's resolveTeamEncounter the moment a TeamMatch (best-of-3 encounter, not
+// the individual sub-games) is decided.
+model TeamRating {
+  id            String   @id @default(uuid())
+  seasonId      String
+  season        Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  elo           Int      @default(1000)
+  peakElo       Int      @default(1000)
+  matchesPlayed Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([seasonId, teamId])
   @@index([seasonId, elo])
 }
 
@@ -586,6 +606,12 @@ model TournamentParticipant {
   // beim Wählen/Wechseln eines Decks (das die Erinnerung ja gegenstandslos macht) wieder auf
   // null zurückgesetzt, damit ein späterer Deck-Reset (deckId → null) erneut erinnert.
   deckReminderSentAt DateTime?
+
+  // Issue #199 — persisted final placement (1 = champion), written ONCE at tournament
+  // completion (lib/tournamentPlacement.ts) so "bester Platz"/"durchschnittliche Platzierung"
+  // never re-derives an old tournament's bracket/standings shape at read time. Null until the
+  // tournament completes; a withdrawn participant never gets one (excluded from ranking).
+  placement          Int?
 
   @@unique([tournamentId, userId])
   // RC7 (#36): "all tournaments of a user" (profile page, account export) — the @@unique above
@@ -998,6 +1024,8 @@ model Team {
   entries     TeamTournamentEntry[]
   // Issue #198 — internal team chat, same capped-buffer shape as ClubMessage.
   messages    TeamMessage[]
+  // Issue #199 — per-season Team-Elo (TeamRating).
+  ratings     TeamRating[]
   createdAt   DateTime              @default(now())
 }
 

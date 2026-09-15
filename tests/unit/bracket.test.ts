@@ -3,7 +3,7 @@
 // seeding (ascending userId), n−1 total matches for n participants, byes as auto-completed
 // round-1 matches (see the bye policy documented in lib/bracket.ts).
 import { describe, it, expect } from 'vitest'
-import { generateSingleEliminationBracket, nextSingleEliminationSlot, stageWinnersRounds, type BracketNode } from '@/lib/bracket'
+import { generateSingleEliminationBracket, nextSingleEliminationSlot, stageWinnersRounds, eliminationRanking, type BracketNode } from '@/lib/bracket'
 
 function participants(n: number, prefix = 'p'): { userId: string }[] {
   // Reverse order on purpose: the generator must sort deterministically, not use input order.
@@ -107,5 +107,39 @@ describe('nextSingleEliminationSlot', () => {
     expect(nextSingleEliminationSlot({ round: 1, bracketOrder: 1 })).toEqual({ round: 2, bracketOrder: 0, slot: 'player2Id' })
     expect(nextSingleEliminationSlot({ round: 2, bracketOrder: 2 })).toEqual({ round: 3, bracketOrder: 1, slot: 'player1Id' })
     expect(nextSingleEliminationSlot({ round: 2, bracketOrder: 3 })).toEqual({ round: 3, bracketOrder: 1, slot: 'player2Id' })
+  })
+})
+
+// Issue #199 — extracted from the stage-complete route (unchanged behavior) so the whole-
+// tournament placement snapshot (lib/tournamentPlacement.ts) can reuse the exact same ranking.
+describe('eliminationRanking', () => {
+  it('4-player single-elimination: champion first, semifinal losers tied below the runner-up', () => {
+    const matches = [
+      { id: 'm1', round: 1, bracketOrder: 0, bracketSide: null, player1Id: 'a', player2Id: 'b', winnerId: 'a', status: 'COMPLETED' },
+      { id: 'm2', round: 1, bracketOrder: 1, bracketSide: null, player1Id: 'c', player2Id: 'd', winnerId: 'c', status: 'COMPLETED' },
+      { id: 'm3', round: 2, bracketOrder: 0, bracketSide: null, player1Id: 'a', player2Id: 'c', winnerId: 'a', status: 'COMPLETED' },
+    ]
+    const ranking = eliminationRanking(matches, ['a', 'b', 'c', 'd'])
+    expect(ranking[0]).toBe('a') // champion
+    expect(ranking[1]).toBe('c') // runner-up (lost the final, round 2)
+    // b and d both lost in round 1 — tied for 3rd, order between them is the userId tiebreak.
+    expect(ranking.slice(2)).toEqual(['b', 'd'])
+  })
+
+  it('double-elimination: a run through the losers bracket outranks a single winners-bracket loss', () => {
+    // R=2 (4 players): WB rounds 1-2, LB rounds 3-4 (3R-2=4), grand final round 5 (3R-1).
+    const matches = [
+      { id: 'wb1', round: 1, bracketOrder: 0, bracketSide: 'WINNERS', player1Id: 'a', player2Id: 'b', winnerId: 'a', status: 'COMPLETED' },
+      { id: 'wb2', round: 1, bracketOrder: 1, bracketSide: 'WINNERS', player1Id: 'c', player2Id: 'd', winnerId: 'c', status: 'COMPLETED' },
+      { id: 'wbf', round: 2, bracketOrder: 0, bracketSide: 'WINNERS', player1Id: 'a', player2Id: 'c', winnerId: 'a', status: 'COMPLETED' },
+      { id: 'lb1', round: 3, bracketOrder: 0, bracketSide: 'LOSERS', player1Id: 'b', player2Id: 'd', winnerId: 'd', status: 'COMPLETED' },
+      { id: 'lbf', round: 4, bracketOrder: 0, bracketSide: 'LOSERS', player1Id: 'd', player2Id: 'c', winnerId: 'd', status: 'COMPLETED' },
+      { id: 'gf', round: 5, bracketOrder: 0, bracketSide: 'GRAND_FINAL', player1Id: 'a', player2Id: 'd', winnerId: 'a', status: 'COMPLETED' },
+    ]
+    const ranking = eliminationRanking(matches, ['a', 'b', 'c', 'd'])
+    // a won it all; d ran the whole losers bracket to the grand final (runner-up); c lost the
+    // WB final and was eliminated in the LB final; b lost round 1 and was eliminated in LB
+    // round 1 — the least deep run of the four.
+    expect(ranking).toEqual(['a', 'd', 'c', 'b'])
   })
 })
