@@ -1,0 +1,101 @@
+# compose.test.yml — a second, independent deploy of the SAME image (ghcr.io/kernicde/
+# beybladex:latest) as compose.yml, for a standing Test/Staging environment alongside Live.
+# Own containers, own Postgres/Redis, own volumes, own Traefik host rule (test.beybladex.de) —
+# nothing here reads or writes production data or the production compose stack. GoLive for
+# Test is the same manual step as Live, just with -f compose.test.yml:
+#   docker compose -f compose.test.yml pull app && docker compose -f compose.test.yml up -d app
+#
+# Notification-sending integrations (SMTP, Web Push, DeepL) are intentionally left unset here
+# (see lib/mailer.ts / lib/webPush.ts / lib/i18n/deepl.ts — all degrade to a graceful log-and-
+# noop without their env vars, same as a fresh dev box) — a test environment full of seeded
+# fake users must never actually send email or push notifications.
+#
+# DNS: point test.beybladex.de (A/AAAA) at this server before Traefik can issue a cert for it;
+# until then the container runs fine, it's just not reachable over HTTPS yet.
+services:
+  app:
+    image: ghcr.io/kernicde/beybladex:latest
+    container_name: beybladex_test_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HOSTNAME: "0.0.0.0" # see compose.yml's comment on this Next-standalone-in-Docker gotcha
+      DATABASE_URL: postgresql://beybladex_test_user:${DB_PASSWORD}@db:5432/beybladex_test_db
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: https://test.beybladex.de
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}
+      INTERNAL_CRON_SECRET: ${INTERNAL_CRON_SECRET}
+      MEDIA_UPLOADS_DIR: /app/media_uploads
+    volumes:
+      - media_uploads_test:/app/media_uploads
+    networks:
+      - proxy
+      - internal
+    healthcheck:
+      test: wget -qO- http://127.0.0.1:3000/api/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.beybladex-test.rule=Host(`test.beybladex.de`)
+      - traefik.http.routers.beybladex-test.entrypoints=websecure
+      - traefik.http.routers.beybladex-test.tls.certresolver=letsencrypt
+      - traefik.http.routers.beybladex-test.service=beybladex-test
+      - traefik.http.services.beybladex-test.loadbalancer.server.port=3000
+      - traefik.http.routers.beybladex-test-http.rule=Host(`test.beybladex.de`)
+      - traefik.http.routers.beybladex-test-http.entrypoints=web
+      - traefik.http.routers.beybladex-test-http.middlewares=beybladex-test-https
+      - traefik.http.middlewares.beybladex-test-https.redirectscheme.scheme=https
+      # Deliberately NO watchtower.enable label — Test is promoted manually (same manual GoLive
+      # step as Live), never auto-pulled, so a broken :latest build never silently breaks BOTH.
+
+  db:
+    image: postgres:16-alpine
+    container_name: beybladex_test_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beybladex_test_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: beybladex_test_db
+    volumes:
+      - postgres_data_test:/var/lib/postgresql/data
+    ports:
+      # Loopback-only (never proxied/public) — lets an operator seed/inspect data via an SSH
+      # tunnel (`ssh -L 5433:localhost:5433 ...`) without opening the DB to the internet.
+      - "127.0.0.1:5433:5432"
+    networks:
+      - internal
+    healthcheck:
+      test: pg_isready -U beybladex_test_user -d beybladex_test_db
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: beybladex_test_redis
+    restart: unless-stopped
+    networks:
+      - internal
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data_test:
+  media_uploads_test:
+
+networks:
+  proxy:
+    external: true
+  internal:
+    name: beybladex_test_internal

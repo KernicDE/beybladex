@@ -102,3 +102,35 @@ permanentem Redirect (308) dorthin umleiten, QR-Codes/Shares migrieren —
 nur mit SEO-Begleitung (canonical, Sitemap), nicht als Refactor-Beifang.
 
 <!-- END:beybladex-terminology -->
+
+# Test-Umgebung (2026-09-15)
+
+Zusätzlich zu Live (`compose.yml`, `/opt/docker/beybladex/app-beybladex`) gibt es eine
+zweite, dauerhafte Umgebung: **Test** (`compose.test.yml`,
+`/opt/docker/beybladex/app-beybladex-test`, https://test.beybladex.de). Eigene
+Container/DB/Redis/Volumes — nichts wird mit Live geteilt.
+
+- **GoLive für Test**: derselbe manuelle Schritt wie Live, nur mit `-f
+  compose.test.yml`: `docker compose -f compose.test.yml pull app && docker
+  compose -f compose.test.yml up -d app`. Kein Watchtower-Label auf dem
+  Test-Container — ein kaputter `:latest`-Build bricht nie beide Umgebungen
+  gleichzeitig.
+- **Katalog**: Part/Beyblade/MediaAsset wurden 1:1 aus Live kopiert (`pg_dump`
+  → `psql COPY`, plus die referenzierten `.webp`-Dateien aus dem
+  `media_uploads`-Volume) — dieselben Beyblades/Teile wie auf beybladex.de,
+  keine Fake-Daten im Katalog.
+- **Community-/Wettkampfdaten**: `scripts/seedTestEnvironment.ts` erzeugt 500
+  User (Login: `testenv_admin` / `TestEnv2026!`, gleiches Passwort für alle
+  500), 15 Clubs, 40 Teams, 2 Seasons und 50 Turniere — die meisten davon
+  vollständig simuliert (echte Bracket-/Swiss-Propagation, Elo, Platzierung)
+  über `lib/bracket.ts`/`lib/stageFlow.ts`/`lib/season.ts`/
+  `lib/tournamentPlacement.ts`, nicht handgestrickt. Läuft NICHT idempotent —
+  nur gegen eine frisch migrierte, community-daten-leere Test-DB ausführen
+  (siehe die Kommentare im Skript für die genaue Vorgehensweise inkl.
+  Katalog-Kopie).
+- **DB-Zugriff**: `beybladex_test_db` exponiert `127.0.0.1:5433` auf dem
+  Server (nie öffentlich) — Zugriff nur per SSH-Tunnel
+  (`ssh -L 5433:localhost:5433 nicolas@kernic.net`).
+- SMTP/Web-Push/DeepL sind in `compose.test.yml` bewusst NICHT gesetzt (die
+  jeweiligen Libs degradieren graceful) — eine Umgebung voller Fake-User darf
+  nie wirklich E-Mails oder Push-Notifications verschicken.
