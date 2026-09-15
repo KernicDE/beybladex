@@ -1,18 +1,34 @@
-// components/teams/TeamSettingsPanel.tsx (RC15, issue #12)
+// components/teams/TeamSettingsPanel.tsx (RC15, issue #12; description+logo added #198)
 // Captain-only settings on /teams/[slug]: rename (the slug stays stable so shared links keep
-// working) and disband. Disbanding is refused by the API while the team is registered in a
-// started, unfinished tournament (409 team_competing).
+// working), description, crest/logo (TeamLogoUpload), and disband. Disbanding is refused by
+// the API while the team is registered in a started, unfinished tournament (409 team_competing).
 'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Textarea'
 import { TEAM_NAME_MAX } from '@/lib/teams'
+import { TeamLogoUpload } from '@/components/teams/TeamLogoUpload'
 
-export function TeamSettingsPanel({ slug, name }: { slug: string; name: string }) {
+const DESCRIPTION_MAX = 1000
+
+export function TeamSettingsPanel({
+  slug,
+  name,
+  description,
+  logoImageId,
+}: {
+  slug: string
+  name: string
+  description: string | null
+  logoImageId: string | null
+}) {
   const router = useRouter()
   const [value, setValue] = useState(name)
+  const [descValue, setDescValue] = useState(description ?? '')
+  const [descPending, setDescPending] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDisband, setConfirmDisband] = useState(false)
@@ -27,6 +43,20 @@ export function TeamSettingsPanel({ slug, name }: { slug: string; name: string }
       body: JSON.stringify({ name: value }),
     })
     setPending(false)
+    if (res.ok) router.refresh()
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'unknown')
+  }
+
+  async function saveDescription(e: React.FormEvent) {
+    e.preventDefault()
+    setDescPending(true)
+    setError(null)
+    const res = await fetch(`/api/teams/${slug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: descValue }),
+    })
+    setDescPending(false)
     if (res.ok) router.refresh()
     else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'unknown')
   }
@@ -55,6 +85,27 @@ export function TeamSettingsPanel({ slug, name }: { slug: string; name: string }
           Umbenennen
         </Button>
       </form>
+
+      <TeamLogoUpload slug={slug} name={name} logoImageId={logoImageId} />
+
+      <form onSubmit={saveDescription} className="space-y-2">
+        <label htmlFor="team-description" className="block text-sm font-medium">Beschreibung</label>
+        <Textarea
+          id="team-description"
+          value={descValue}
+          onChange={(e) => setDescValue(e.target.value)}
+          maxLength={DESCRIPTION_MAX}
+          rows={3}
+          placeholder="Erzähl etwas über euer Team…"
+        />
+        <div className="flex items-center gap-2">
+          <Button type="submit" variant="secondary" size="sm" disabled={descPending || descValue === (description ?? '')}>
+            Speichern
+          </Button>
+          <span className="text-xs text-current/50">{descValue.length}/{DESCRIPTION_MAX}</span>
+        </div>
+      </form>
+
       <div className="space-y-2 rounded-md border border-type-attack/30 p-3">
         <p className="text-sm font-medium">Team auflösen</p>
         {confirmDisband ? (

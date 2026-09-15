@@ -15,6 +15,9 @@ export interface TeamMemberRow {
   userId: string
   name: string
   role: 'CAPTAIN' | 'MEMBER'
+  // Issue #198 — public detail page shows member avatars; null renders the initial-letter
+  // placeholder (same fallback as Sidebar.tsx/AvatarSection.tsx).
+  avatarImageId: string | null
 }
 
 export function TeamMembersPanel({
@@ -71,6 +74,14 @@ export function TeamMembersPanel({
         {members.map((m) => (
           <li key={m.userId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-current/10 px-3 py-2 text-sm">
             <span className="flex items-center gap-2">
+              {m.avatarImageId ? (
+                // eslint-disable-next-line @next/next/no-img-element -- small 24px roster avatar, same trade-off as Sidebar.tsx
+                <img src={`/api/media/${m.avatarImageId}`} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+              ) : (
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-x-cyan/20 text-[10px] font-semibold text-x-cyan-text dark:text-x-cyan">
+                  {m.name.slice(0, 1).toUpperCase()}
+                </span>
+              )}
               {m.name}
               {m.role === 'CAPTAIN' && <Badge tone="cyan">Captain</Badge>}
             </span>

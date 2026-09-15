@@ -8,6 +8,7 @@ import {
   lineupError,
   encounterState,
   encounterGamePlayers,
+  teamMatchRecord,
   TEAM_SIZE,
 } from '@/lib/teams'
 
@@ -95,5 +96,53 @@ describe('encounterGamePlayers — fixed slot-vs-slot pairing', () => {
   it('throws loudly on an incomplete lineup (server bug, never a silent undefined pairing)', () => {
     expect(() => encounterGamePlayers([{ position: 1, userId: 'a-1' }], slots('b'))).toThrow('encounter_lineup_incomplete')
     expect(() => encounterGamePlayers(slots('a'), [{ position: 1, userId: 'b-1' }, { position: 2, userId: 'b-2' }, { position: 4, userId: 'b-4' }])).toThrow('encounter_lineup_incomplete')
+  })
+})
+
+describe('teamMatchRecord — issue #198 public win/loss/draw aggregation', () => {
+  const own = new Set(['own-entry'])
+
+  it('counts a win when the own entry is the winner', () => {
+    expect(teamMatchRecord([{ status: 'COMPLETED', winnerEntryId: 'own-entry' }], own)).toEqual({
+      played: 1, wins: 1, losses: 0, draws: 0,
+    })
+  })
+
+  it('counts a loss when the opponent entry is the winner', () => {
+    expect(teamMatchRecord([{ status: 'COMPLETED', winnerEntryId: 'other-entry' }], own)).toEqual({
+      played: 1, wins: 0, losses: 1, draws: 0,
+    })
+  })
+
+  it('ignores PENDING/IN_PROGRESS matches entirely', () => {
+    expect(
+      teamMatchRecord(
+        [
+          { status: 'PENDING', winnerEntryId: null },
+          { status: 'IN_PROGRESS', winnerEntryId: null },
+        ],
+        own,
+      ),
+    ).toEqual({ played: 0, wins: 0, losses: 0, draws: 0 })
+  })
+
+  it('counts a completed-but-winnerless match (tie edge case) as a draw, not a win or loss', () => {
+    expect(teamMatchRecord([{ status: 'COMPLETED', winnerEntryId: null }], own)).toEqual({
+      played: 1, wins: 0, losses: 0, draws: 1,
+    })
+  })
+
+  it('aggregates a mixed history correctly', () => {
+    expect(
+      teamMatchRecord(
+        [
+          { status: 'COMPLETED', winnerEntryId: 'own-entry' },
+          { status: 'COMPLETED', winnerEntryId: 'own-entry' },
+          { status: 'COMPLETED', winnerEntryId: 'other-entry' },
+          { status: 'PENDING', winnerEntryId: null },
+        ],
+        own,
+      ),
+    ).toEqual({ played: 3, wins: 2, losses: 1, draws: 0 })
   })
 })

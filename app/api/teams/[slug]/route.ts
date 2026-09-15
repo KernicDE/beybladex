@@ -2,8 +2,9 @@
 // Team settings + disband. AUTHZ RULE (CAPTAIN tier, lib/teamAuth.ts): rename / change club
 // affiliation / disband require a TeamMember CAPTAIN row for THIS team or an ADMIN role.
 // - PATCH: body.name (re-validated, slug stays stable — a renamed team must not break shared
-//   links) and/or body.clubId (null clears the affiliation; a set value requires an ACTIVE
-//   membership of that club, same rule as creation).
+//   links), body.clubId (null clears the affiliation; a set value requires an ACTIVE
+//   membership of that club, same rule as creation), and/or body.description (issue #198 —
+//   free-text bio, same 500-char bio-convention cap as Club.description; empty string clears it).
 // - DELETE: disbands the team (members/entries cascade). Refused (409 team_competing) while
 //   the team is registered in a started, not-yet-completed tournament — silently removing a
 //   team from a live event would corrupt the bracket.
@@ -13,6 +14,9 @@ import { rateLimit } from '@/lib/rateLimit'
 import { validateTeamName } from '@/lib/teams'
 import { authorizeTeamCaptain } from '@/lib/teamAuth'
 import { getActiveMembership } from '@/lib/clubMembers'
+
+// Same bio-convention cap as Club.description (app/api/clubs/[slug]/route.ts).
+const DESCRIPTION_MAX = 1000
 
 type Ctx = { params: Promise<{ slug: string }> }
 
@@ -33,11 +37,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
     return Response.json({ error: 'invalid_json' }, { status: 400 })
   }
 
-  const data: { name?: string; clubId?: string | null } = {}
+  const data: { name?: string; clubId?: string | null; description?: string | null } = {}
   if (body.name !== undefined) {
     const nameCheck = validateTeamName(body.name)
     if (!nameCheck.ok) return Response.json({ error: nameCheck.error }, { status: 400 })
     data.name = nameCheck.name
+  }
+  if (body.description !== undefined) {
+    if (body.description !== null && (typeof body.description !== 'string' || body.description.length > DESCRIPTION_MAX)) {
+      return Response.json({ error: 'invalid_description' }, { status: 400 })
+    }
+    data.description = typeof body.description === 'string' ? body.description.trim() || null : null
   }
   if (body.clubId !== undefined) {
     if (body.clubId !== null && typeof body.clubId !== 'string') {
@@ -54,7 +64,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     data.clubId = body.clubId
   }
 
-  const updated = await prisma.team.update({ where: { id: authz.team.id }, data, select: { id: true, name: true, slug: true, clubId: true } })
+  const updated = await prisma.team.update({ where: { id: authz.team.id }, data, select: { id: true, name: true, slug: true, clubId: true, description: true } })
   return Response.json(updated)
 }
 

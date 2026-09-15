@@ -363,6 +363,17 @@
     "intro": "Teams are 3-vs-3 rosters for team tournaments (WBO Masters League format) — with exactly 3 members who register as a team together.",
     "emptyTitle": "No team yet",
     "emptyDescription": "Found your first team below and invite two teammates — with a full roster you can register for team tournaments.",
-    "createTitle": "Found a new team"
+    "createTitle": "Found a new team",
+    "tabMine": "My teams",
+    "tabAll": "All teams",
+    "searchLabel": "Search teams",
+    "searchPlaceholder": "Team name…",
+    "activeOnly": "Active teams only (full roster)",
+    "emptyDirectoryTitle": "No teams yet",
+    "emptyDirectoryDescription": "Once a team is founded, it appears here.",
+    "emptyDirectoryFilteredTitle": "No teams found",
+    "emptyDirectoryFilteredDescription": "No team matches this search and filter.",
+    "gateMineTitle": "My teams is members-only",
+    "gateMineDescription": "Sign in to see and manage your teams."
   }
 }
