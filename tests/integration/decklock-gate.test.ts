@@ -40,7 +40,7 @@ describe('Decklock-Gate: deckId setzen/wechseln respektiert die Sperrfrist, nich
 
   it('deckLockAt in der Vergangenheit (aber startDate noch in der Zukunft): Registrierung ohne Deck bleibt offen, MIT Deck wird abgelehnt', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `dlg_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `dlg_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const player = await prisma.user.create({ data: { username: `dlg_pla_${suffix}`, passwordHash: 'x' } })
     const ruleset = await prisma.ruleset.create({ data: { title: `dlg_rs_${suffix}`, slug: `dlg-rs-${suffix}`, createdById: organizer.id } })
     const tournament = await prisma.tournament.create({
@@ -90,7 +90,7 @@ describe('Decklock-Gate: deckId setzen/wechseln respektiert die Sperrfrist, nich
 
   it('ein Deck vor der Sperrfrist wählen bleibt erlaubt (positiver Gegentest)', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `dlg2_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `dlg2_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const player = await prisma.user.create({ data: { username: `dlg2_pla_${suffix}`, passwordHash: 'x' } })
     const ruleset = await prisma.ruleset.create({ data: { title: `dlg2_rs_${suffix}`, slug: `dlg2-rs-${suffix}`, createdById: organizer.id } })
     const tournament = await prisma.tournament.create({

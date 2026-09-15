@@ -28,8 +28,8 @@ describe('Auto-Meta dirty-set recompute', () => {
 
   it('marks builds/parts dirty on completion (via the score route) and recomputeDirtyMeta caches the expected win rates', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `mt_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
-    const judge = await prisma.user.create({ data: { username: `mt_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const organizer = await prisma.user.create({ data: { username: `mt_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
+    const judge = await prisma.user.create({ data: { username: `mt_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const p1 = await prisma.user.create({ data: { username: `mt_p1_${suffix}`, passwordHash: 'x' } })
     const opp = await prisma.user.create({ data: { username: `mt_opp_${suffix}`, passwordHash: 'x' } })
 

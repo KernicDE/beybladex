@@ -2,7 +2,8 @@
 // Phase 5 Part C — "Judge zuweisen" from the organizer console. AUTHZ RULE (standing
 // Global-Constraints requirement; negative test in tests/integration/organizer-console.test.ts):
 // only the tournament's creator or an ADMIN may assign/unassign a match's judge; anyone else
-// gets 403. The assignee must hold the JUDGE or ADMIN role (judgeId: null unassigns).
+// gets 403. The assignee must have isJudge set or hold the ADMIN role (issue #199 follow-up —
+// Judge is an additive capability, not a trust-tier role; judgeId: null unassigns).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
@@ -37,8 +38,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!match) return Response.json({ error: 'not_found' }, { status: 404 })
 
   if (judgeId) {
-    const judge = await prisma.user.findUnique({ where: { id: judgeId }, select: { role: true } })
-    if (!judge || (judge.role !== 'JUDGE' && judge.role !== 'ADMIN')) {
+    const judge = await prisma.user.findUnique({ where: { id: judgeId }, select: { role: true, isJudge: true } })
+    if (!judge || (!judge.isJudge && judge.role !== 'ADMIN')) {
       return Response.json({ error: 'invalid_judge' }, { status: 400 })
     }
   }

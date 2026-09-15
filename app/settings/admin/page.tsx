@@ -1,8 +1,9 @@
 // app/settings/admin/page.tsx
 // ADMIN-only user administration: paginated user list, searchable by username (?q=), with a
-// role Select per row (GUEST/USER/TRUSTED/JUDGE/ORGANIZER/ADMIN — TRUSTED included like any
-// other role: it means "trusted catalog contributor" for Phase 5's Part curation). Non-admins
-// are redirected home — this page's API twin returns 403, so the redirect hides nothing.
+// role Select per row (GUEST/USER/TRUSTED/ADMIN — TRUSTED included like any other role: it
+// means "trusted catalog contributor" for Phase 5's Part curation) plus Judge/Organizer
+// checkboxes for the additive capabilities (issue #199 follow-up). Non-admins are redirected
+// home — this page's API twin returns 403, so the redirect hides nothing.
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
@@ -43,7 +44,7 @@ export default async function AdminUsersPage({
     orderBy: { username: 'asc' },
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: { id: true, username: true, role: true, status: true, createdAt: true },
+    select: { id: true, username: true, role: true, isJudge: true, isOrganizer: true, status: true, createdAt: true },
   })
 
   const hasMore = rows.length > PAGE_SIZE
@@ -102,7 +103,12 @@ export default async function AdminUsersPage({
                 <span className="ml-auto flex items-center gap-2">
                   {user.status !== 'ERASED' && (
                     <>
-                      <RoleSelect userId={user.id} currentRole={user.role} />
+                      <RoleSelect
+                        userId={user.id}
+                        currentRole={user.role}
+                        currentIsJudge={user.isJudge}
+                        currentIsOrganizer={user.isOrganizer}
+                      />
                       {user.id !== currentUserId && (
                         <DeleteUserButton userId={user.id} username={user.username} />
                       )}

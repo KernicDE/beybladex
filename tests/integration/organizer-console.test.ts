@@ -32,10 +32,10 @@ describe('organizer console', () => {
 
   it('rejects a non-owner non-admin with 403 on every console action; the owner runs the full journey', async () => {
     const suffix = Date.now().toString(36)
-    const owner = await prisma.user.create({ data: { username: `oc_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const owner = await prisma.user.create({ data: { username: `oc_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const admin = await prisma.user.create({ data: { username: `oc_adm_${suffix}`, passwordHash: 'x', role: 'ADMIN' } })
-    const judge = await prisma.user.create({ data: { username: `oc_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
-    const intruder = await prisma.user.create({ data: { username: `oc_int_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const judge = await prisma.user.create({ data: { username: `oc_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
+    const intruder = await prisma.user.create({ data: { username: `oc_int_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const ruleset = await prisma.ruleset.create({ data: { title: `OC ${suffix}`, slug: `oc-${suffix}`, createdById: owner.id } })
     const tournament = await prisma.tournament.create({
       data: {

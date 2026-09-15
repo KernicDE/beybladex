@@ -24,8 +24,8 @@ afterEach(() => mockAuth.mockReset())
 describe('dual-spin mode lock', () => {
   it('locks at match start and rejects a later attempt to change it (409), but tolerates resubmitting the same value', async () => {
     const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    const organizer = await prisma.user.create({ data: { username: `sml_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
-    const judge = await prisma.user.create({ data: { username: `sml_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const organizer = await prisma.user.create({ data: { username: `sml_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
+    const judge = await prisma.user.create({ data: { username: `sml_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const p1 = await prisma.user.create({ data: { username: `sml_p1_${suffix}`, passwordHash: 'x' } })
     const p2 = await prisma.user.create({ data: { username: `sml_p2_${suffix}`, passwordHash: 'x' } })
 
@@ -91,8 +91,8 @@ describe('dual-spin mode lock', () => {
   // a fresh match/build pair (player2's side) so no spin mode is ever set at match start.
   it('rejects setting a spin mode for the first time after the match has left PENDING (null→value)', async () => {
     const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    const organizer = await prisma.user.create({ data: { username: `smlb_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
-    const judge = await prisma.user.create({ data: { username: `smlb_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const organizer = await prisma.user.create({ data: { username: `smlb_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
+    const judge = await prisma.user.create({ data: { username: `smlb_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const p1 = await prisma.user.create({ data: { username: `smlb_p1_${suffix}`, passwordHash: 'x' } })
     const p2 = await prisma.user.create({ data: { username: `smlb_p2_${suffix}`, passwordHash: 'x' } })
 

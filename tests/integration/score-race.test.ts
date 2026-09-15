@@ -26,8 +26,8 @@ describe('match score concurrent submissions', () => {
 
   it('applies standings and Elo exactly once when two different clientEventIds race a completion', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `sr_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
-    const judge = await prisma.user.create({ data: { username: `sr_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const organizer = await prisma.user.create({ data: { username: `sr_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
+    const judge = await prisma.user.create({ data: { username: `sr_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const p1 = await prisma.user.create({ data: { username: `sr_p1_${suffix}`, passwordHash: 'x' } })
     const p2 = await prisma.user.create({ data: { username: `sr_p2_${suffix}`, passwordHash: 'x' } })
     const ruleset = await prisma.ruleset.create({

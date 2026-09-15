@@ -3,8 +3,9 @@
 // authz tier that lib/tournamentJudges.ts's isTournamentStaff checks for the QR check-in,
 // arena check-in, and payment routes. AUTHZ RULE (standing Global-Constraints requirement):
 // granting/revoking judge status is organizer(createdById)/ADMIN-only — NOT delegatable to
-// existing judges — anyone else gets 403. The target user must hold the global JUDGE or
-// ADMIN role (matching the existing per-match judge-assign route's same invariant).
+// existing judges — anyone else gets 403. The target user must have isJudge set or hold the
+// ADMIN role (issue #199 follow-up — Judge is additive, not a trust-tier role; matches the
+// existing per-match judge-assign route's same invariant).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rateLimit'
@@ -50,8 +51,8 @@ export async function POST(req: Request, { params }: Ctx): Promise<Response> {
     return Response.json({ error: 'invalid_member' }, { status: 400 })
   }
 
-  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { role: true } })
-  if (!target || (target.role !== 'JUDGE' && target.role !== 'ADMIN')) {
+  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { role: true, isJudge: true } })
+  if (!target || (!target.isJudge && target.role !== 'ADMIN')) {
     return Response.json({ error: 'invalid_judge' }, { status: 400 })
   }
 

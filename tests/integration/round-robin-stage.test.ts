@@ -30,7 +30,7 @@ describe('round-robin stage: generate → score → complete', () => {
 
   it('5 participants play C(5,2)=10 matches; completion ranks by standings; negatives 409', async () => {
     const suffix = Date.now().toString(36)
-    const owner = await prisma.user.create({ data: { username: `rr_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const owner = await prisma.user.create({ data: { username: `rr_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const ruleset = await prisma.ruleset.create({
       // targetPoints 1, finalsTargetPoints 2: a single SPIN at targetPoints completes a match —
       // if the score route wrongly treated the last round-robin round as a "final" (2 points),

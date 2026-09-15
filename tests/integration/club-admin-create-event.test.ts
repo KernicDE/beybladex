@@ -87,7 +87,7 @@ describe('club-admin tournament creation', () => {
 
   it('a clubId that does not exist is 400 even for a global ORGANIZER', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `cae_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `cae_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const ruleset = await prisma.ruleset.create({ data: { title: `CAE RS3 ${suffix}`, slug: `cae-rs3-${suffix}`, createdById: organizer.id } })
     mockAuth.mockResolvedValue(asSession({ id: organizer.id, name: organizer.username }))
 

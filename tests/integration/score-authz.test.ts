@@ -26,10 +26,10 @@ describe('match score authorization', () => {
 
   it('rejects a non-assigned user (even a JUDGE) with 403; assigned judge, owner and ADMIN may POST', async () => {
     const suffix = Date.now().toString(36)
-    const owner = await prisma.user.create({ data: { username: `sa_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const owner = await prisma.user.create({ data: { username: `sa_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const admin = await prisma.user.create({ data: { username: `sa_adm_${suffix}`, passwordHash: 'x', role: 'ADMIN' } })
-    const judge = await prisma.user.create({ data: { username: `sa_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
-    const otherJudge = await prisma.user.create({ data: { username: `sa_ojd_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const judge = await prisma.user.create({ data: { username: `sa_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
+    const otherJudge = await prisma.user.create({ data: { username: `sa_ojd_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const randomUser = await prisma.user.create({ data: { username: `sa_rnd_${suffix}`, passwordHash: 'x' } })
     const p1 = await prisma.user.create({ data: { username: `sa_p1_${suffix}`, passwordHash: 'x' } })
     const p2 = await prisma.user.create({ data: { username: `sa_p2_${suffix}`, passwordHash: 'x' } })

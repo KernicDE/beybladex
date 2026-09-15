@@ -160,6 +160,13 @@ model User {
   passwordHash String?
   email        String?
   role         Role    @default(USER)
+  // Issue #199 follow-up — Judge and Organizer are ADDITIVE capabilities, independent of the
+  // role trust ladder (GUEST<USER<TRUSTED<ADMIN): someone can be e.g. TRUSTED+isJudge,
+  // USER+isOrganizer, or TRUSTED+isJudge+isOrganizer simultaneously. The Role enum keeps its
+  // JUDGE/ORGANIZER values for backward-compat DB rows only — new code must never write or
+  // check them; isJudge/isOrganizer are the single source of truth going forward.
+  isJudge      Boolean @default(false)
+  isOrganizer  Boolean @default(false)
 
   displayName           String?
   // Phase 19: collision-checked form of displayName (trim().toLowerCase().normalize('NFKC')),

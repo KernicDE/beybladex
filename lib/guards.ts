@@ -20,8 +20,9 @@
 //
 // TIER SEMANTICS (preserved from the pre-guard routes, do not widen silently):
 //   - requireUser    — any authenticated account (GUEST and up).
-//   - requireCurator — the widened Phase 11 reviewer tier TRUSTED/JUDGE/ORGANIZER/ADMIN
-//                      (lib/roles.ts CURATOR_ROLES) — proposal review + parts curation.
+//   - requireCurator — the widened Phase 11 reviewer tier: TRUSTED/ADMIN plus anyone with
+//                      isJudge or isOrganizer set (lib/roles.ts CURATOR_ROLES + additive flags,
+//                      issue #199 follow-up) — proposal review + parts curation.
 //   - requireAdmin   — ADMIN only (season boundaries, role assignment).
 //   Resource-scoped tiers (assigned Judge, resource Owner, ACTIVE club admin) are NOT roles:
 //   they stay in the route, layered on top of requireUser/requireAdmin, e.g.
@@ -37,7 +38,7 @@
 // guards exist to prevent (see issue #42).
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { isCurator, type CuratorRole } from '@/lib/roles'
+import { isCurator } from '@/lib/roles'
 import type { Role } from '@prisma/client'
 
 export type GuardError = { error: Response }
@@ -76,13 +77,17 @@ export async function requireRole(...roles: readonly Role[]): Promise<RoleGate> 
   return { userId: gate.userId, role }
 }
 
-/** The widened Phase 11 reviewer tier (TRUSTED/JUDGE/ORGANIZER/ADMIN via lib/roles.ts). */
+/** The widened Phase 11 reviewer tier: TRUSTED/ADMIN, plus anyone with isJudge or isOrganizer
+ *  set (lib/roles.ts) — Judge/Organizer are additive capabilities, not trust-tier roles. */
 export async function requireCurator(): Promise<RoleGate> {
   const gate = await requireUser()
   if ('error' in gate) return gate
-  const role = await getCallerRole(gate.userId)
-  if (!isCurator(role)) return forbidden()
-  return { userId: gate.userId, role: role as CuratorRole }
+  const caller = await prisma.user.findUnique({
+    where: { id: gate.userId },
+    select: { role: true, isJudge: true, isOrganizer: true },
+  })
+  if (!caller || !isCurator(caller)) return forbidden()
+  return { userId: gate.userId, role: caller.role }
 }
 
 /** ADMIN only — the narrowest tier (season boundaries, role assignment). */

@@ -22,10 +22,10 @@ function req(method: string, url: string, body?: unknown) {
 }
 
 async function seedTournament(suffix: string) {
-  const organizer = await prisma.user.create({ data: { username: `p7_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+  const organizer = await prisma.user.create({ data: { username: `p7_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
   const player1 = await prisma.user.create({ data: { username: `p7_pl1_${suffix}`, passwordHash: 'x' } })
   const player2 = await prisma.user.create({ data: { username: `p7_pl2_${suffix}`, passwordHash: 'x' } })
-  const judgeUser = await prisma.user.create({ data: { username: `p7_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+  const judgeUser = await prisma.user.create({ data: { username: `p7_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
   const stranger = await prisma.user.create({ data: { username: `p7_str_${suffix}`, passwordHash: 'x' } })
   const ruleset = await prisma.ruleset.create({ data: { title: `RS7 ${suffix}`, slug: `rs7-${suffix}`, createdById: organizer.id } })
   const tournament = await prisma.tournament.create({

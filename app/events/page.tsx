@@ -5,7 +5,8 @@
 // (against the selected country, DE when none is selected), prefilters SQL by a bounding box
 // and applies the exact haversine pass to the result rows. An unresolvable PLZ degrades to a
 // notice + unfiltered list, never to an error.
-// EmptyState renders a "Turnier erstellen" CTA for ORGANIZER/ADMIN sessions AND for users who
+// EmptyState renders a "Turnier erstellen" CTA for isOrganizer/ADMIN sessions (issue #199
+// follow-up — Organizer is an additive capability, not a trust-tier role) AND for users who
 // administer at least one club (Phase 4's Club membership path — the same rule the API enforces).
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
@@ -65,7 +66,7 @@ export default async function EventsPage({
   const plzQuery = (plz ?? '').trim()
 
   const caller = session?.user?.id
-    ? await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+    ? await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true, isOrganizer: true } })
     : null
   // Same rule as POST /api/tournaments: global organizer/admin role OR administration of at
   // least one club (owner or isAdmin member). Phase 13: only ACTIVE memberships count —
@@ -73,7 +74,7 @@ export default async function EventsPage({
   const adminClubCount = session?.user?.id
     ? await prisma.clubMember.count({ where: { userId: session.user.id, isAdmin: true, status: 'ACTIVE' } })
     : 0
-  const canCreate = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN' || adminClubCount > 0
+  const canCreate = caller?.isOrganizer === true || caller?.role === 'ADMIN' || adminClubCount > 0
 
   // RC9 #33 — postal-code radius. Geocode against the country filter when it is one of the
   // DACH codes, else DE (the dominant share of the calendar and the geocoder's safest guess

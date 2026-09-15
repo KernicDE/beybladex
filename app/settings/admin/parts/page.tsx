@@ -1,11 +1,12 @@
 // app/settings/admin/parts/page.tsx
 // Parts-catalog curation. Two distinct authz tiers on one page (Phase 11 widened the reviewer
 // tier past the original TRUSTED/ADMIN pair, but NOT the direct-authoring tier):
-// - Page gate / proposal review: TRUSTED, JUDGE, ORGANIZER, or ADMIN (lib/roles.ts's
-//   isCurator) — the people most likely to encounter an uncatalogued real-world part.
+// - Page gate / proposal review: TRUSTED/ADMIN, or anyone with isJudge/isOrganizer set
+//   (lib/roles.ts's isCurator, issue #199 follow-up) — the people most likely to encounter an
+//   uncatalogued real-world part.
 // - Direct catalog authoring (the searchable list + inline PartForm edit/create): TRUSTED or
 //   ADMIN only, unchanged — the API twin (/api/admin/parts) still 403s everyone else, so a
-//   JUDGE/ORGANIZER reaching this page sees ONLY the proposal queue, not the catalog-edit UI.
+//   Judge/Organizer reaching this page sees ONLY the proposal queue, not the catalog-edit UI.
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
@@ -28,8 +29,8 @@ export default async function AdminPartsPage({ searchParams }: PageProps<'/setti
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-  if (!isCurator(caller?.role)) redirect('/settings/profile')
+  const caller = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true, isJudge: true, isOrganizer: true } })
+  if (!caller || !isCurator(caller)) redirect('/settings/profile')
   const canAuthor = caller?.role === 'TRUSTED' || caller?.role === 'ADMIN'
 
   const query = typeof q === 'string' ? q.trim() : ''

@@ -23,7 +23,7 @@ afterEach(() => mockAuth.mockReset())
 describe('tournament join deck-format re-validation', () => {
   it('rejects a 1-build deck registering for a WBO_COUNTERDECK (3-build) tournament with 400', async () => {
     const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    const organizer = await prisma.user.create({ data: { username: `jdf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `jdf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const player = await prisma.user.create({ data: { username: `jdf_ply_${suffix}`, passwordHash: 'x' } })
 
     const blade = await prisma.part.create({ data: { name: `Bl ${suffix}`, manufacturer: 'TT', category: 'BLADE', spinDirection: 'RIGHT' } })
@@ -56,7 +56,7 @@ describe('tournament join deck-format re-validation', () => {
 
   it('accepts a 1-build deck for a ONE_ON_ONE tournament', async () => {
     const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    const organizer = await prisma.user.create({ data: { username: `jdf2_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `jdf2_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const player = await prisma.user.create({ data: { username: `jdf2_ply_${suffix}`, passwordHash: 'x' } })
 
     const blade = await prisma.part.create({ data: { name: `Bl2 ${suffix}`, manufacturer: 'TT', category: 'BLADE', spinDirection: 'RIGHT' } })

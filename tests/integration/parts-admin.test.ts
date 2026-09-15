@@ -1,9 +1,10 @@
 // tests/integration/parts-admin.test.ts
-// Phase 5 Part A: parts-catalog curation authz. The canonical curator tier
-// TRUSTED/JUDGE/ORGANIZER/ADMIN (lib/roles.ts CURATOR_ROLES, issue #42 — the old hardcoded
-// TRUSTED/ADMIN list that 403'd JUDGE/ORGANIZER is gone) can POST/PATCH /api/admin/parts —
-// 401 unauthenticated, 403 for GUEST/USER (negative tests, per the standing Global-Constraints
-// rule). A TRUSTED user succeeds and the mutation writes an AuditLog row.
+// Phase 5 Part A: parts-catalog curation authz. The canonical curator tier — TRUSTED/ADMIN plus
+// anyone with isJudge or isOrganizer set (lib/roles.ts CURATOR_ROLES, issue #42 — the old
+// hardcoded TRUSTED/ADMIN list that 403'd Judge/Organizer is gone; issue #199 follow-up made
+// Judge/Organizer additive capabilities instead of trust-tier roles) can POST/PATCH
+// /api/admin/parts — 401 unauthenticated, 403 for GUEST/USER (negative tests, per the standing
+// Global-Constraints rule). A TRUSTED user succeeds and the mutation writes an AuditLog row.
 // The old "part-requests queue" test below was removed — PartRequest was replaced by
 // CatalogProposal in Phase 11; see tests/integration/catalog-proposal-flow.test.ts.
 // CI-only (Postgres/Redis).
@@ -38,7 +39,12 @@ function post(body: unknown) {
 
 async function makeUser(tag: string, role: 'GUEST' | 'USER' | 'TRUSTED' | 'JUDGE' | 'ORGANIZER' | 'ADMIN') {
   const suffix = Date.now().toString(36)
-  const user = await prisma.user.create({ data: { username: `pa_${tag}_${suffix}`, passwordHash: 'x', role } })
+  // JUDGE/ORGANIZER are additive capabilities now (issue #199 follow-up), not trust-tier roles —
+  // the Role enum value itself is kept for backward-compat DB rows only; the flags are what
+  // requireCurator actually checks.
+  const user = await prisma.user.create({
+    data: { username: `pa_${tag}_${suffix}`, passwordHash: 'x', role, isJudge: role === 'JUDGE', isOrganizer: role === 'ORGANIZER' },
+  })
   ids.users.push(user.id)
   return user
 }
