@@ -21,9 +21,9 @@ const PAGE_SIZE = 25
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; cursor?: string }>
+  searchParams: Promise<{ q?: string; cursor?: string; showErased?: string }>
 }) {
-  const { q, cursor } = await searchParams
+  const { q, cursor, showErased } = await searchParams
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
@@ -32,12 +32,18 @@ export default async function AdminUsersPage({
   const currentUserId = session.user.id
 
   const query = (q ?? '').trim()
+  const includeErased = showErased === '1'
+  // Issue #189 — ERASED rows are anonymized GDPR tombstones (lib/accountErasure.ts), hidden by
+  // default so the list reflects real accounts; the toggle below lets an admin still audit them.
   const rows = await prisma.user.findMany({
-    where: query ? { username: { contains: query, mode: 'insensitive' } } : {},
+    where: {
+      ...(query ? { username: { contains: query, mode: 'insensitive' } } : {}),
+      ...(includeErased ? {} : { status: { not: 'ERASED' } }),
+    },
     orderBy: { username: 'asc' },
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: { id: true, username: true, role: true, createdAt: true },
+    select: { id: true, username: true, role: true, status: true, createdAt: true },
   })
 
   const hasMore = rows.length > PAGE_SIZE
@@ -70,7 +76,15 @@ export default async function AdminUsersPage({
         </div>
       </div>
 
-      <SearchInput action="/settings/admin" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SearchInput action="/settings/admin" />
+        <Link
+          href={`/settings/admin?${query ? `q=${encodeURIComponent(query)}&` : ''}${includeErased ? '' : 'showErased=1'}`}
+          className="whitespace-nowrap text-sm text-current/60 underline-offset-2 hover:underline"
+        >
+          {includeErased ? 'Gelöschte Konten ausblenden' : 'Gelöschte Konten anzeigen'}
+        </Link>
+      </div>
 
       {page.length === 0 ? (
         <EmptyState
@@ -84,10 +98,15 @@ export default async function AdminUsersPage({
               <Card className="flex flex-wrap items-center gap-3 p-4">
                 <span className="font-medium">@{user.username}</span>
                 {user.role === 'ADMIN' && <Badge tone="cyan">Admin</Badge>}
+                {user.status === 'ERASED' && <Badge tone="neutral">Gelöscht</Badge>}
                 <span className="ml-auto flex items-center gap-2">
-                  <RoleSelect userId={user.id} currentRole={user.role} />
-                  {user.id !== currentUserId && (
-                    <DeleteUserButton userId={user.id} username={user.username} />
+                  {user.status !== 'ERASED' && (
+                    <>
+                      <RoleSelect userId={user.id} currentRole={user.role} />
+                      {user.id !== currentUserId && (
+                        <DeleteUserButton userId={user.id} username={user.username} />
+                      )}
+                    </>
                   )}
                 </span>
               </Card>
@@ -99,7 +118,7 @@ export default async function AdminUsersPage({
       {nextCursor && (
         <div className="flex justify-center">
           <Link
-            href={`/settings/admin?${query ? `q=${encodeURIComponent(query)}&` : ''}cursor=${nextCursor}`}
+            href={`/settings/admin?${query ? `q=${encodeURIComponent(query)}&` : ''}${includeErased ? 'showErased=1&' : ''}cursor=${nextCursor}`}
             className="rounded-md border border-current/30 px-4 py-2 text-sm font-medium transition-colors hover:bg-current/5"
           >
             Weitere laden

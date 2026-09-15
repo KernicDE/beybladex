@@ -200,6 +200,8 @@ describe('account deletion (Art. 17)', () => {
     const anonymized = await prisma.user.findUnique({ where: { id: owner.id } })
     expect(anonymized!.username).toBe(`geloescht_${owner.id.slice(0, 8)}`)
     expect(anonymized!.displayName).toBe('Gelöschter Nutzer')
+    // Issue #189 — typed status marker, so the admin list can filter tombstones out.
+    expect(anonymized!.status).toBe('ERASED')
     for (const field of ['email', 'passwordHash', 'bio', 'discordTag', 'city', 'postalCode', 'birthDate', 'totpSecret', 'parentalConsentEmail', 'latitude', 'longitude'] as const) {
       expect(anonymized![field]).toBeNull()
     }

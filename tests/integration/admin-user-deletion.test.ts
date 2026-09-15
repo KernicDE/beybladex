@@ -83,6 +83,7 @@ describe('admin user deletion', () => {
     expect(erased).not.toBeNull()
     expect(erased!.username).toBe(`geloescht_${target.id.slice(0, 8)}`)
     expect(erased!.email).toBeNull()
+    expect(erased!.status).toBe('ERASED')
 
     // Half 2: the audit trail attributes the ADMIN as actor (not the deleted user themselves)
     // — this is the behavior this endpoint adds over the pre-existing self-service path.

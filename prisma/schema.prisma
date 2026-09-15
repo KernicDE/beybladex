@@ -63,6 +63,12 @@ enum BeyType {
 enum AccountStatus {
   ACTIVE
   PENDING_PARENTAL_CONSENT
+  // Issue #189 — set by lib/accountErasure.ts (self-service AND admin-triggered deletion) so
+  // the admin user list can filter these anonymized tombstones out by default without relying
+  // on the `geloescht_*` username prefix as an ad hoc convention. Login is already blocked for
+  // these rows via passwordHash being null (see lib/auth.ts) — this status check is
+  // defense-in-depth, same layering as PENDING_PARENTAL_CONSENT above.
+  ERASED
 }
 
 // Phase 5 Part A — parts catalog. BeyType above (Phase 1) is reused for Part.beyType.
