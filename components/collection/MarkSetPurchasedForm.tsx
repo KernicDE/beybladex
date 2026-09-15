@@ -71,7 +71,7 @@ export function MarkSetPurchasedForm({ beyblade = null }: { beyblade?: { id: str
   if (done) {
     return (
       <p role="status" className="text-sm text-type-balance">
-        Set als gekauft markiert — es ist jetzt in deinem Besitz und alle Teile in deiner Sammlung.
+        Beyblade als gekauft markiert — es ist jetzt in deinem Besitz und alle Teile in deiner Sammlung.
       </p>
     )
   }

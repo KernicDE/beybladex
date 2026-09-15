@@ -7,10 +7,11 @@
 //      Hersteller, Typ, "Nur im Besitz" (Purchase-Subquery). Klick → /beyblades/[id].
 //   2. "Teile" — der Teile-Katalog: Suche + Kategorie-Filter, gruppiert nach Kategorie
 //      (kanonische Assembly-Ordnung, lib/buildSearch.ts groupPartsByCategory). Klick → /parts/[id].
-//   3. "Mein Inventar" — die eigenen CollectionItems (Phase 5 Part B), inkl. der Create-
-//      Formulare (?neu=1, CollectionItemForm + MarkSetPurchasedForm) — das Inventar ist die
-//      Verfügbarkeitsgrundlage der "Meine Builds"-Ansicht und bleibt deshalb erhalten, auch
-//      wenn der UX-Baum in #139 nur Beyblades/Teile auflistet.
+//   3. "Mein Inventar" — die eigenen CollectionItems (Phase 5 Part B), inkl. zweier getrennter
+//      Create-Einstiege (#188 — AddInventoryEntryButtons: "+ Teil" → CollectionItemForm,
+//      "+ Beyblade" → MarkSetPurchasedForm) — das Inventar ist die Verfügbarkeitsgrundlage der
+//      "Meine Builds"-Ansicht und bleibt deshalb erhalten, auch wenn der UX-Baum in #139 nur
+//      Beyblades/Teile auflistet.
 // Legacy-Tab-Namen bleiben als Aliasse gültig: tab=katalog → Beyblades, tab=mine → Inventar.
 // Per-user surface — force-dynamic per the caching half of the Regression Guard; guests get
 // the explained GuestGate (RC8 #20) with a callbackUrl. Beyblades-/Teile-Tab paginieren mit
@@ -38,9 +39,8 @@ import { TypeBadge } from '@/components/beyblade/TypeBadge'
 import { WinRateBadge } from '@/components/beyblade/WinRateBadge'
 import { CatalogThumb } from '@/components/beyblade/CatalogThumb'
 import { AddCatalogEntryToggle } from '@/components/collection/AddCatalogEntryToggle'
+import { AddInventoryEntryButtons } from '@/components/collection/AddInventoryEntryButtons'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
-import { CollectionItemForm } from '@/components/collection/CollectionItemForm'
-import { MarkSetPurchasedForm } from '@/components/collection/MarkSetPurchasedForm'
 import { GuestGate } from '@/components/auth/GuestGate'
 
 export const dynamic = 'force-dynamic'
@@ -67,7 +67,7 @@ function pageNum(v: string | string[] | undefined): number {
 }
 
 export default async function CollectionPage({ searchParams }: PageProps<'/collection'>) {
-  const { cursor, kpage, ppage, neu, tab, q, mf, bt, csd, owned, pq, pc, pt, psd, powned } = await searchParams
+  const { cursor, kpage, ppage, tab, q, mf, bt, csd, owned, pq, pc, pt, psd, powned } = await searchParams
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
@@ -419,29 +419,14 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   const inventoryContent = (
     <div className="space-y-6">
-      {neu === '1' && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <h3 className="mb-3 text-sm font-semibold">{t.collection.addSingle}</h3>
-            <CollectionItemForm />
-          </Card>
-          <Card>
-            <h3 className="mb-3 text-sm font-semibold">{t.collection.markSet}</h3>
-            <MarkSetPurchasedForm />
-          </Card>
-        </div>
-      )}
+      {/* #188 — zwei getrennte Einstiegspunkte statt eines gemeinsamen "?neu=1"-Reveals, das
+          bisher IMMER beide Formulare gleichzeitig zeigte. */}
+      <AddInventoryEntryButtons addSingleLabel={t.collection.addSingle} markSetLabel={t.collection.markSet} />
 
-      {items.length === 0 && neu !== '1' ? (
-        <EmptyState
-          title={t.collection.emptyTitle}
-          description={t.collection.emptyDescription}
-          action={
-            <Link href="/collection?tab=inventar&neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-              {t.collection.addFirst}
-            </Link>
-          }
-        />
+      {items.length === 0 ? (
+        // #188 — kein eigener CTA-Link mehr nötig: "+ Teil"/"+ Beyblade" stehen bereits direkt
+        // darüber (AddInventoryEntryButtons), das frühere gemeinsame "?neu=1" gibt es nicht mehr.
+        <EmptyState title={t.collection.emptyTitle} description={t.collection.emptyDescription} />
       ) : (
         // #160 — Gruppierung nach Teileart statt einer flachen Liste, dieselbe kanonische
         // Reihenfolge wie der Teile-Tab (groupPartsByCategory/PART_CATEGORY_LABELS).
@@ -485,18 +470,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{t.collection.heading}</h1>
-        {/* #188 — dieser Button galt bisher unabhängig vom aktiven Tab und führte auf den
-            Beyblades-/Teile-Tabs verwirrend zu "Mein Inventar" statt dort etwas zu tun (die
-            beiden Tabs haben jetzt ihren eigenen "+"-Einstieg oben, AddCatalogEntryToggle).
-            Nur noch sichtbar, wenn Mein Inventar auch wirklich der aktive Tab ist. */}
-        {activeTab === 'inventar' && items.length > 0 && (
-          <Link href="/collection?tab=inventar&neu=1" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
-            {t.collection.addPart}
-          </Link>
-        )}
-      </div>
+      {/* #188 — der frühere, tab-unabhängige "Teil hinzufügen"-Header-Button ist komplett
+          entfallen: alle drei Tabs haben jetzt ihren eigenen "+"-Einstieg direkt im Tab-Inhalt
+          (AddCatalogEntryToggle auf Beyblades/Teile, AddInventoryEntryButtons auf Mein
+          Inventar) statt eines globalen Buttons, der auf zwei von drei Tabs den falschen Tab
+          öffnete. */}
+      <h1 className="text-2xl font-semibold">{t.collection.heading}</h1>
 
       <Tabs tabs={tabs} defaultTab={activeTab} />
     </main>
