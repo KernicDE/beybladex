@@ -982,6 +982,12 @@ model Team {
   id          String                @id @default(uuid())
   name        String
   slug        String                @unique
+  // Issue #198 — public team profile: free-text bio (same 500-char convention as
+  // Club.description) and an optional crest/logo via the shared MediaAsset pipeline
+  // (mirrors User.avatarImageId — SetNull, the team survives its logo asset being removed).
+  description String?
+  logoImageId String?
+  logoImage   MediaAsset?           @relation("TeamLogo", fields: [logoImageId], references: [id], onDelete: SetNull)
   // Nullable FK per the MVP3 sketch: a team MAY be club-affiliated ("Club X Team A") or stand
   // alone. SetNull — the team survives its club's dissolution.
   clubId      String?
@@ -990,7 +996,23 @@ model Team {
   createdBy   User                  @relation("TeamCreator", fields: [createdById], references: [id])
   members     TeamMember[]
   entries     TeamTournamentEntry[]
+  // Issue #198 — internal team chat, same capped-buffer shape as ClubMessage.
+  messages    TeamMessage[]
   createdAt   DateTime              @default(now())
+}
+
+// Issue #198 — team chat message. Mirrors ClubMessage exactly, including the erasure design:
+// authorId is a plain String (NOT a User FK) so a message survives its author's account
+// erasure (Art. 17), showing an anonymized "gelöschter Nutzer" attribution instead of breaking.
+model TeamMessage {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String // bio-convention free-text cap (500), enforced in the route
+  createdAt DateTime @default(now())
+
+  @@index([teamId, createdAt])
 }
 
 // A team's roster. Capped at 3 ACTIVE members by the route layer (TeamTournamentEntry's
@@ -1152,6 +1174,9 @@ model MediaAsset {
   // Phase 21: users whose current profile photo is this asset (User.avatarImageId,
   // onDelete: SetNull — deleting the asset nulls the user's reference, never the user).
   avatars     User[]            @relation("UserAvatar")
+  // Issue #198: teams whose current crest/logo is this asset (Team.logoImageId, same
+  // SetNull contract as avatars).
+  teamLogos   Team[]            @relation("TeamLogo")
 }
 
 // PricePoint (Phase 5 Part B, [REVIEW-FIX: ux-product §3d, spec §5 Phase 5 "Preisverlauf"]) —

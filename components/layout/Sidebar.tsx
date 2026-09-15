@@ -63,7 +63,9 @@ const NAV_GROUPS: readonly (readonly NavLink[])[] = [
   ],
   [
     { href: '/rangliste', labelKey: 'leaderboard', icon: TrendingUp },
-    { href: '/teams', labelKey: 'teams', icon: Shield, auth: true },
+    // #198 — /teams hat jetzt einen öffentlichen "Alle Teams"-Tab (Verzeichnis); nur "Meine
+    // Teams" bleibt gated (GuestTabBanner innerhalb des Tabs), deshalb kein Schloss mehr.
+    { href: '/teams', labelKey: 'teams', icon: Shield },
     { href: '/clubs', labelKey: 'clubs', icon: Users },
   ],
   [{ href: '/rules', labelKey: 'rules', icon: BookOpen }],

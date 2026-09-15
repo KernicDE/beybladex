@@ -1,7 +1,8 @@
 // components/auth/GuestTabBanner.tsx (issue #197)
 // Compact sibling of GuestGate for use INSIDE a tab panel whose other tabs stay open to guests
-// (Builds' "Meine Builds", Sammlung's "Mein Inventar") — GuestGate itself replaces the whole
-// page, which would also hide the public/catalog tabs that guests are allowed to browse.
+// (Builds' "Meine Builds", Sammlung's "Mein Inventar", Teams' "Meine Teams") — GuestGate itself
+// replaces the whole page, which would also hide the public/catalog/directory tabs that guests
+// are allowed to browse.
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
 import { GUEST_GATE_DEFAULT_LABELS, type GuestGateLabels } from '@/components/auth/GuestGate'

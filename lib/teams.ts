@@ -112,3 +112,30 @@ export function encounterGamePlayers(team1Slots: LineupSlot[], team2Slots: Lineu
     return { player1Id, player2Id }
   })
 }
+
+/** One TeamMatch row as far as the record aggregation below needs it. */
+export interface TeamMatchOutcome {
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+  winnerEntryId: string | null
+}
+
+export interface TeamRecord {
+  played: number
+  wins: number
+  losses: number
+  /** A completed encounter with no winnerEntryId (all-tie edge case, see encounterState) counts
+   *  as neither a win nor a loss — tracked separately so played === wins + losses + draws. */
+  draws: number
+}
+
+/**
+ * Issue #198 — "eigene Statistiken für ihre 3on3 Matches": aggregates a team's TeamMatch rows
+ * (already scoped to matches involving one of this team's OWN entries — see getTeamStats) into
+ * a public win/loss/draw record. `ownEntryIds` distinguishes a win from a loss on each row.
+ */
+export function teamMatchRecord(matches: TeamMatchOutcome[], ownEntryIds: Set<string>): TeamRecord {
+  const completed = matches.filter((m) => m.status === 'COMPLETED')
+  const wins = completed.filter((m) => m.winnerEntryId !== null && ownEntryIds.has(m.winnerEntryId)).length
+  const losses = completed.filter((m) => m.winnerEntryId !== null && !ownEntryIds.has(m.winnerEntryId)).length
+  return { played: completed.length, wins, losses, draws: completed.length - wins - losses }
+}

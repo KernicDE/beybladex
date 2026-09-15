@@ -1,6 +1,6 @@
 // tests/unit/guest-tab-banner.test.tsx (issue #197)
 // GuestTabBanner is GuestGate's compact sibling for embedding inside one tab panel while the
-// page's other tabs (public builds, catalog) stay open to guests.
+// page's other tabs (public builds, catalog, team directory) stay open to guests.
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { GuestTabBanner } from '@/components/auth/GuestTabBanner'

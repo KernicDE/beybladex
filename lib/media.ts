@@ -43,6 +43,9 @@ export const EVENT_HEADER_TARGET: MediaTarget = { width: 1200, height: 400, fit:
  *  button. Rendered small (32–64 px) but stored at 256 so the image stays crisp on
  *  high-DPI displays without a second stored variant. */
 export const AVATAR_TARGET: MediaTarget = { width: 256, height: 256, fit: 'cover' }
+/** Team crests/logos (issue #198): same square crop and size as avatars — rendered small on
+ *  the team directory/detail header, stored at 256 for crispness on high-DPI displays. */
+export const TEAM_LOGO_TARGET: MediaTarget = { width: 256, height: 256, fit: 'cover' }
 
 export function mediaDir(): string {
   return process.env.MEDIA_UPLOADS_DIR ?? path.join(process.cwd(), 'media_uploads')
