@@ -15,7 +15,7 @@ export interface GuestGateLabels {
   footnote: string
 }
 
-const DEFAULT_LABELS: GuestGateLabels = {
+export const GUEST_GATE_DEFAULT_LABELS: GuestGateLabels = {
   signIn: 'Anmelden',
   register: 'Registrieren',
   footnote: 'Nach dem Anmelden wirst du automatisch zu dieser Seite zurückgeleitet.',
@@ -30,7 +30,7 @@ export interface GuestGateProps {
   labels?: GuestGateLabels
 }
 
-export function GuestGate({ title, description, callbackUrl, labels = DEFAULT_LABELS }: GuestGateProps) {
+export function GuestGate({ title, description, callbackUrl, labels = GUEST_GATE_DEFAULT_LABELS }: GuestGateProps) {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center gap-4 p-6 pt-16 text-center">
       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-x-cyan/15 text-x-cyan-text dark:text-x-cyan">

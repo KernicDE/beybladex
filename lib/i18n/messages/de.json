@@ -17,7 +17,9 @@
       "password": "Passwort",
       "totp": "2FA-Code (TOTP)",
       "error": "Anmeldung fehlgeschlagen. Falls 2FA aktiv ist, gib den aktuellen TOTP-Code ein.",
-      "submit": "Anmelden"
+      "submit": "Anmelden",
+      "noAccount": "Noch kein Konto?",
+      "registerLink": "Registrieren"
     },
     "register": {
       "heading": "Registrieren",
@@ -363,6 +365,8 @@
     "intro": "Teams sind 3-gegen-3-Roster für Team-Turniere (WBO-Masters-League-Format) — mit genau 3 Mitgliedern, die gemeinsam als Team angemeldet werden.",
     "emptyTitle": "Noch kein Team",
     "emptyDescription": "Gründe unten dein erstes Team und lade zwei Mitspieler:innen ein — mit vollem Roster kannst du euch zu Team-Turnieren anmelden.",
-    "createTitle": "Neues Team gründen"
+    "createTitle": "Neues Team gründen",
+    "gateTitle": "Teams sind nur für Mitglieder",
+    "gateDescription": "Gründe ein 3-gegen-3-Team mit zwei Mitspieler:innen und meldet euch gemeinsam zu Team-Turnieren an. Melde dich an, um deine Teams zu sehen."
   }
 }

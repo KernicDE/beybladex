@@ -17,7 +17,9 @@
       "password": "Password",
       "totp": "2FA code (TOTP)",
       "error": "Sign-in failed. If 2FA is enabled, enter the current TOTP code.",
-      "submit": "Sign in"
+      "submit": "Sign in",
+      "noAccount": "Don't have an account yet?",
+      "registerLink": "Register"
     },
     "register": {
       "heading": "Register",
@@ -363,6 +365,8 @@
     "intro": "Teams are 3-vs-3 rosters for team tournaments (WBO Masters League format) — with exactly 3 members who register as a team together.",
     "emptyTitle": "No team yet",
     "emptyDescription": "Found your first team below and invite two teammates — with a full roster you can register for team tournaments.",
-    "createTitle": "Found a new team"
+    "createTitle": "Found a new team",
+    "gateTitle": "Teams are members-only",
+    "gateDescription": "Found a 3-vs-3 team with two teammates and register together for team tournaments. Sign in to see your teams."
   }
 }

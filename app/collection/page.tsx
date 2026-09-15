@@ -13,11 +13,12 @@
 //      "Meine Builds"-Ansicht und bleibt deshalb erhalten, auch wenn der UX-Baum in #139 nur
 //      Beyblades/Teile auflistet.
 // Legacy-Tab-Namen bleiben als Aliasse gültig: tab=katalog → Beyblades, tab=mine → Inventar.
-// Per-user surface — force-dynamic per the caching half of the Regression Guard; guests get
-// the explained GuestGate (RC8 #20) with a callbackUrl. Beyblades-/Teile-Tab paginieren mit
-// echten Seitenzahlen (#155, kpage/ppage — components/ui/Pagination.tsx); "Mein Inventar"
-// bleibt vorerst cursor-basiert ("Weitere laden", eigenes Issue #155 nennt es explizit als
-// Scope-Grenze).
+// Per-user surface — force-dynamic per the caching half of the Regression Guard. #197 —
+// Beyblades/Teile sind reiner Katalog ohne Nutzerbezug und deshalb für Gäste offen (Owned-Only-
+// Filter/Badges entfallen mangels Session einfach); nur "Mein Inventar" bleibt gated, mit einem
+// GuestTabBanner statt einer vollen Seitensperre. Beyblades-/Teile-Tab paginieren mit echten
+// Seitenzahlen (#155, kpage/ppage — components/ui/Pagination.tsx); "Mein Inventar" bleibt
+// vorerst cursor-basiert ("Weitere laden", eigenes Issue #155 nennt es explizit als Scope-Grenze).
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -41,7 +42,7 @@ import { CatalogThumb } from '@/components/beyblade/CatalogThumb'
 import { AddCatalogEntryToggle } from '@/components/collection/AddCatalogEntryToggle'
 import { AddInventoryEntryButtons } from '@/components/collection/AddInventoryEntryButtons'
 import { CollectionItemCard } from '@/components/collection/CollectionItemCard'
-import { GuestGate } from '@/components/auth/GuestGate'
+import { GuestTabBanner } from '@/components/auth/GuestTabBanner'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,21 +72,15 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
-  if (!session?.user?.id) {
-    return (
-      <GuestGate
-        title={t.collection.gateTitle}
-        description={t.collection.gateDescription}
-        callbackUrl="/collection"
-        labels={t.guestGate}
-      />
-    )
-  }
-  const viewerId = session.user.id
+  const viewerId = session?.user?.id ?? null
+  const isGuest = viewerId === null
 
   // Tab-Auflösung inkl. Legacy-Aliasse (tab=katalog → Beyblades, tab=mine → Inventar).
-  const activeTab: 'beyblades' | 'teile' | 'inventar' =
+  // #197 — Gäste landen nie auf "Mein Inventar" als Default-Tab, egal was ?tab= sagt (der Tab
+  // existiert für sie nur als GuestTabBanner unten, nie mit echter Query).
+  const requestedTab: 'beyblades' | 'teile' | 'inventar' =
     tab === 'teile' ? 'teile' : tab === 'inventar' || tab === 'mine' ? 'inventar' : 'beyblades'
+  const activeTab = isGuest && requestedTab === 'inventar' ? 'beyblades' : requestedTab
 
   // Beyblades-Tab: Suche + Filter.
   const catalogQ = str(q).trim()
@@ -103,10 +98,14 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const partsOwnedOnly = powned === '1'
   const partsPage = pageNum(ppage)
 
+  // #197 — die drei viewer-abhängigen Queries (Rolle/Land, Inventar) laufen nur eingeloggt;
+  // Gäste bekommen `null`/eine leere Liste statt eines `id: null`-Prisma-Fehlers.
   const [viewer, fx, catalog, partRows, inventoryRows] = await Promise.all([
     // #188 — role zusätzlich zu country: entscheidet, ob der "+"-Toggle direkt anlegt
     // (TRUSTED/ADMIN) oder einen Vorschlag einreicht (jede:r andere Angemeldete).
-    prisma.user.findUnique({ where: { id: viewerId }, select: { country: true, role: true } }),
+    viewerId
+      ? prisma.user.findUnique({ where: { id: viewerId }, select: { country: true, role: true } })
+      : Promise.resolve(null),
     getRateTable(),
     searchBeyblades({
       q: catalogQ,
@@ -115,7 +114,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       manufacturer: catalogMf || null,
       type: catalogBt || null,
       spinDirection: catalogSpin || null,
-      ownedByUserId: ownedOnly ? viewerId : null,
+      ownedByUserId: ownedOnly && viewerId ? viewerId : null,
     }),
     searchParts({
       q: partsQ,
@@ -124,22 +123,24 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
       take: PARTS_TAB_PAGE_SIZE,
       type: partsType || null,
       spinDirection: partsSpin || null,
-      ownedByUserId: partsOwnedOnly ? viewerId : null,
+      ownedByUserId: partsOwnedOnly && viewerId ? viewerId : null,
     }),
-    prisma.collectionItem.findMany({
-      where: { userId: viewerId },
-      orderBy: { id: 'asc' },
-      take: PAGE_SIZE + 1,
-      ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      select: {
-        id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
-        // #160 — Herkunft (aus welchem Set stammt das Teil) statt Preis im Vordergrund; Bild
-        // und Drehrichtung ergänzt (waren auf Part immer schon da, wurden hier nur nicht selektiert).
-        sourceBeybladeId: true,
-        sourceBeyblade: { select: { id: true, name: true } },
-        part: { select: { id: true, name: true, category: true, manufacturer: true, imageId: true, spinDirection: true } },
-      },
-    }),
+    viewerId
+      ? prisma.collectionItem.findMany({
+          where: { userId: viewerId },
+          orderBy: { id: 'asc' },
+          take: PAGE_SIZE + 1,
+          ...(typeof cursor === 'string' && cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true, purchasePrice: true, currency: true, merchant: true, boughtAt: true,
+            // #160 — Herkunft (aus welchem Set stammt das Teil) statt Preis im Vordergrund; Bild
+            // und Drehrichtung ergänzt (waren auf Part immer schon da, wurden hier nur nicht selektiert).
+            sourceBeybladeId: true,
+            sourceBeyblade: { select: { id: true, name: true } },
+            part: { select: { id: true, name: true, category: true, manufacturer: true, imageId: true, spinDirection: true } },
+          },
+        })
+      : Promise.resolve([]),
   ])
 
   // Batch-Aggregate für den Beyblades-Tab (ein groupBy für die ganze Seite, nie N Einzelqueries).
@@ -159,7 +160,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   // #137 — "In Besitz"-Haken auf JEDER Karte, unabhängig vom "Nur im Besitz"-Filter: je ein
   // scoped Batch-Query über die IDs dieser Seite (nie N Einzelqueries pro Karte).
-  const ownedBeybladeIds = catalog.beyblades.length
+  const ownedBeybladeIds = viewerId && catalog.beyblades.length
     ? new Set(
         (
           await prisma.purchase.findMany({
@@ -170,7 +171,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
         ).map((p) => p.beybladeId),
       )
     : new Set<string>()
-  const ownedPartIds = partRows.parts.length
+  const ownedPartIds = viewerId && partRows.parts.length
     ? new Set(
         (
           await prisma.collectionItem.findMany({
@@ -212,8 +213,10 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
   const beybladesContent = (
     <div className="space-y-6">
       {/* #188 — ersetzt die alte, nur bei leerer Suche sichtbare CatalogProposalCTA: ein
-          fester Einstiegspunkt statt eines Zufallsfunds am Ende einer leeren Trefferliste. */}
-      <AddCatalogEntryToggle kind="BEYBLADE" canAuthor={canAuthor} />
+          fester Einstiegspunkt statt eines Zufallsfunds am Ende einer leeren Trefferliste.
+          #197 — Gäste können weder anlegen noch vorschlagen (beide Pfade brauchen eine
+          Session), der Toggle entfällt für sie komplett statt auf einen Login-Fehler zu laufen. */}
+      {!isGuest && <AddCatalogEntryToggle kind="BEYBLADE" canAuthor={canAuthor} />}
 
       {/* GET-Formular: jede Filterkombination bleibt eine teilbare URL (EventsFilterBar-Muster). */}
       <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
@@ -248,10 +251,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
             <option value="LEFT">Linksdrehend</option>
           </Select>
         </div>
-        <label className="flex h-10 items-center gap-2 text-sm">
-          <input type="checkbox" name="owned" value="1" defaultChecked={ownedOnly} className="size-4 accent-x-cyan-text" />
-          {t.catalog.ownedOnly}
-        </label>
+        {!isGuest && (
+          <label className="flex h-10 items-center gap-2 text-sm">
+            <input type="checkbox" name="owned" value="1" defaultChecked={ownedOnly} className="size-4 accent-x-cyan-text" />
+            {t.catalog.ownedOnly}
+          </label>
+        )}
         <div className="flex gap-2">
           <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
             {t.common.search}
@@ -306,7 +311,7 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
 
   const partsContent = (
     <div className="space-y-6">
-      <AddCatalogEntryToggle kind="PART" canAuthor={canAuthor} />
+      {!isGuest && <AddCatalogEntryToggle kind="PART" canAuthor={canAuthor} />}
 
       <form role="search" action="/collection" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
         <input type="hidden" name="tab" value="teile" />
@@ -340,10 +345,12 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
             <option value="LEFT">Linksdrehend</option>
           </Select>
         </div>
-        <label className="flex h-10 items-center gap-2 text-sm">
-          <input type="checkbox" name="powned" value="1" defaultChecked={partsOwnedOnly} className="size-4 accent-x-cyan-text" />
-          {t.catalog.ownedOnly}
-        </label>
+        {!isGuest && (
+          <label className="flex h-10 items-center gap-2 text-sm">
+            <input type="checkbox" name="powned" value="1" defaultChecked={partsOwnedOnly} className="size-4 accent-x-cyan-text" />
+            {t.catalog.ownedOnly}
+          </label>
+        )}
         <button type="submit" className="rounded-md bg-x-cyan px-4 py-2 text-sm font-medium text-base-dark transition-colors hover:bg-x-cyan/85">
           {t.common.search}
         </button>
@@ -417,7 +424,14 @@ export default async function CollectionPage({ searchParams }: PageProps<'/colle
     </div>
   )
 
-  const inventoryContent = (
+  const inventoryContent = isGuest ? (
+    <GuestTabBanner
+      title={t.collection.gateTitle}
+      description={t.collection.gateDescription}
+      callbackUrl="/collection?tab=inventar"
+      labels={t.guestGate}
+    />
+  ) : (
     <div className="space-y-6">
       {/* #188 — zwei getrennte Einstiegspunkte statt eines gemeinsamen "?neu=1"-Reveals, das
           bisher IMMER beide Formulare gleichzeitig zeigte. */}

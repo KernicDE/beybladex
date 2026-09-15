@@ -1,10 +1,9 @@
 // app/teams/page.tsx (RC15, issue #12)
-// "Meine Teams": the viewer's team memberships (a team is a competitive 3-vs-3 roster, not a
-// public directory — discovery happens via tournaments and clubs, so this page is auth-gated
-// and lists only the caller's own teams, newest membership first). Guests get the sign-in
-// prompt (Task 13 convention); team creation happens inline below the list.
+// "Meine Teams": the viewer's team memberships (a team is a competitive 3-vs-3 roster). Guests
+// get the explained GuestGate (RC8 #20 convention, same as /decks) instead of a silent
+// redirect('/login') — issue #197 flagged that Teams was the last holdout still redirecting
+// without context or a path to registration.
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getDictionary } from '@/lib/i18n/server'
@@ -12,6 +11,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TeamCreateForm } from '@/components/teams/TeamCreateForm'
+import { GuestGate } from '@/components/auth/GuestGate'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +19,16 @@ export default async function TeamsPage() {
   // RC14-Nachzügler #130 — page chrome comes from the request dictionary.
   const t = await getDictionary()
   const session = await auth()
-  if (!session?.user?.id) redirect('/login')
+  if (!session?.user?.id) {
+    return (
+      <GuestGate
+        title={t.teamsPage.gateTitle}
+        description={t.teamsPage.gateDescription}
+        callbackUrl="/teams"
+        labels={t.guestGate}
+      />
+    )
+  }
   const me = session.user.id
 
   const [memberships, clubMemberships] = await Promise.all([
