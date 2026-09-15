@@ -29,7 +29,7 @@ describe('multi-stage tournament: Swiss → top-4 → Double-Elimination', () =>
 
   it('Swiss stage runs to completion and its qualifyCount gates the DE stage pool', async () => {
     const suffix = Date.now().toString(36)
-    const owner = await prisma.user.create({ data: { username: `ms_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const owner = await prisma.user.create({ data: { username: `ms_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const ruleset = await prisma.ruleset.create({
       // targetPoints 1: a single SPIN completes a match — keeps the scripted scoring to one
       // POST per match. finalsTargetPoints is irrelevant for Swiss rounds (Part C2 rule).

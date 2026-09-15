@@ -25,8 +25,8 @@ describe('match score idempotency', () => {
 
   it('applies a clientEventId exactly once: replay is a no-op, and Ruleset toggles drive point values', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `si_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
-    const judge = await prisma.user.create({ data: { username: `si_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const organizer = await prisma.user.create({ data: { username: `si_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
+    const judge = await prisma.user.create({ data: { username: `si_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const p1 = await prisma.user.create({ data: { username: `si_p1_${suffix}`, passwordHash: 'x' } })
     const p2 = await prisma.user.create({ data: { username: `si_p2_${suffix}`, passwordHash: 'x' } })
     // outOfBounds2Pts=false → OOB worth 1; targetPoints=3 so 3 spins (or spin+OOB+…) complete.

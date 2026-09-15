@@ -21,7 +21,7 @@ function asSession(value: { id: string; name: string } | null) {
 }
 
 async function seedUser(suffix: string, prefix: string) {
-  return prisma.user.create({ data: { username: `${prefix}_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+  return prisma.user.create({ data: { username: `${prefix}_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
 }
 
 async function seedRuleset(suffix: string, ownerId: string) {

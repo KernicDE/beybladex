@@ -12,7 +12,7 @@ import { runDecklockSweep } from '@/lib/decklockSweep'
 vi.mock('@/lib/mailer', () => ({ sendNotificationEmail: vi.fn() }))
 
 async function makeTournament(suffix: string, overrides: { deckLockAt?: Date | null; startDate?: Date } = {}) {
-  const organizer = await prisma.user.create({ data: { username: `dls_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+  const organizer = await prisma.user.create({ data: { username: `dls_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
   const ruleset = await prisma.ruleset.create({ data: { title: `dls_rs_${suffix}`, slug: `dls-rs-${suffix}`, createdById: organizer.id } })
   const tournament = await prisma.tournament.create({
     data: {

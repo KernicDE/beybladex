@@ -107,12 +107,28 @@ async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12)
   const usedUsernames = new Set<string>()
   const userIds: string[] = []
-  const userBatch: { username: string; displayName: string; passwordHash: string; country: 'DE' | 'AT' | 'CH'; role: 'USER' | 'TRUSTED' | 'ORGANIZER' | 'ADMIN'; id: string }[] = []
+  const userBatch: {
+    username: string
+    displayName: string
+    passwordHash: string
+    country: 'DE' | 'AT' | 'CH'
+    role: 'USER' | 'TRUSTED' | 'ADMIN'
+    isJudge: boolean
+    isOrganizer: boolean
+    id: string
+  }[] = []
 
   // One known-credential admin account so the environment is actually explorable as staff.
-  userBatch.push({ id: crypto.randomUUID(), username: 'testenv_admin', displayName: 'Test-Admin', passwordHash, country: 'DE', role: 'ADMIN' })
+  // isJudge/isOrganizer set explicitly even though ADMIN already implies superset access
+  // everywhere (every authz check is `X || role === 'ADMIN'`) — the flags being literally true
+  // makes testenv_admin show up in the judge-assignment dropdown and the admin checkboxes.
+  userBatch.push({ id: crypto.randomUUID(), username: 'testenv_admin', displayName: 'Test-Admin', passwordHash, country: 'DE', role: 'ADMIN', isJudge: true, isOrganizer: true })
   usedUsernames.add('testenv_admin')
 
+  // isJudge/isOrganizer are additive capabilities (issue #199 follow-up), independent of the
+  // GUEST/USER/TRUSTED/ADMIN trust ladder — index ranges below just give the seeded population a
+  // realistic mix of organizers (0-4), judges (5-14, overlapping trusted catalogers), and trusted
+  // catalog contributors (0-19) so every admin console has candidates to work with.
   for (let i = 0; i < USER_COUNT - 1; i++) {
     const first = pick(FIRST_NAMES)
     const last = pick(LAST_NAMES)
@@ -124,7 +140,7 @@ async function main() {
       n++
     }
     usedUsernames.add(username)
-    const role = i < 5 ? 'ORGANIZER' : i < 20 ? 'TRUSTED' : 'USER'
+    const role = i < 20 ? 'TRUSTED' : 'USER'
     userBatch.push({
       id: crypto.randomUUID(),
       username,
@@ -132,6 +148,8 @@ async function main() {
       passwordHash,
       country: pick(['DE', 'DE', 'DE', 'AT', 'CH'] as const),
       role,
+      isJudge: i >= 5 && i < 15,
+      isOrganizer: i < 5,
     })
   }
   await prisma.user.createMany({ data: userBatch, skipDuplicates: true })

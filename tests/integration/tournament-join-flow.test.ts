@@ -55,7 +55,7 @@ describe('tournament join flow', () => {
 
   it('walks the full player journey: join → edit deck → duplicate join → check-in (self + organizer)', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `jf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `jf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const player = await prisma.user.create({ data: { username: `jf_pla_${suffix}`, passwordHash: 'x' } })
     const player2 = await prisma.user.create({ data: { username: `jf_pl2_${suffix}`, passwordHash: 'x' } })
     const stranger = await prisma.user.create({ data: { username: `jf_str_${suffix}`, passwordHash: 'x' } })
@@ -159,7 +159,7 @@ describe('tournament join flow', () => {
 
   it('registration closes at the earlier of startDate or an already-generated bracket', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `jf_org2_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `jf_org2_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const late = await prisma.user.create({ data: { username: `jf_late_${suffix}`, passwordHash: 'x' } })
     const ruleset = await prisma.ruleset.create({ data: { title: `RS2 ${suffix}`, slug: `rs2-${suffix}`, createdById: organizer.id } })
 
@@ -220,7 +220,7 @@ describe('tournament join flow', () => {
 
   it('unauthenticated join and check-in are 401', async () => {
     const suffix = Date.now().toString(36)
-    const organizer = await prisma.user.create({ data: { username: `jf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `jf_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const ruleset = await prisma.ruleset.create({ data: { title: `RS ${suffix}`, slug: `rs-${suffix}`, createdById: organizer.id } })
     const tournament = await prisma.tournament.create({
       data: {

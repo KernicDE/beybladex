@@ -26,7 +26,7 @@ function formRequest(url: string, fields: Record<string, string>) {
 async function seedUsers(suffix: string) {
   const submitter = await prisma.user.create({ data: { username: `cpf_sub_${suffix}`, passwordHash: 'x', role: 'USER' } })
   const trusted = await prisma.user.create({ data: { username: `cpf_trs_${suffix}`, passwordHash: 'x', role: 'TRUSTED' } })
-  const judge = await prisma.user.create({ data: { username: `cpf_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+  const judge = await prisma.user.create({ data: { username: `cpf_jdg_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
   const plainUser = await prisma.user.create({ data: { username: `cpf_usr_${suffix}`, passwordHash: 'x', role: 'USER' } })
   return { submitter, trusted, judge, plainUser }
 }

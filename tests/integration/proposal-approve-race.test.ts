@@ -30,7 +30,7 @@ describe('admin proposal review race', () => {
     const suffix = Date.now().toString(36)
     const submitter = await prisma.user.create({ data: { username: `par_sub_${suffix}`, passwordHash: 'x' } })
     const curatorA = await prisma.user.create({ data: { username: `par_a_${suffix}`, passwordHash: 'x', role: 'TRUSTED' } })
-    const curatorB = await prisma.user.create({ data: { username: `par_b_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const curatorB = await prisma.user.create({ data: { username: `par_b_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const proposal = await prisma.catalogProposal.create({
       data: {
         kind: 'PART',
@@ -71,7 +71,7 @@ describe('admin proposal review race', () => {
   it('two concurrent reject/approve of the same proposal settle it exactly once', async () => {
     const suffix = Date.now().toString(36)
     const submitter = await prisma.user.create({ data: { username: `prr_sub_${suffix}`, passwordHash: 'x' } })
-    const curatorA = await prisma.user.create({ data: { username: `prr_a_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const curatorA = await prisma.user.create({ data: { username: `prr_a_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
     const curatorB = await prisma.user.create({ data: { username: `prr_b_${suffix}`, passwordHash: 'x', role: 'ADMIN' } })
     const proposal = await prisma.catalogProposal.create({
       data: {

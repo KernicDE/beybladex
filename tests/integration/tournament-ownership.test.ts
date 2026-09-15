@@ -24,7 +24,7 @@ function post(body: unknown) {
 }
 
 async function seedUser(suffix: string, prefix: string, role: 'USER' | 'ORGANIZER' | 'ADMIN' = 'USER') {
-  return prisma.user.create({ data: { username: `${prefix}_${suffix}`, passwordHash: 'x', role } })
+  return prisma.user.create({ data: { username: `${prefix}_${suffix}`, passwordHash: 'x', role, isOrganizer: role === 'ORGANIZER' } })
 }
 
 async function seedTournament(ownerId: string, rulesetId: string, suffix: string) {

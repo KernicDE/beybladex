@@ -4,7 +4,8 @@
 // both shared with the /events page via lib/geo.ts (RC9 #33 — the inline stopgap haversine is
 // gone; extend lib/geo.ts instead of re-introducing a local copy).
 // POST — create a Tournament. AUTHZ RULE (standing Global-Constraints requirement): succeeds
-// if EITHER the session has the ORGANIZER/ADMIN role, OR the body carries a clubId the session
+// if EITHER the session has isOrganizer set or the ADMIN role (issue #199 follow-up — Organizer
+// is an additive capability, not a trust-tier role), OR the body carries a clubId the session
 // user administers (ClubMember.isAdmin === true for THAT club — verified by query, never
 // trusted from the client; Phase 4). createdById is ALWAYS taken from the session — the body
 // can never nominate an owner. Rate-limited per user. Radius notifications fire post-create.
@@ -118,8 +119,8 @@ export async function POST(req: Request) {
 
   // Club authorization happens BEFORE any other validation so a 403 never leaks whether
   // the club itself exists; a well-formed clubId that doesn't exist is a 400 either way.
-  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  const hasGlobalRole = caller?.role === 'ORGANIZER' || caller?.role === 'ADMIN'
+  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, isOrganizer: true } })
+  const hasGlobalRole = caller?.isOrganizer === true || caller?.role === 'ADMIN'
   if (data.clubId) {
     if (!hasGlobalRole) {
       // Club-admins may create events for THEIR club only — verified by query, not by the body.

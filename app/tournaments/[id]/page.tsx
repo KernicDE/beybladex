@@ -79,8 +79,8 @@ export default async function TournamentBracketPage({
           : eliminationRoundLabel(myMatch.round, stageWinnersRounds(myStage.matches))
       : null
 
-  // Judge pool for the assignment dropdown: the JUDGE role list is small by nature (a club/
-  // region has a handful of certified judges); bounded at 200 as a sanity cap.
+  // Judge pool for the assignment dropdown: isJudge is small by nature (a club/region has a
+  // handful of certified judges); bounded at 200 as a sanity cap.
   const judges = isOrganizer
     ? await prismaJudges()
     : []
@@ -334,7 +334,7 @@ async function prismaCallerRole(userId: string): Promise<string | null> {
 }
 async function prismaJudges() {
   const judges = await prisma.user.findMany({
-    where: { role: 'JUDGE' },
+    where: { isJudge: true },
     orderBy: { username: 'asc' },
     take: 200,
     select: { id: true, username: true, displayName: true },

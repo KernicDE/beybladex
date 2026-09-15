@@ -2,7 +2,8 @@
 // Club home: profile (description + websiteUrl/discordUrl links, Phase 13), ACTIVE roster,
 // Phase 12 club chat (member-only surface, authz enforced again by the API), club-run
 // tournaments, and the "Neues Club-Event" CTA (shown to the owner, ACTIVE isAdmin members,
-// and global ORGANIZER/ADMIN sessions — the same rule the API enforces; it links to
+// and global isOrganizer/ADMIN sessions — issue #199 follow-up: Organizer is an additive
+// capability, not a trust-tier role — the same rule the API enforces; it links to
 // /events/new?clubId= which pre-selects the club in the form).
 // Phase 13 join policies: all membership reads go through lib/clubMembers.ts, the single
 // place the ACTIVE status filter lives — the roster and member count can never include a
@@ -56,8 +57,8 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
   // The viewer's own membership, ANY status — needed for the pending-state UI ("Bewerbung
   // ausstehend" / "Einladung annehmen") and for the manage tier.
   const viewerMembership = viewerId ? await getViewerMembership(club.id, viewerId) : null
-  const viewerRole = viewerId
-    ? (await prisma.user.findUnique({ where: { id: viewerId }, select: { role: true } }))?.role
+  const viewerAuthz = viewerId
+    ? await prisma.user.findUnique({ where: { id: viewerId }, select: { role: true, isOrganizer: true } })
     : null
 
   // The single privacy gate for every roster row: only the projected fields are rendered below.
@@ -83,7 +84,7 @@ export default async function ClubPage({ params }: { params: Promise<{ slug: str
 
   const canManage =
     viewerMembership?.status === 'ACTIVE' && (viewerMembership.isAdmin || viewerId === club.ownerId)
-  const canCreateEvent = canManage || viewerRole === 'ORGANIZER' || viewerRole === 'ADMIN'
+  const canCreateEvent = canManage || viewerAuthz?.isOrganizer === true || viewerAuthz?.role === 'ADMIN'
   const pendingRows = canManage ? await getPendingMemberships(club.id) : []
   // Flatten the DB row shape ({ userId, status, user: { username, displayName } }) into
   // ClubActions' PendingMemberRow prop shape ({ userId, username, displayName, status }).

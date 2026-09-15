@@ -26,8 +26,8 @@ describe('stage routes authorization', () => {
 
   it('non-owner non-admin gets 403 on stage create/generate/complete; unauthenticated gets 401', async () => {
     const suffix = Date.now().toString(36)
-    const owner = await prisma.user.create({ data: { username: `st_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
-    const intruder = await prisma.user.create({ data: { username: `st_int_${suffix}`, passwordHash: 'x', role: 'JUDGE' } })
+    const owner = await prisma.user.create({ data: { username: `st_own_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
+    const intruder = await prisma.user.create({ data: { username: `st_int_${suffix}`, passwordHash: 'x', role: 'JUDGE', isJudge: true } })
     const ruleset = await prisma.ruleset.create({ data: { title: `ST ${suffix}`, slug: `st-${suffix}`, createdById: owner.id } })
     const tournament = await prisma.tournament.create({
       data: {

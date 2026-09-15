@@ -34,7 +34,7 @@ describe('admin role assignment', () => {
     const suffix = Date.now().toString(36)
     const target = await prisma.user.create({ data: { username: `ara_tgt_${suffix}`, passwordHash: 'x', role: 'USER' } })
     const user = await prisma.user.create({ data: { username: `ara_usr_${suffix}`, passwordHash: 'x', role: 'USER' } })
-    const organizer = await prisma.user.create({ data: { username: `ara_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER' } })
+    const organizer = await prisma.user.create({ data: { username: `ara_org_${suffix}`, passwordHash: 'x', role: 'ORGANIZER', isOrganizer: true } })
 
     mockAuth.mockResolvedValue(asSession(null))
     expect((await PATCH(patchRole(target.id, 'ADMIN'), ctx(target.id))).status).toBe(401)

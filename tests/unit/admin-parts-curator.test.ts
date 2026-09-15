@@ -1,10 +1,10 @@
-// tests/unit/admin-parts-curator.test.ts (RC4, issue #42)
+// tests/unit/admin-parts-curator.test.ts (RC4, issue #42; issue #199 follow-up)
 // Regression for the curator-tier drift: app/api/admin/parts hardcoded TRUSTED/ADMIN and 403'd
-// JUDGE/ORGANIZER even though the same people may approve proposals and create official Sets.
-// With the route on lib/guards.ts requireCurator (lib/roles.ts CURATOR_ROLES), a JUDGE/
-// ORGANIZER session gets PAST the gate — a malformed body then yields 400 from the validator,
-// never 403 from the gate. Runs locally (Seam-Mocks on '@/lib/auth', '@/lib/db',
-// '@/lib/rateLimit'); the full DB-backed authz matrix lives in
+// Judge/Organizer sessions even though the same people may approve proposals and create official
+// Sets. With the route on lib/guards.ts requireCurator (lib/roles.ts CURATOR_ROLES + additive
+// isJudge/isOrganizer), such a session gets PAST the gate — a malformed body then yields 400
+// from the validator, never 403 from the gate. Runs locally (Seam-Mocks on '@/lib/auth',
+// '@/lib/db', '@/lib/rateLimit'); the full DB-backed authz matrix lives in
 // tests/integration/parts-admin.test.ts (CI).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -37,11 +37,23 @@ beforeEach(() => {
 })
 
 describe('POST /api/admin/parts curator gate (issue #42)', () => {
-  it.each(['TRUSTED', 'JUDGE', 'ORGANIZER', 'ADMIN'])(
+  it.each(['TRUSTED', 'ADMIN'])(
     '%s passes the gate; a malformed body is rejected by the validator with 400, not 403',
     async (role) => {
       auth.mockResolvedValue(asSession('user-1'))
-      findUnique.mockResolvedValue({ role })
+      findUnique.mockResolvedValue({ role, isJudge: false, isOrganizer: false })
+      const res = await POST(post({ name: 42 })) // wrong type → validator errors
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as { error: string }
+      expect(body.error).not.toBe('forbidden')
+    },
+  )
+
+  it.each(['isJudge', 'isOrganizer'] as const)(
+    'a USER with %s set passes the gate; a malformed body is rejected by the validator with 400, not 403',
+    async (flag) => {
+      auth.mockResolvedValue(asSession('user-1'))
+      findUnique.mockResolvedValue({ role: 'USER', isJudge: false, isOrganizer: false, [flag]: true })
       const res = await POST(post({ name: 42 })) // wrong type → validator errors
       expect(res.status).toBe(400)
       const body = (await res.json()) as { error: string }

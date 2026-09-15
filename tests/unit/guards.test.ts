@@ -16,8 +16,8 @@ function asSession(id: string | null) {
   return (id ? { user: { id, name: id }, expires: '2099-01-01T00:00:00.000Z' } : null) as never
 }
 
-function asUser(role: string | null) {
-  return role === null ? null : { role }
+function asUser(role: string | null, extra: { isJudge?: boolean; isOrganizer?: boolean } = {}) {
+  return role === null ? null : { role, isJudge: false, isOrganizer: false, ...extra }
 }
 
 beforeEach(() => {
@@ -84,14 +84,26 @@ describe('requireRole', () => {
   })
 })
 
-describe('requireCurator (issue #42 tier: TRUSTED/JUDGE/ORGANIZER/ADMIN)', () => {
-  it.each(['TRUSTED', 'JUDGE', 'ORGANIZER', 'ADMIN'])('allows %s', async (role) => {
+describe('requireCurator (issue #199 follow-up: TRUSTED/ADMIN, plus additive isJudge/isOrganizer)', () => {
+  it.each(['TRUSTED', 'ADMIN'])('allows %s', async (role) => {
     auth.mockResolvedValue(asSession('user-1'))
     findUnique.mockResolvedValue(asUser(role))
     expect(await requireCurator()).toEqual({ userId: 'user-1', role })
   })
 
-  it.each(['GUEST', 'USER'])('403 for %s', async (role) => {
+  it('allows a USER with isJudge set', async () => {
+    auth.mockResolvedValue(asSession('user-1'))
+    findUnique.mockResolvedValue(asUser('USER', { isJudge: true }))
+    expect(await requireCurator()).toEqual({ userId: 'user-1', role: 'USER' })
+  })
+
+  it('allows a USER with isOrganizer set', async () => {
+    auth.mockResolvedValue(asSession('user-1'))
+    findUnique.mockResolvedValue(asUser('USER', { isOrganizer: true }))
+    expect(await requireCurator()).toEqual({ userId: 'user-1', role: 'USER' })
+  })
+
+  it.each(['GUEST', 'USER'])('403 for %s without isJudge/isOrganizer', async (role) => {
     auth.mockResolvedValue(asSession('user-1'))
     findUnique.mockResolvedValue(asUser(role))
     const gate = await requireCurator()
@@ -107,9 +119,9 @@ describe('requireAdmin', () => {
     expect(await requireAdmin()).toEqual({ userId: 'user-1', role: 'ADMIN' })
   })
 
-  it('403 for ORGANIZER (the tier below ADMIN)', async () => {
+  it('403 for TRUSTED (the tier below ADMIN)', async () => {
     auth.mockResolvedValue(asSession('user-1'))
-    findUnique.mockResolvedValue(asUser('ORGANIZER'))
+    findUnique.mockResolvedValue(asUser('TRUSTED'))
     const gate = await requireAdmin()
     expect('error' in gate).toBe(true)
     if ('error' in gate) expect(gate.error.status).toBe(403)

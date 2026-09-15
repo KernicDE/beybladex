@@ -6,6 +6,8 @@
 // tournament's creator or an ADMIN (enforced server-side on every action; the page additionally
 // gates rendering). Actions per stage: Bracket/Runde generieren (format-dispatched server-side),
 // Stage abschließen, Judge zuweisen per match, no-show handling, Turnier abschließen.
+// Issue #199 follow-up: each row also links to its judge pad (/tournaments/[id]/judge?match=) —
+// the route already let the owner/ADMIN open any match, this closes the missing UI link.
 'use client'
 
 import { useState } from 'react'
@@ -540,6 +542,12 @@ export function OrganizerConsole({
                                     </option>
                                   ))}
                                 </Select>
+                                <Link
+                                  href={`/tournaments/${tournamentId}/judge?match=${g.id}`}
+                                  className="whitespace-nowrap text-xs text-x-cyan-text hover:underline"
+                                >
+                                  Judge-Oberfläche öffnen
+                                </Link>
                               </li>
                             ))}
                           </ul>
@@ -584,6 +592,12 @@ export function OrganizerConsole({
                               </option>
                             ))}
                           </Select>
+                          <Link
+                            href={`/tournaments/${tournamentId}/judge?match=${m.id}`}
+                            className="whitespace-nowrap text-xs text-x-cyan-text hover:underline"
+                          >
+                            Judge-Oberfläche öffnen
+                          </Link>
                         </li>
                       ))}
                     </ul>
