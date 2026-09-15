@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/db', () => ({
   prisma: {
     notification: { create: vi.fn() },
-    user: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn(), findMany: vi.fn() },
     tournament: { findUnique: vi.fn() },
     tournamentParticipant: { findMany: vi.fn() },
     match: { findUnique: vi.fn() },
@@ -21,10 +21,11 @@ vi.mock('@/lib/mailer', () => ({ sendNotificationEmail: vi.fn() }))
 vi.mock('@/lib/webPush', () => ({ sendPushToUser: vi.fn() }))
 
 import { prisma } from '@/lib/db'
-import { notifyTournamentStarted, notifyArenaAssigned, notifyMatchReady } from '@/lib/notify'
+import { notifyTournamentStarted, notifyArenaAssigned, notifyMatchReady, notifyCatalogCurators } from '@/lib/notify'
 
 const notificationCreate = vi.mocked(prisma.notification.create)
 const userFindUnique = vi.mocked(prisma.user.findUnique)
+const userFindMany = vi.mocked(prisma.user.findMany)
 const tournamentFindUnique = vi.mocked(prisma.tournament.findUnique)
 const participantFindMany = vi.mocked(prisma.tournamentParticipant.findMany)
 const matchFindUnique = vi.mocked(prisma.match.findUnique)
@@ -179,5 +180,28 @@ describe('matchLifecycle category routing (email + push toggles)', () => {
     await notifyMatchReady('m1')
 
     expect(sendPush).toHaveBeenCalledTimes(2) // both players
+  })
+})
+
+// Issue #188 — a new CatalogProposal previously notified no one; every TRUSTED/ADMIN user now
+// gets an in-app row (the fan-out target, not a specific trigger call site, is what's asserted).
+describe('notifyCatalogCurators (#188)', () => {
+  it('notifiert nur TRUSTED/ADMIN — die where-Klausel ist der Vertrags-Punkt, nicht ein konkretes Ergebnis', async () => {
+    userFindMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }] as never)
+
+    await notifyCatalogCurators({ title: 'Neuer Set-Vorschlag', message: '@wer hat ein neues Set vorgeschlagen.', link: '/settings/admin/parts' })
+
+    expect(userFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { role: { in: ['TRUSTED', 'ADMIN'] } } }))
+    expect(notificationCreate).toHaveBeenCalledTimes(2)
+    expect(notificationCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: 'c1', title: 'Neuer Set-Vorschlag' }) }))
+    expect(notificationCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: 'c2' }) }))
+  })
+
+  it('kein Fehler, wenn es aktuell keine Kurator:innen gibt', async () => {
+    userFindMany.mockResolvedValue([] as never)
+    await expect(
+      notifyCatalogCurators({ title: 'x', message: 'y' }),
+    ).resolves.toBeUndefined()
+    expect(notificationCreate).not.toHaveBeenCalled()
   })
 })

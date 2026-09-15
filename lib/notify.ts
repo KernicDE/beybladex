@@ -192,6 +192,16 @@ export async function notifyUser(
 // and connection pools flat.
 const FANOUT_CONCURRENCY = 8
 
+// Issue #188 — a new CatalogProposal (Phase 11) previously notified no one; a curator only
+// found out by happening to visit /settings/admin/parts. Fans out to every TRUSTED/ADMIN user
+// (the same "widened reviewer tier" as requireCurator for the actual API gate — JUDGE/ORGANIZER
+// are curator-authorized too, but #188 explicitly scopes the notification to TRUSTED/ADMIN, the
+// same pair the UI's "direct create vs. submit for review" branch already checks).
+export async function notifyCatalogCurators(content: { title: string; message: string; link?: string }): Promise<void> {
+  const curators = await prisma.user.findMany({ where: { role: { in: ['TRUSTED', 'ADMIN'] } }, select: { id: true } })
+  await mapWithConcurrency(curators, FANOUT_CONCURRENCY, (u) => notifyUser(u.id, content))
+}
+
 export async function notifyUsersInRadius(tournament: RadiusBlastTarget): Promise<void> {
   const box = boundingBoxForRadius(tournament.latitude, tournament.longitude, MAX_NOTIFY_RADIUS_KM)
   const candidates = await prisma.user.findMany({
