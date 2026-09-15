@@ -10,8 +10,8 @@
 //
 // Run: DATABASE_URL=postgresql://...@localhost:15433/beybladex_test_db npx tsx scripts/seedTestEnvironment.ts
 //
-// Deliberately NOT seeded (kept out of scope): personal Decks/Builds/Collection/Purchases,
-// Ratings/reviews, notifications, push subscriptions, team-mode tournaments (TeamMatch
+// Deliberately NOT seeded (kept out of scope): Ratings/reviews, notifications, push
+// subscriptions, team-mode tournaments (TeamMatch
 // encounter generation needs a separate sub-game creation step this script doesn't drive) —
 // Teams exist with real rosters but no played encounters, so the Teams ranking tab legitimately
 // shows the "no ranked teams yet" empty state in this seed. Idempotency: NOT idempotent —
@@ -200,11 +200,22 @@ async function main() {
   console.log(`Seeding ${TOURNAMENT_COUNT} tournaments…`)
   let simulated = 0
   for (let i = 0; i < TOURNAMENT_COUNT; i++) {
-    const daysAgo = randomInt(-20, 380) // a handful land in the future (upcoming events)
+    // Live-Report (2026-09-15): the previous -20..380 range put almost every tournament deep in
+    // the past, so /events' default filter (from=today, past hidden — a deliberate app feature,
+    // not a bug) showed almost nothing and what little showed clustered by pure chance into one
+    // city. -70..230 keeps a comparable 300-day span but gives the near-future (default-visible)
+    // window ~70 days' worth of tournaments — roughly a sixth of the 50, spread over all 11
+    // cities — so the default "no filters" view is actually populated.
+    //
+    // Live-Report (2026-09-15, follow-up) — dedicate tournament index 0 to a CURRENTLY RUNNING
+    // event (started yesterday, single-elimination, only round 1 played) so the demo has an
+    // in-progress bracket to look at, not just fully-completed or not-yet-started ones.
+    const isLiveTournament = i === 0
+    const daysAgo = isLiveTournament ? 1 : randomInt(-70, 230)
     const startDate = new Date(now.getTime() - daysAgo * 86400_000)
     const loc = pick(CITIES)
     const isUpcoming = startDate.getTime() > now.getTime()
-    const kind = rng() < 0.8 ? 'BRACKET' : pick(['STAMMTISCH', 'FREEPLAY'] as const)
+    const kind = isLiveTournament ? 'BRACKET' : rng() < 0.8 ? 'BRACKET' : pick(['STAMMTISCH', 'FREEPLAY'] as const)
     const creatorId = pick(userIds)
     const seasonForDate = startDate < seasonAEnd ? seasonA : seasonB
 
@@ -235,7 +246,7 @@ async function main() {
       data: participants.map((userId) => ({ tournamentId: tournament.id, userId, checkedIn: true })),
     })
 
-    const format = rng() < 0.6 ? 'SINGLE_ELIMINATION' : 'SWISS'
+    const format = isLiveTournament ? 'SINGLE_ELIMINATION' : rng() < 0.6 ? 'SINGLE_ELIMINATION' : 'SWISS'
     const stage = await prisma.tournamentStage.create({
       data: {
         tournamentId: tournament.id,
@@ -245,6 +256,18 @@ async function main() {
         swissRounds: format === 'SWISS' ? Math.ceil(Math.log2(size)) + 1 : null,
       },
     })
+
+    if (isLiveTournament) {
+      // Started, round 1 played, round 2 still open — deliberately NOT completed, NOT placed.
+      await prisma.tournament.update({ where: { id: tournament.id }, data: { startedAt: startDate } })
+      try {
+        await simulateSingleEliminationPartial(tournament.id, stage.id, participants, seasonForDate.id, 1)
+        console.log(`  live tournament: "${tournament.title}" — round 1 played, round 2 in progress`)
+      } catch (err) {
+        console.error(`  live tournament ${tournament.id} simulation failed:`, err)
+      }
+      continue
+    }
 
     try {
       if (format === 'SINGLE_ELIMINATION') {
@@ -261,6 +284,65 @@ async function main() {
     }
   }
   console.log(`  ${simulated} tournaments fully simulated (matches, standings, Elo, placement)`)
+
+  // ─── personal builds, decks, and collection ────────────────────────────────────────────
+  console.log('Seeding personal builds, decks, and collection…')
+  const blades = await prisma.part.findMany({ where: { category: 'BLADE', isRatchetIntegrated: false }, select: { id: true } })
+  const ratchets = await prisma.part.findMany({ where: { category: 'RATCHET' }, select: { id: true } })
+  const bits = await prisma.part.findMany({ where: { category: 'BIT' }, select: { id: true } })
+  const beyblades = await prisma.beyblade.findMany({ select: { id: true } })
+  const usedCombos = new Set<string>()
+
+  async function createUniqueBuild(creatorId: string, visibility: 'PUBLIC' | 'UNLISTED') {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const bladeId = pick(blades).id
+      const ratchetId = pick(ratchets).id
+      const bitId = pick(bits).id
+      const key = `${bladeId}|${ratchetId}|${bitId}`
+      if (usedCombos.has(key)) continue
+      usedCombos.add(key)
+      return prisma.build.create({ data: { bladeId, ratchetId, bitId, creatorId, visibility, type: pick(['ATTACK', 'DEFENSE', 'STAMINA', 'BALANCE'] as const) } })
+    }
+    return null // combo space exhausted for this attempt budget — rare at 87×29×38 possibilities
+  }
+
+  let buildsCreated = 0
+  let decksCreated = 0
+  for (const userId of userIds) {
+    // Every user owns AT LEAST 3 Beyblades (Purchase rows — the same "owned" signal
+    // app/collection/page.tsx's "Nur im Besitz" filter and BeybladeCard's ✓-badge read).
+    const ownCount = randomInt(3, 8)
+    const owned = shuffle(beyblades).slice(0, ownCount)
+    await prisma.purchase.createMany({
+      data: owned.map((bey) => ({
+        userId,
+        beybladeId: bey.id,
+        merchant: pick(['TAKARA TOMY Shop', 'Hasbro Store', 'Amazon', 'lokaler Händler', 'BeyClub Sale']),
+        price: randomInt(10, 40),
+        currency: 'EUR',
+        boughtAt: new Date(now.getTime() - randomInt(1, 500) * 86400_000),
+      })),
+    })
+
+    // Not every seeded user is an active builder — matches the real userbase's uneven
+    // engagement (browsers vs. active build-tinkerers).
+    if (rng() < 0.6) {
+      const buildCount = randomInt(3, 6)
+      const userBuilds: { id: string }[] = []
+      for (let i = 0; i < buildCount; i++) {
+        const build = await createUniqueBuild(userId, rng() < 0.4 ? 'PUBLIC' : 'UNLISTED')
+        if (build) userBuilds.push(build)
+      }
+      buildsCreated += userBuilds.length
+      if (userBuilds.length >= 3) {
+        const deck = await prisma.deck.create({ data: { title: `${pick(['Turnier', 'Arena', 'Standard', 'Wettkampf', 'Meine'])}-Deck`, userId, visibility: 'PUBLIC' } })
+        const deckBuilds = shuffle(userBuilds).slice(0, 3)
+        await prisma.deckBuild.createMany({ data: deckBuilds.map((b, idx) => ({ deckId: deck.id, buildId: b.id, position: idx })) })
+        decksCreated++
+      }
+    }
+  }
+  console.log(`  ${buildsCreated} personal builds, ${decksCreated} decks, collection purchases for all ${userIds.length} users (≥3 Beyblades each)`)
 
   console.log('Done.')
 }
@@ -336,6 +418,40 @@ async function simulateSingleElimination(tournamentId: string, stageId: string, 
       pending = await prisma.match.findMany({ where: { stageId, round, status: { in: ['PENDING', 'IN_PROGRESS'] }, player1Id: { not: null }, player2Id: { not: null } } })
     }
   }
+}
+
+/** Same bracket generation as simulateSingleElimination, but stops after `roundsToComplete`
+ *  rounds and leaves the rest genuinely open — round-1 winners feed round 2's slots (so those
+ *  matches are playable), but nothing beyond round 1 is scored. One resolvable next-round match
+ *  (if any) is flipped to IN_PROGRESS for realism ("a judge is scoring this right now"). Never
+ *  marks the stage COMPLETED or the tournament completedAt — this is the "currently running"
+ *  demo tournament, deliberately left mid-bracket. */
+async function simulateSingleEliminationPartial(tournamentId: string, stageId: string, participants: string[], seasonId: string, roundsToComplete: number) {
+  const nodes = generateSingleEliminationBracket(participants.map((userId) => ({ userId })))
+  await prisma.match.createMany({
+    data: nodes.map((n) => ({ tournamentId, stageId, round: n.round, bracketOrder: n.bracketOrder, player1Id: n.player1Id, player2Id: n.player2Id, winnerId: n.winnerId, status: n.status })),
+  })
+  await prisma.stageStanding.createMany({ data: participants.map((userId) => ({ stageId, userId })) })
+  for (const bye of nodes.filter((n) => n.round === 1 && n.winnerId !== null)) {
+    const slot = bye.bracketOrder % 2 === 0 ? 'player1Id' : 'player2Id'
+    await prisma.match.updateMany({ where: { stageId, round: 2, bracketOrder: Math.floor(bye.bracketOrder / 2) }, data: { [slot]: bye.winnerId } })
+  }
+
+  const maxRound = Math.max(...nodes.map((n) => n.round))
+  const stopAtRound = Math.min(roundsToComplete, maxRound)
+  for (let round = 1; round <= stopAtRound; round++) {
+    let pending = await prisma.match.findMany({ where: { stageId, round, status: { in: ['PENDING', 'IN_PROGRESS'] }, player1Id: { not: null }, player2Id: { not: null } } })
+    while (pending.length > 0) {
+      for (const m of pending) await completeMatch(m, 'SINGLE_ELIMINATION', seasonId)
+      pending = await prisma.match.findMany({ where: { stageId, round, status: { in: ['PENDING', 'IN_PROGRESS'] }, player1Id: { not: null }, player2Id: { not: null } } })
+    }
+  }
+
+  await prisma.tournamentStage.update({ where: { id: stageId }, data: { status: 'ACTIVE' } })
+  const nextMatch = await prisma.match.findFirst({
+    where: { stageId, round: stopAtRound + 1, status: 'PENDING', player1Id: { not: null }, player2Id: { not: null } },
+  })
+  if (nextMatch) await prisma.match.update({ where: { id: nextMatch.id }, data: { status: 'IN_PROGRESS' } })
 }
 
 async function simulateSwiss(tournamentId: string, stageId: string, participants: string[], seasonId: string, swissRounds: number) {
