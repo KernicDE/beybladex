@@ -63,8 +63,12 @@ export default async function PartDetailPage({ params }: PageProps<'/parts/[id]'
     getPartStats([id]),
     prisma.build.findMany({
       // Rueckverweis (persönliche Builds): ein Teil kann in jedem der 7 Slots stecken
-      // (RC16 #122 — je nach Bauform).
-      where: partOccurrenceWhere(id),
+      // (RC16 #122 — je nach Bauform). Issue #187 — dies ist eine öffentliche Katalogseite
+      // (kein Login nötig); nur visibility=PUBLIC-Builds gehören hier rein, genau wie in der
+      // /builds?tab=public-Ansicht (#144) — sonst leakt ein UNLISTED-Build (bewusst NICHT
+      // geheim, aber bewusst NICHT gelistet, siehe die Build.visibility-Doku oben im Schema)
+      // über diese Rückverweis-Sektion doch in eine öffentliche Listung.
+      where: { AND: [partOccurrenceWhere(id), { visibility: 'PUBLIC' }] },
       orderBy: { id: 'asc' },
       take: BUILDS_PER_PAGE,
       include: BUILD_INCLUDE,
