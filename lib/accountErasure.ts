@@ -93,6 +93,9 @@ export async function eraseOrAnonymizeUser(userId: string, actorId: string = use
       where: { id: userId },
       data: {
         username: anonymizedUsername, displayName: 'Gelöschter Nutzer', email: null, passwordHash: null,
+        // Issue #189 — typed marker for "this row is an anonymized tombstone", so the admin
+        // user list can filter these out without relying on the username prefix as a convention.
+        status: 'ERASED',
         // Phase 19: displayNameNormalized is @unique, so the shared tombstone displayName must not
         // be stored with its shared normalized form ('gelöschter nutzer' would collide on the
         // SECOND erased user and abort the whole erasure with P2002). The tombstone is a system

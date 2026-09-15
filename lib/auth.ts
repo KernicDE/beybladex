@@ -29,7 +29,7 @@ export async function authorize(credentials: Partial<Record<'username' | 'passwo
     const verifiedUsername = await redis.getdel(`webauthn-verified:${webauthnToken}`)
     if (!verifiedUsername) return null
     const passkeyUser = await prisma.user.findUnique({ where: { username: verifiedUsername } })
-    if (!passkeyUser || passkeyUser.status === 'PENDING_PARENTAL_CONSENT') return null
+    if (!passkeyUser || passkeyUser.status === 'PENDING_PARENTAL_CONSENT' || passkeyUser.status === 'ERASED') return null
     return { id: passkeyUser.id, name: passkeyUser.username, tv: passkeyUser.tokenVersion }
   }
 
@@ -61,7 +61,10 @@ export async function authorize(credentials: Partial<Record<'username' | 'passwo
 
   // [REVIEW-FIX: privacy-dsgvo #1] a minor account awaiting parental consent may not log in
   // at all — this is the enforcement point, not merely a UI warning on the register page.
-  if (user.status === 'PENDING_PARENTAL_CONSENT') return null
+  // ERASED (issue #189) is already unreachable here in practice — passwordHash is nulled by
+  // erasure, so bcrypt.compare above always fails first — this is defense-in-depth, same as
+  // the webauthn branch above.
+  if (user.status === 'PENDING_PARENTAL_CONSENT' || user.status === 'ERASED') return null
 
   return { id: user.id, name: user.username, tv: user.tokenVersion }
 }
