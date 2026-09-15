@@ -1,5 +1,5 @@
 // tests/unit/sidebar.test.tsx (#157 — Nutzer-Feedback "Verschiebung des Menüs auf die Seite")
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
@@ -55,6 +55,25 @@ describe('Sidebar (#157)', () => {
   it('zeigt einen Einstellungen-Link für eine Session (Live-Report: "Wo ist der Adminbereich hin?" — /settings ist der einzige Weg dorthin)', () => {
     renderSidebar({ user: { id: 'u1', name: 'kernic' } })
     expect(screen.getByRole('link', { name: 'Einstellungen' })).toHaveAttribute('href', '/settings')
+  })
+
+  // Issue #191 — die Nav ist in vier thematische Blöcke gruppiert (Events / Decks·Builds·
+  // Sammlung / Rangliste·Teams·Clubs / Regeln), optisch getrennt statt einer ununterbrochenen
+  // Liste. Pinnt die Reihenfolge (die Trennung selbst ergibt sich implizit daraus) UND dass
+  // tatsächlich eine sichtbare Trennung zwischen den Gruppen existiert.
+  it('gruppiert die Nav-Links in der vorgegebenen Reihenfolge, mit optischer Trennung zwischen den Blöcken (#191)', () => {
+    renderSidebar()
+    const nav = screen.getByRole('navigation', { name: 'Hauptnavigation' })
+    const links = within(nav).getAllByRole('link').map((l) => l.textContent)
+    expect(links).toEqual(['Events', 'Decks', 'Builds', 'Sammlung', 'Rangliste', 'Teams', 'Clubs', 'Regeln'])
+
+    // Jede Gruppe außer der ersten trägt eine sichtbare Trennlinie (border-t) über sich.
+    const groupContainers = nav.children
+    expect(groupContainers).toHaveLength(4)
+    expect(groupContainers[0]!.className).not.toContain('border-t')
+    for (const group of Array.from(groupContainers).slice(1)) {
+      expect(group.className).toContain('border-t')
+    }
   })
 
   it('zeigt Login-Link für Gäste, Avatar+Abmelden für eine Session', () => {

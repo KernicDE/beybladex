@@ -45,15 +45,25 @@ import { ExpandIconLink } from '@/components/ui/ExpandIconLink'
 import { BrandMark } from '@/components/brand/BrandMark'
 import type { Messages } from '@/lib/i18n/server'
 
-const NAV_LINKS: { href: string; labelKey: keyof Messages['nav']; icon: LucideIcon; auth?: boolean }[] = [
-  { href: '/events', labelKey: 'events', icon: Calendar },
-  { href: '/decks', labelKey: 'decks', icon: Layers, auth: true },
-  { href: '/builds', labelKey: 'builds', icon: Package },
-  { href: '/collection', labelKey: 'collection', icon: Archive, auth: true },
-  { href: '/clubs', labelKey: 'clubs', icon: Users },
-  { href: '/teams', labelKey: 'teams', icon: Shield, auth: true },
-  { href: '/rules', labelKey: 'rules', icon: BookOpen },
-  { href: '/rangliste', labelKey: 'leaderboard', icon: TrendingUp },
+type NavLink = { href: string; labelKey: keyof Messages['nav']; icon: LucideIcon; auth?: boolean }
+
+// Issue #191 — optische Trennung in thematische Blöcke (Events für sich / Kollektion &
+// Bauen / Wettbewerb & Community / Regeln), statt einer einzigen ununterbrochenen Liste.
+// Eine dünne Trennlinie (siehe render unten) zwischen den Gruppen, keine Labels — die
+// Reihenfolge sagt selbst genug.
+const NAV_GROUPS: readonly (readonly NavLink[])[] = [
+  [{ href: '/events', labelKey: 'events', icon: Calendar }],
+  [
+    { href: '/decks', labelKey: 'decks', icon: Layers, auth: true },
+    { href: '/builds', labelKey: 'builds', icon: Package },
+    { href: '/collection', labelKey: 'collection', icon: Archive, auth: true },
+  ],
+  [
+    { href: '/rangliste', labelKey: 'leaderboard', icon: TrendingUp },
+    { href: '/teams', labelKey: 'teams', icon: Shield, auth: true },
+    { href: '/clubs', labelKey: 'clubs', icon: Users },
+  ],
+  [{ href: '/rules', labelKey: 'rules', icon: BookOpen }],
 ] as const
 
 const COLLAPSE_KEY = 'beybladex-sidebar-collapsed'
@@ -121,36 +131,40 @@ export function Sidebar({
       )}
 
       <nav aria-label={t.nav.main} className="mt-6 flex flex-1 flex-col gap-1 overflow-y-auto">
-        {NAV_LINKS.map(({ href, labelKey, icon: Icon, auth }) => {
-          const label = t.nav[labelKey]
-          const locked = Boolean(auth) && !session
-          const active = pathname === href || pathname.startsWith(`${href}/`)
-          return (
-            <Link
-              key={href}
-              href={href}
-              {...(locked ? { 'aria-label': `${label} (${t.nav.loginRequired})` } : {})}
-              title={collapsed ? label : undefined}
-              aria-current={active ? 'page' : undefined}
-              // #157 — dieselbe Blade-Formsprache + Rot(aktiv)/Blau(Hover) wie Header/Button.
-              className={`flex items-center gap-3 rounded-md [clip-path:polygon(6px_0,100%_0,calc(100%_-_6px)_100%,0_100%)] px-2.5 py-2 text-sm font-medium transition-colors ${
-                collapsed ? 'justify-center' : ''
-              } ${
-                active
-                  ? 'bg-x-cyan text-white'
-                  : 'text-current/80 hover:bg-x-blue hover:text-white'
-              }`}
-            >
-              <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-              {!collapsed && (
-                <span className="inline-flex min-w-0 flex-1 items-center gap-1">
-                  <span className="truncate">{label}</span>
-                  {locked && <Lock size={12} className="shrink-0" aria-hidden="true" />}
-                </span>
-              )}
-            </Link>
-          )
-        })}
+        {NAV_GROUPS.map((group, groupIndex) => (
+          <div key={groupIndex} className={`flex flex-col gap-1 ${groupIndex > 0 ? 'mt-3 border-t border-current/10 pt-3' : ''}`}>
+            {group.map(({ href, labelKey, icon: Icon, auth }) => {
+              const label = t.nav[labelKey]
+              const locked = Boolean(auth) && !session
+              const active = pathname === href || pathname.startsWith(`${href}/`)
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  {...(locked ? { 'aria-label': `${label} (${t.nav.loginRequired})` } : {})}
+                  title={collapsed ? label : undefined}
+                  aria-current={active ? 'page' : undefined}
+                  // #157 — dieselbe Blade-Formsprache + Rot(aktiv)/Blau(Hover) wie Header/Button.
+                  className={`flex items-center gap-3 rounded-md [clip-path:polygon(6px_0,100%_0,calc(100%_-_6px)_100%,0_100%)] px-2.5 py-2 text-sm font-medium transition-colors ${
+                    collapsed ? 'justify-center' : ''
+                  } ${
+                    active
+                      ? 'bg-x-cyan text-white'
+                      : 'text-current/80 hover:bg-x-blue hover:text-white'
+                  }`}
+                >
+                  <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+                  {!collapsed && (
+                    <span className="inline-flex min-w-0 flex-1 items-center gap-1">
+                      <span className="truncate">{label}</span>
+                      {locked && <Lock size={12} className="shrink-0" aria-hidden="true" />}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className={`mt-auto flex flex-col gap-1 border-t border-current/10 pt-3 ${collapsed ? 'items-center' : ''}`}>
